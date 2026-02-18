@@ -1,0 +1,6 @@
+question_header,question_text,question_image_url,option_a,option_b,option_c,option_d,correct_option,explanation
+Beam Shear Basics,For a simply supported beam with central load where is shear maximum?,https://via.placeholder.com/640x280?text=Beam+Shear,At midspan,At supports,At one-third span,Uniformly distributed,b,Shear force is maximum at supports for this case.
+Concrete Mix,Which parameter most increases concrete workability?,,Higher water-cement ratio,Lower fine aggregate,Lower curing time,Lower slump,a,Higher water content usually increases workability.
+Surveying Datum,Reduced level is measured with respect to:, ,Magnetic north,Benchmark datum,Instrument height,Chain line,b,RL is always relative to benchmark datum.
+Fluid Mechanics,Bernoulli velocity head term is:, ,p/gamma,z,v^2/2g,hf,c,Velocity head equals v^2 over 2g.
+Bitumen Test,Which test indicates bitumen consistency?,,Compaction test,Penetration test,Cube test,Sieve analysis,b,Penetration test is standard for bitumen consistency.

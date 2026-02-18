@@ -1,0 +1,331 @@
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
+from rest_framework import status
+from django.contrib.auth import get_user_model
+from django.http import HttpResponse
+from django.db.models import Q
+
+from exams.models import ExamSet, MCQQuestion
+from storage.dropbox_service import (
+    download_file, 
+    upload_file, 
+    list_folder_with_metadata,
+    search_files,
+    delete_file,
+    get_shareable_link
+)
+from storage.models import FileMetadata, PlatformMetrics
+
+CONTENT_TYPE_FOLDERS = {
+    "notice": "Notice",
+    "syllabus": "Syllabus",
+    "old_question": "Old Questions",
+    "subjective": "Subjective",
+    "take_exam_mcq": "Take Exam/Multiple Choice Exam",
+    "take_exam_subjective": "Take Exam/Subjective Exam",
+}
+
+PUBLIC_CONTENT_TYPES = {
+    "notice",
+}
+PUBLIC_PATH_MARKERS = (
+    "/notice/",
+)
+ALLOWED_ROOT = "/bridge4er/"
+
+
+def _is_safe_path(path):
+    return isinstance(path, str) and path.lower().startswith(ALLOWED_ROOT)
+
+
+def _normalize_branch(branch):
+    value = (branch or "Civil Engineering").strip()
+    return value or "Civil Engineering"
+
+
+def _resolve_content_path(content_type, branch):
+    folder = CONTENT_TYPE_FOLDERS.get(content_type)
+    if not folder:
+        return None
+    return f"/bridge4er/{_normalize_branch(branch)}/{folder}"
+
+
+def _can_access_content_type(user, content_type):
+    if content_type in PUBLIC_CONTENT_TYPES:
+        return True
+    return user and user.is_authenticated
+
+
+def _can_access_path(user, path):
+    if not _is_safe_path(path):
+        return False
+    lowered = path.lower()
+    if any(marker in lowered for marker in PUBLIC_PATH_MARKERS):
+        return True
+    return user and user.is_authenticated
+
+
+def _is_subjective_path(path):
+    return "/subjective/" in (path or "").lower()
+
+
+def _effective_metrics_row():
+    metrics = PlatformMetrics.objects.order_by("id").first()
+    if metrics:
+        return metrics
+    return PlatformMetrics.objects.create()
+
+
+def _computed_platform_metrics():
+    User = get_user_model()
+    library_material_count = FileMetadata.objects.filter(content_type="subjective").filter(
+        Q(name__iendswith=".pdf")
+        | Q(name__iendswith=".png")
+        | Q(name__iendswith=".jpg")
+        | Q(name__iendswith=".jpeg")
+        | Q(name__iendswith=".gif")
+        | Q(name__iendswith=".webp")
+    ).count()
+    return {
+        "enrolled_students": User.objects.filter(is_staff=False).count(),
+        "objective_mcqs_available": MCQQuestion.objects.count(),
+        "resource_files_available": library_material_count,
+        "exam_sets_available": ExamSet.objects.filter(is_active=True).count(),
+    }
+
+class DropboxListView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        path = request.GET.get("path", "")
+        try:
+            if path and not _is_safe_path(path):
+                return Response({"error": "Invalid path"}, status=status.HTTP_400_BAD_REQUEST)
+            files = list_folder_with_metadata(path)
+            return Response(files)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ListFilesView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        """Get files by content type and branch"""
+        content_type = request.GET.get("content_type")  # notice, syllabus, old_question, subjective
+        branch = _normalize_branch(request.GET.get("branch", "Civil Engineering"))
+        
+        try:
+            if not _can_access_content_type(request.user, content_type):
+                return Response({"error": "Authentication required"}, status=status.HTTP_401_UNAUTHORIZED)
+
+            path = _resolve_content_path(content_type, branch)
+            if not path:
+                return Response({"error": "Invalid content type"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            files = list_folder_with_metadata(path, include_dirs=False, recursive=True)
+            return Response(files)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class SearchFilesView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        """Search files by name"""
+        query = request.GET.get("q")
+        branch = _normalize_branch(request.GET.get("branch", "Civil Engineering"))
+        content_type = request.GET.get("content_type")
+        
+        if not query:
+            return Response({"error": "Query required"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            if not _can_access_content_type(request.user, content_type):
+                return Response({"error": "Authentication required"}, status=status.HTTP_401_UNAUTHORIZED)
+
+            path = _resolve_content_path(content_type, branch)
+            if not path:
+                return Response({"error": "Invalid content type"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            results = search_files(path, query)
+            return Response(results)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class DownloadFileView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        """Download a file from Dropbox"""
+        path = request.GET.get("path")
+        
+        if not path:
+            return Response({"error": "Path required"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            if not _can_access_path(request.user, path):
+                return Response({"error": "Authentication required or invalid path"}, status=status.HTTP_401_UNAUTHORIZED)
+            if _is_subjective_path(path) and not (request.user and request.user.is_staff):
+                return Response({"error": "Download is disabled for library files."}, status=status.HTTP_403_FORBIDDEN)
+
+            file_content = download_file(path)
+            filename = path.split('/')[-1]
+
+            response = HttpResponse(file_content, content_type='application/octet-stream')
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            return response
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ViewFileView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        """Get shareable link to view file"""
+        path = request.GET.get("path")
+        
+        if not path:
+            return Response({"error": "Path required"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            if not _can_access_path(request.user, path):
+                return Response({"error": "Authentication required or invalid path"}, status=status.HTTP_401_UNAUTHORIZED)
+            link = get_shareable_link(path)
+            return Response({"link": link})
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class UploadFileView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def post(self, request):
+        """Upload a file to Dropbox"""
+        file = request.FILES.get('file')
+        content_type = request.data.get('content_type')
+        branch = _normalize_branch(request.data.get('branch', 'Civil Engineering'))
+        
+        if not file or not content_type:
+            return Response(
+                {"error": "File and content_type required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            folder = _resolve_content_path(content_type, branch)
+            if not folder:
+                return Response(
+                    {"error": "Invalid content type"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            path = f"{folder}/{file.name}"
+            metadata = upload_file(path, file)
+            
+            # Save metadata to database
+            FileMetadata.objects.update_or_create(
+                dropbox_path=path,
+                defaults={
+                    'name': file.name,
+                    'content_type': content_type,
+                    'branch': branch,
+                    'file_size': metadata['size'],
+                }
+            )
+            
+            return Response({
+                "message": "File uploaded successfully",
+                "metadata": metadata
+            })
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class DeleteFileView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def post(self, request):
+        """Delete a file from Dropbox"""
+        path = request.data.get('path')
+        
+        if not path:
+            return Response({"error": "Path required"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            delete_file(path)
+            FileMetadata.objects.filter(dropbox_path=path).delete()
+            return Response({"message": "File deleted successfully"})
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class HomePageMetricsView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        row = _effective_metrics_row()
+        computed = _computed_platform_metrics()
+        data = {
+            "enrolled_students": row.enrolled_students if row.enrolled_students is not None else computed["enrolled_students"],
+            "objective_mcqs_available": row.objective_mcqs_available
+            if row.objective_mcqs_available is not None
+            else computed["objective_mcqs_available"],
+            "resource_files_available": row.resource_files_available
+            if row.resource_files_available is not None
+            else computed["resource_files_available"],
+            "exam_sets_available": row.exam_sets_available if row.exam_sets_available is not None else computed["exam_sets_available"],
+            "motivational_quote": row.motivational_quote or "",
+            "motivational_image_url": row.motivational_image_url or "",
+            "updated_at": row.updated_at,
+        }
+        return Response(data)
+
+    def post(self, request):
+        if not request.user.is_authenticated or not request.user.is_staff:
+            return Response({"error": "Admin access required."}, status=status.HTTP_403_FORBIDDEN)
+
+        row = _effective_metrics_row()
+        fields = [
+            "enrolled_students",
+            "objective_mcqs_available",
+            "resource_files_available",
+            "exam_sets_available",
+        ]
+        text_fields = [
+            "motivational_quote",
+            "motivational_image_url",
+        ]
+        dirty = []
+        for field in fields:
+            if field not in request.data:
+                continue
+            value = request.data.get(field)
+            if value in (None, "", "auto"):
+                setattr(row, field, None)
+                dirty.append(field)
+                continue
+            try:
+                cleaned = int(value)
+            except (TypeError, ValueError):
+                return Response({"error": f"{field} must be a number."}, status=status.HTTP_400_BAD_REQUEST)
+            if cleaned < 0:
+                return Response({"error": f"{field} cannot be negative."}, status=status.HTTP_400_BAD_REQUEST)
+            setattr(row, field, cleaned)
+            dirty.append(field)
+
+        for field in text_fields:
+            if field not in request.data:
+                continue
+            setattr(row, field, str(request.data.get(field) or "").strip())
+            dirty.append(field)
+
+        if dirty:
+            row.save(update_fields=dirty + ["updated_at"])
+
+        return self.get(request)
+

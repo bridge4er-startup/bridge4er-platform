@@ -1,0 +1,33 @@
+bridge4er/  //This is the dropbox main folder name//
+    ├── Civil Engineering 
+    │ ├── Notice/ 
+    │ │     └── noticetoday.pdf 
+    │ │     └── imagetoday.jpeg 
+    │ ├── Syllabus/ 
+    │ ├── Old Questions/ 
+    │ ├── Objective MCQs/ 
+    │ │      └── Subjects/ 
+    │ │          └── Concrete Technology/ 
+    │ │                     └── Chapter 1.json 
+    │ │                     └── Chapter 2.xlsx
+    │ │          └── Structure/ 
+    │ │                     └── Chapter 1.json 
+    │ ├── Subjective/ 
+    │ │         └── Structure/ 
+    │ │                     └── Chapter 1.pdf 
+    │ │                     └── Chapter 2.pdf 
+    │ │         └── Geotech/ 
+    │ │                     └── Chapter 1.pdf 
+    │ │                     └── Chapter 2.pdf 
+    │ ├── Take Exam/ 
+    │           └── Multiple Choice Exam/ 
+    │                       └── MCQ SET 1.csv
+    │                       └── PSC MCQ SET 2.json 
+    │           └── Subjective Exam/ 
+    │                       └── PSC EXAM SET 1.json 
+    │                       └── NEA EXAM SET 1.xlsx
+    │                       └── NEA EXAM SET 1.csv
+    ├── Mechanical Engineering/ 
+    ├── Electrical Engineering/ 
+    ├── Electronics Engineering/ 
+    ├── Computer Engineering/

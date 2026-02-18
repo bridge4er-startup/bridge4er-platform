@@ -1,0 +1,65 @@
+databases:
+  - name: bridge4er-db
+    plan: free
+    databaseName: bridge4er
+    user: bridge4er
+
+services:
+  - type: web
+    name: bridge4er-api
+    env: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt && python manage.py collectstatic --noinput
+    startCommand: python manage.py migrate --noinput && gunicorn bridge4er.wsgi:application --config gunicorn.conf.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: DEBUG
+        value: "False"
+      - key: SECRET_KEY
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: bridge4er-db
+          property: connectionString
+      - key: ALLOWED_HOSTS
+        value: your-api.onrender.com
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://your-app.vercel.app
+      - key: CSRF_TRUSTED_ORIGINS
+        value: https://your-app.vercel.app
+      - key: FRONTEND_PUBLIC_URL
+        value: https://your-app.vercel.app
+      - key: BACKEND_PUBLIC_URL
+        value: https://your-api.onrender.com
+      - key: ALLOW_INSECURE_PAYMENT_VERIFICATION
+        value: "0"
+      - key: SHOW_OTP_IN_RESPONSE
+        value: "0"
+      - key: OTP_PROVIDER
+        value: twilio_verify
+      - key: OTP_DEFAULT_COUNTRY_CODE
+        value: "+977"
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_VERIFY_SERVICE_SID
+        sync: false
+      - key: ESEWA_ENV
+        value: sandbox
+      - key: ESEWA_PRODUCT_CODE
+        value: EPAYTEST
+      - key: ESEWA_SECRET_KEY
+        value: 8gBm/:&EnhH.1/q
+      - key: KHALTI_ENV
+        value: sandbox
+      - key: KHALTI_SECRET_KEY
+        value: test_secret_key
+      - key: DROPBOX_REFRESH_TOKEN
+        sync: false
+      - key: DROPBOX_APP_KEY
+        sync: false
+      - key: DROPBOX_APP_SECRET
+        sync: false

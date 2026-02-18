@@ -1,0 +1,6 @@
+order,question_header,question_text,question_image_url,option_a,option_b,option_c,option_d,correct_option,marks,explanation
+1,Strength of Materials,The SI unit of stress is:,,N,Pa,J,W,b,1,Stress unit is Pascal.
+2,Structural Analysis,For simply supported beams support bending moment is:,,Maximum positive,Maximum negative,Zero,Infinite,c,Support moments are zero.
+3,Hydraulics,Laminar flow in pipe usually occurs at Reynolds number:,,Below 2000,Above 4000,Between 2000 and 4000,Always turbulent,a,1,Laminar region is below about 2000.
+4,Transportation,A test for aggregate toughness is:,,Abrasion test,Impact test,Slump test,Vicat test,b,1,Impact test checks toughness.
+5,RCC Cover,Minimum concrete cover mainly helps to:,,Increase weight,Reduce workability,Protect reinforcement,Reduce strength,c,1,Cover protects steel from corrosion and fire.

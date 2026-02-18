@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.log
+*.sqlite3
+
+# Virtual environments
+venv/
+.venv/
+backend/venv/
+backend/.venv/
+
+# Environment files
+.env
+.env.*
+backend/.env
+frontend/.env
+!.env.example
+!backend/.env.example
+!frontend/.env.example
+
+# Django generated artifacts
+backend/db.sqlite3
+backend/media/
+backend/staticfiles/
+
+# Node and frontend build outputs
+frontend/node_modules/
+frontend/build/
+frontend/build_*/
+frontend/build_tmp/
+frontend/build_temp/
+frontend/build_temp2/
+frontend/build_verify_*/
+
+# IDE and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

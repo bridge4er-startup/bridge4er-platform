@@ -1,0 +1,4 @@
+order,question_header,question_text,question_image_url,marks
+1,Design Question,Design a singly reinforced concrete beam for a given loading case and explain assumptions.,,20
+2,Analysis Question,Explain the method of virtual work with one practical structural example.,,15
+3,Foundation Theory,Discuss the causes of differential settlement and preventive measures.,,15
