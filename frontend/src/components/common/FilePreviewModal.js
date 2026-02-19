@@ -2,6 +2,9 @@ import React, { useEffect, useRef, useState } from "react";
 
 const PDFJS_CDN = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
 const PDFJS_WORKER_CDN = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+const ZOOM_MIN = 20;
+const ZOOM_MAX = 150;
+const ZOOM_STEP = 5;
 
 let pdfJsLoadPromise = null;
 
@@ -59,6 +62,7 @@ export default function FilePreviewModal({ preview, onClose }) {
   const [isRendering, setIsRendering] = useState(false);
   const [pdfError, setPdfError] = useState("");
   const [renderTick, setRenderTick] = useState(0);
+  const [zoomPercent, setZoomPercent] = useState(100);
 
   const isPdf = preview?.type === "pdf";
   const isImage = preview?.type === "image";
@@ -71,6 +75,11 @@ export default function FilePreviewModal({ preview, onClose }) {
     window.addEventListener("keydown", onEscape);
     return () => window.removeEventListener("keydown", onEscape);
   }, [preview, onClose]);
+
+  useEffect(() => {
+    if (!preview) return;
+    setZoomPercent(100);
+  }, [preview]);
 
   useEffect(() => {
     if (!preview || !isPdf) {
@@ -169,7 +178,7 @@ export default function FilePreviewModal({ preview, onClose }) {
 
           const baseViewport = page.getViewport({ scale: 1 });
           const fitScale = availableWidth / baseViewport.width;
-          const viewport = page.getViewport({ scale: fitScale });
+          const viewport = page.getViewport({ scale: fitScale * (zoomPercent / 100) });
 
           const pageWrap = document.createElement("div");
           pageWrap.className = "file-preview-pdf-page";
@@ -207,9 +216,17 @@ export default function FilePreviewModal({ preview, onClose }) {
     return () => {
       cancelled = true;
     };
-  }, [isPdf, pdfReady, renderTick]);
+  }, [isPdf, pdfReady, renderTick, zoomPercent]);
 
   if (!preview) return null;
+
+  const zoomOut = () => {
+    setZoomPercent((current) => Math.max(ZOOM_MIN, current - ZOOM_STEP));
+  };
+
+  const zoomIn = () => {
+    setZoomPercent((current) => Math.min(ZOOM_MAX, current + ZOOM_STEP));
+  };
 
   return (
     <div className="payment-overlay" onClick={onClose}>
@@ -222,6 +239,30 @@ export default function FilePreviewModal({ preview, onClose }) {
         </div>
 
         <div className="file-preview-modal-body" ref={bodyRef}>
+          {(isPdf || isImage) && (
+            <div className="file-preview-zoom-controls" role="group" aria-label="Zoom controls">
+              <button
+                type="button"
+                className="btn btn-secondary btn-soft-blue-action file-preview-zoom-btn"
+                onClick={zoomOut}
+                disabled={zoomPercent <= ZOOM_MIN}
+                aria-label="Zoom out"
+              >
+                -
+              </button>
+              <span className="file-preview-zoom-value">{zoomPercent}%</span>
+              <button
+                type="button"
+                className="btn btn-secondary btn-soft-blue-action file-preview-zoom-btn"
+                onClick={zoomIn}
+                disabled={zoomPercent >= ZOOM_MAX}
+                aria-label="Zoom in"
+              >
+                +
+              </button>
+            </div>
+          )}
+
           {isPdf ? (
             <>
               {isRendering ? <div className="file-preview-message">Loading PDF...</div> : null}
@@ -229,7 +270,14 @@ export default function FilePreviewModal({ preview, onClose }) {
               <div className="file-preview-viewer" ref={viewerRef}></div>
             </>
           ) : isImage ? (
-            <img src={preview.url} alt={preview.name} className="file-preview-image" />
+            <div className="file-preview-image-wrap">
+              <img
+                src={preview.url}
+                alt={preview.name}
+                className="file-preview-image"
+                style={{ transform: `scale(${zoomPercent / 100})` }}
+              />
+            </div>
           ) : (
             <div className="file-preview-message">This file cannot be previewed inline. Please use Download.</div>
           )}
