@@ -201,8 +201,9 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
         type: fileType(file.path),
         url: res.data?.link,
       });
-    } catch (_error) {
-      toast.error("Unable to preview this file.");
+    } catch (error) {
+      const message = error?.response?.data?.error || "Unable to preview this file.";
+      toast.error(message);
     }
   };
 

@@ -119,8 +119,9 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
         viewLink: res.data.link,
       });
       setViewMode("viewer");
-    } catch (_error) {
-      toast.error("Failed to open file");
+    } catch (error) {
+      const message = error?.response?.data?.error || "Failed to open file";
+      toast.error(message);
     }
   };
 

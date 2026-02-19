@@ -225,7 +225,22 @@ def get_shareable_link(path):
             )
             if links.links:
                 return _as_preview_link(links.links[0].url)
-        raise Exception(f"Error creating link: {str(e)}")
+        # Fallback for apps without sharing scopes. Temporary links work for inline read-only previews.
+        try:
+            temporary_link = _execute_with_auth_retry(
+                lambda client: client.files_get_temporary_link(path)
+            )
+            return temporary_link.link
+        except Exception as fallback_error:
+            raise Exception(f"Error creating link: {str(e)}; fallback failed: {str(fallback_error)}")
+    except Exception as e:
+        try:
+            temporary_link = _execute_with_auth_retry(
+                lambda client: client.files_get_temporary_link(path)
+            )
+            return temporary_link.link
+        except Exception:
+            raise Exception(f"Error creating link: {str(e)}")
 
 def create_folder(path):
     """Create a folder in Dropbox"""

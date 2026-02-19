@@ -46,11 +46,15 @@ def send_otp(mobile_number: str):
     if not (account_sid and auth_token and service_sid):
         raise OTPServiceError("Twilio Verify configuration is incomplete.")
 
+    channel = str(getattr(settings, "TWILIO_VERIFY_CHANNEL", "sms") or "sms").strip().lower()
+    if channel not in {"sms", "call", "whatsapp"}:
+        channel = "sms"
+
     to_number = _to_e164(mobile_number)
     url = f"https://verify.twilio.com/v2/Services/{service_sid}/Verifications"
     response = requests.post(
         url,
-        data={"To": to_number, "Channel": "sms"},
+        data={"To": to_number, "Channel": channel},
         auth=(account_sid, auth_token),
         timeout=20,
     )
@@ -65,6 +69,7 @@ def send_otp(mobile_number: str):
     payload = response.json()
     return {
         "provider": "twilio_verify",
+        "channel": channel,
         "status": payload.get("status", "pending"),
         "sid": payload.get("sid", ""),
         "to": payload.get("to", to_number),
