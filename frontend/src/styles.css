@@ -7364,7 +7364,7 @@ body[data-branch-theme="computer-engineering"] {
 
 @media (max-width: 960px) {
   .modern-mcq-exam-page .mcq-exam-main-layout {
-    grid-template-columns: minmax(0, 1fr) minmax(240px, 285px) !important;
+    grid-template-columns: minmax(0, 1fr) clamp(190px, 30vw, 250px) !important;
   }
 
   .subjective-paper-meta {
@@ -7378,28 +7378,58 @@ body[data-branch-theme="computer-engineering"] {
 
 @media (max-width: 640px) {
   .modern-mcq-exam-page .mcq-exam-main-layout {
-    grid-template-columns: minmax(0, 1fr) 205px !important;
-    gap: 0.65rem;
+    grid-template-columns: minmax(0, 1fr) clamp(145px, 38vw, 175px) !important;
+    gap: 0.55rem;
+  }
+
+  .modern-progress-panel {
+    gap: 0.55rem;
+    padding: 0.55rem 0.45rem;
+  }
+
+  .palette-summary-list h4,
+  .question-palette-box h4 {
+    font-size: 0.8rem;
+    margin-bottom: 0.45rem;
+  }
+
+  .palette-summary-list .progress-summary.single-column-summary {
+    gap: 0.34rem;
   }
 
   .palette-summary-list .summary-item {
-    padding: 0.35rem 0.2rem;
+    padding: 0.28rem 0.16rem;
+    border-radius: 8px;
   }
 
   .palette-summary-list .summary-label {
-    font-size: 0.58rem;
+    font-size: 0.5rem;
+    line-height: 1.05;
   }
 
   .palette-summary-list .summary-value {
-    font-size: 0.98rem;
+    font-size: 0.86rem;
+    line-height: 1;
+  }
+
+  .question-palette-box {
+    padding-top: 0.6rem;
   }
 
   .question-palette-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.32rem;
+  }
+
+  .palette-btn {
+    font-size: 0.72rem;
+    padding: 0.3rem 0;
+    border-radius: 6px;
   }
 
   .question-palette-scroll {
-    max-height: 40vh;
+    max-height: 36vh;
+    padding-right: 0.1rem;
   }
 
   .subjective-paper-shell {
@@ -7412,5 +7442,25 @@ body[data-branch-theme="computer-engineering"] {
 
   .subjective-paper-head h3 {
     font-size: 0.88rem;
+  }
+}
+
+@media (max-width: 420px) {
+  .modern-mcq-exam-page .mcq-exam-main-layout {
+    grid-template-columns: minmax(0, 1fr) 136px !important;
+    gap: 0.45rem;
+  }
+
+  .palette-summary-list .summary-label {
+    font-size: 0.46rem;
+  }
+
+  .palette-summary-list .summary-value {
+    font-size: 0.78rem;
+  }
+
+  .palette-btn {
+    font-size: 0.66rem;
+    padding: 0.26rem 0;
   }
 }
