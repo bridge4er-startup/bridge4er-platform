@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 const PDFJS_CDN = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
 const PDFJS_WORKER_CDN = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
@@ -55,25 +55,19 @@ function clamp(value, min, max) {
 export default function FilePreviewModal({ preview, onClose }) {
   const bodyRef = useRef(null);
   const viewerRef = useRef(null);
-  const canvasRef = useRef(null);
   const pdfRef = useRef(null);
 
   const [pdfReady, setPdfReady] = useState(false);
   const [pdfError, setPdfError] = useState("");
   const [totalPages, setTotalPages] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageInput, setPageInput] = useState("1");
   const [isRendering, setIsRendering] = useState(false);
   const [renderTick, setRenderTick] = useState(0);
+  const [pdfZoom, setPdfZoom] = useState(1);
   const [imageZoom, setImageZoom] = useState(1);
 
   const isPdf = preview?.type === "pdf";
   const isImage = preview?.type === "image";
-
-  const pageOptions = useMemo(
-    () => Array.from({ length: totalPages }, (_, i) => i + 1),
-    [totalPages]
-  );
 
   useEffect(() => {
     if (!preview) return undefined;
@@ -85,12 +79,16 @@ export default function FilePreviewModal({ preview, onClose }) {
   }, [preview, onClose]);
 
   useEffect(() => {
+    setPdfZoom(1);
+    setImageZoom(1);
+  }, [preview]);
+
+  useEffect(() => {
     if (!preview || !isPdf) {
       setPdfReady(false);
       setPdfError("");
       setTotalPages(1);
       setCurrentPage(1);
-      setPageInput("1");
       if (pdfRef.current) {
         try {
           pdfRef.current.destroy();
@@ -98,6 +96,9 @@ export default function FilePreviewModal({ preview, onClose }) {
           // noop
         }
         pdfRef.current = null;
+      }
+      if (viewerRef.current) {
+        viewerRef.current.innerHTML = "";
       }
       return undefined;
     }
@@ -107,12 +108,12 @@ export default function FilePreviewModal({ preview, onClose }) {
     setPdfError("");
     setTotalPages(1);
     setCurrentPage(1);
-    setPageInput("1");
 
     const loadPdf = async () => {
       try {
         const pdfjsLib = await loadPdfJs();
         if (cancelled) return;
+
         const loadingTask = pdfjsLib.getDocument({ url: preview.url });
         const pdf = await loadingTask.promise;
         if (cancelled) {
@@ -123,10 +124,10 @@ export default function FilePreviewModal({ preview, onClose }) {
           }
           return;
         }
+
         pdfRef.current = pdf;
         setTotalPages(Math.max(1, pdf.numPages || 1));
         setCurrentPage(1);
-        setPageInput("1");
         setPdfReady(true);
       } catch (error) {
         setPdfError(error?.message || "Unable to render PDF on this device.");
@@ -145,6 +146,9 @@ export default function FilePreviewModal({ preview, onClose }) {
         }
         pdfRef.current = null;
       }
+      if (viewerRef.current) {
+        viewerRef.current.innerHTML = "";
+      }
     };
   }, [preview, isPdf]);
 
@@ -159,82 +163,102 @@ export default function FilePreviewModal({ preview, onClose }) {
     };
   }, [isPdf, pdfReady]);
 
+  const updateCurrentPageFromScroll = () => {
+    if (!isPdf || !bodyRef.current || !viewerRef.current) return;
+    const pageElements = viewerRef.current.querySelectorAll(".file-preview-pdf-page");
+    if (!pageElements.length) return;
+
+    const marker = bodyRef.current.scrollTop + bodyRef.current.clientHeight * 0.35;
+    let page = 1;
+    pageElements.forEach((el, idx) => {
+      if (el.offsetTop <= marker) {
+        page = idx + 1;
+      }
+    });
+
+    setCurrentPage(clamp(page, 1, totalPages));
+  };
+
   useEffect(() => {
-    if (!isPdf || !pdfReady || !pdfRef.current || !canvasRef.current || !viewerRef.current) return undefined;
+    if (!isPdf || !pdfReady || !pdfRef.current || !viewerRef.current || !bodyRef.current) return undefined;
 
     let cancelled = false;
 
-    const renderPdfPage = async () => {
+    const renderAllPages = async () => {
       setIsRendering(true);
+      setPdfError("");
+
       try {
-        const pageNumber = clamp(currentPage, 1, totalPages);
-        const page = await pdfRef.current.getPage(pageNumber);
-        if (cancelled) return;
+        const pdf = pdfRef.current;
+        const viewer = viewerRef.current;
+        viewer.innerHTML = "";
 
-        const baseViewport = page.getViewport({ scale: 1 });
-        const availableWidth = Math.max(260, viewerRef.current.clientWidth - 8);
-        const scale = availableWidth / baseViewport.width;
-        const viewport = page.getViewport({ scale });
-
-        const canvas = canvasRef.current;
-        const context = canvas.getContext("2d");
         const ratio = window.devicePixelRatio || 1;
+        const availableWidth = Math.max(260, bodyRef.current.clientWidth - 24);
 
-        canvas.width = Math.max(1, Math.floor(viewport.width * ratio));
-        canvas.height = Math.max(1, Math.floor(viewport.height * ratio));
-        canvas.style.width = `${viewport.width}px`;
-        canvas.style.height = `${viewport.height}px`;
+        for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+          if (cancelled) return;
 
-        context.setTransform(ratio, 0, 0, ratio, 0, 0);
-        await page.render({
-          canvasContext: context,
-          viewport,
-        }).promise;
+          const page = await pdf.getPage(pageNumber);
+          if (cancelled) return;
+
+          const baseViewport = page.getViewport({ scale: 1 });
+          const fitWidthScale = availableWidth / baseViewport.width;
+          const viewport = page.getViewport({ scale: fitWidthScale * pdfZoom });
+
+          const pageWrap = document.createElement("div");
+          pageWrap.className = "file-preview-pdf-page";
+          pageWrap.setAttribute("data-page", String(pageNumber));
+
+          const canvas = document.createElement("canvas");
+          canvas.className = "file-preview-canvas";
+          canvas.width = Math.max(1, Math.floor(viewport.width * ratio));
+          canvas.height = Math.max(1, Math.floor(viewport.height * ratio));
+          canvas.style.width = `${viewport.width}px`;
+          canvas.style.height = `${viewport.height}px`;
+
+          pageWrap.appendChild(canvas);
+          viewer.appendChild(pageWrap);
+
+          const context = canvas.getContext("2d");
+          context.setTransform(ratio, 0, 0, ratio, 0, 0);
+
+          await page.render({
+            canvasContext: context,
+            viewport,
+          }).promise;
+        }
+
+        if (!cancelled) {
+          requestAnimationFrame(() => updateCurrentPageFromScroll());
+        }
       } catch (error) {
         if (!cancelled) {
-          setPdfError(error?.message || "Unable to render PDF page.");
+          setPdfError(error?.message || "Unable to render PDF pages.");
         }
       } finally {
         if (!cancelled) setIsRendering(false);
       }
     };
 
-    renderPdfPage();
+    renderAllPages();
 
     return () => {
       cancelled = true;
     };
-  }, [isPdf, pdfReady, currentPage, totalPages, renderTick]);
+  }, [isPdf, pdfReady, pdfZoom, renderTick]);
 
   useEffect(() => {
-    setImageZoom(1);
-  }, [preview]);
+    if (!isPdf || !bodyRef.current) return undefined;
+    const node = bodyRef.current;
+    const onScroll = () => updateCurrentPageFromScroll();
+    node.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+    return () => node.removeEventListener("scroll", onScroll);
+  }, [isPdf, pdfReady, totalPages]);
 
-  const goToPage = (nextPageValue) => {
-    const parsed = Number.parseInt(String(nextPageValue || "").trim(), 10);
-    if (!Number.isFinite(parsed)) {
-      setPageInput(String(currentPage));
-      return;
-    }
-    const clamped = clamp(parsed, 1, totalPages);
-    setCurrentPage(clamped);
-    setPageInput(String(clamped));
-  };
-
-  const handlePageInputSubmit = () => {
-    goToPage(pageInput);
-  };
-
-  const changePageBy = (step) => {
-    const next = clamp(currentPage + step, 1, totalPages);
-    setCurrentPage(next);
-    setPageInput(String(next));
-  };
-
-  const scrollPreview = () => {
-    if (!bodyRef.current) return;
-    const amount = Math.max(200, Math.floor(bodyRef.current.clientHeight * 0.75));
-    bodyRef.current.scrollBy({ top: amount, behavior: "smooth" });
+  const zoomPdf = (delta) => {
+    setPdfZoom((prev) => clamp(Number((prev + delta).toFixed(2)), 0.6, 3));
   };
 
   const zoomImage = (delta) => {
@@ -256,63 +280,17 @@ export default function FilePreviewModal({ preview, onClose }) {
         <div className="file-preview-controls">
           {isPdf ? (
             <>
-              <button
-                type="button"
-                className="btn btn-secondary btn-soft-blue-action"
-                onClick={() => changePageBy(-1)}
-                disabled={!pdfReady || currentPage <= 1}
-              >
-                Prev
+              <button type="button" className="btn btn-secondary btn-soft-blue-action" onClick={() => zoomPdf(-0.1)}>
+                Zoom -
               </button>
-              <label className="file-preview-page-input-wrap">
-                Page
-                <input
-                  className="file-preview-page-input"
-                  type="number"
-                  min="1"
-                  max={String(totalPages)}
-                  value={pageInput}
-                  onChange={(event) => setPageInput(event.target.value)}
-                  onBlur={handlePageInputSubmit}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") handlePageInputSubmit();
-                  }}
-                />
-              </label>
-              <button
-                type="button"
-                className="btn btn-secondary btn-soft-blue-action"
-                onClick={handlePageInputSubmit}
-                disabled={!pdfReady}
-              >
-                Go
+              <span className="file-preview-page-label">{Math.round(pdfZoom * 100)}%</span>
+              <button type="button" className="btn btn-secondary btn-soft-blue-action" onClick={() => zoomPdf(0.1)}>
+                Zoom +
               </button>
-              <label className="file-preview-page-select-wrap">
-                Select
-                <select
-                  className="file-preview-page-select"
-                  value={String(currentPage)}
-                  onChange={(event) => goToPage(event.target.value)}
-                  disabled={!pdfReady}
-                >
-                  {pageOptions.map((page) => (
-                    <option key={page} value={String(page)}>
-                      {page}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <span className="file-preview-page-label">
-                {currentPage}/{totalPages}
-              </span>
-              <button
-                type="button"
-                className="btn btn-secondary btn-soft-blue-action"
-                onClick={() => changePageBy(1)}
-                disabled={!pdfReady || currentPage >= totalPages}
-              >
-                Next
+              <button type="button" className="btn btn-secondary btn-soft-blue-action" onClick={() => setPdfZoom(1)}>
+                Reset
               </button>
+              <span className="file-preview-page-label">Page {currentPage}/{totalPages}</span>
             </>
           ) : null}
 
@@ -330,19 +308,15 @@ export default function FilePreviewModal({ preview, onClose }) {
               </button>
             </>
           ) : null}
-
-          <button type="button" className="btn btn-secondary btn-soft-blue-action" onClick={scrollPreview}>
-            Scroll Down
-          </button>
         </div>
 
         <div className="file-preview-modal-body" ref={bodyRef}>
           {isPdf ? (
-            <div className="file-preview-viewer" ref={viewerRef}>
-              {isRendering ? <div className="file-preview-message">Rendering page...</div> : null}
+            <>
+              {isRendering ? <div className="file-preview-message">Rendering document...</div> : null}
               {pdfError ? <div className="file-preview-message">{pdfError}</div> : null}
-              <canvas className="file-preview-canvas" ref={canvasRef}></canvas>
-            </div>
+              <div className="file-preview-viewer" ref={viewerRef}></div>
+            </>
           ) : null}
 
           {isImage ? (
@@ -357,9 +331,7 @@ export default function FilePreviewModal({ preview, onClose }) {
           ) : null}
 
           {!isPdf && !isImage ? (
-            <div className="file-preview-message">
-              This file cannot be previewed inline on this device.
-            </div>
+            <div className="file-preview-message">This file cannot be previewed inline on this device.</div>
           ) : null}
         </div>
       </div>
