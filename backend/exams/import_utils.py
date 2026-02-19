@@ -5,8 +5,11 @@ import io
 import json
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+import re
 
 from django.conf import settings
+import requests
 
 try:
     from import_export.formats import base_formats
@@ -20,6 +23,7 @@ except ImportError:
 SUPPORTED_IMPORT_EXTENSIONS = (".csv", ".tsv", ".json", ".xlsx", ".xls")
 _TEXT_EXTENSIONS = {".csv", ".tsv", ".json"}
 DROPBOX_ALLOWED_ROOT = "/bridge4er/"
+DROPBOX_SHARED_HOSTS = {"dropbox.com", "www.dropbox.com", "dl.dropboxusercontent.com"}
 _FORMAT_CLASS_BY_EXTENSION = {
     ".csv": "CSV",
     ".tsv": "TSV",
@@ -253,6 +257,77 @@ def _is_dropbox_path(file_path: str) -> bool:
     return isinstance(file_path, str) and file_path.strip().lower().startswith(DROPBOX_ALLOWED_ROOT)
 
 
+def _is_dropbox_shared_url(file_path: str) -> bool:
+    if not isinstance(file_path, str):
+        return False
+    candidate = file_path.strip()
+    if not candidate.lower().startswith(("http://", "https://")):
+        return False
+    try:
+        parsed = urlparse(candidate)
+    except Exception:
+        return False
+    return parsed.netloc.lower() in DROPBOX_SHARED_HOSTS
+
+
+def _to_direct_dropbox_url(shared_url: str) -> str:
+    parsed = urlparse(shared_url.strip())
+    host = parsed.netloc.lower()
+    query_items = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    query_items["dl"] = "1"
+    if host == "dl.dropboxusercontent.com":
+        query_items.pop("raw", None)
+        return urlunparse(
+            (
+                parsed.scheme or "https",
+                parsed.netloc,
+                parsed.path,
+                parsed.params,
+                urlencode(query_items),
+                parsed.fragment,
+            )
+        )
+    return urlunparse(
+        (
+            parsed.scheme or "https",
+            "www.dropbox.com",
+            parsed.path,
+            parsed.params,
+            urlencode(query_items),
+            parsed.fragment,
+        )
+    )
+
+
+def _filename_from_response(url: str, response: requests.Response) -> str:
+    content_disposition = str(response.headers.get("Content-Disposition") or "")
+    match = re.search(r'filename\*?=(?:UTF-8\'\')?"?([^\";]+)"?', content_disposition)
+    if match:
+        candidate = str(match.group(1)).strip().strip('"')
+        if candidate:
+            return candidate
+    parsed = urlparse(url)
+    return Path(parsed.path).name or "questions.csv"
+
+
+def parse_rows_from_dropbox_shared_url(shared_url: str) -> list[dict[str, str]]:
+    if not _is_dropbox_shared_url(shared_url):
+        raise ValueError("Only Dropbox links are allowed")
+
+    direct_url = _to_direct_dropbox_url(shared_url)
+    try:
+        response = requests.get(direct_url, timeout=60)
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        raise ValueError(f"Failed to download Dropbox link: {exc}") from exc
+
+    filename = _filename_from_response(shared_url, response)
+    raw_bytes = response.content
+    if DJANGO_IMPORT_EXPORT_AVAILABLE:
+        return _parse_with_import_export(filename, raw_bytes)
+    return _parse_without_import_export(filename, raw_bytes)
+
+
 def parse_rows_from_dropbox_path(dropbox_path: str) -> list[dict[str, str]]:
     if not _is_dropbox_path(dropbox_path):
         raise ValueError(f"dropbox path must start with {DROPBOX_ALLOWED_ROOT}")
@@ -272,6 +347,8 @@ def parse_rows_from_dropbox_path(dropbox_path: str) -> list[dict[str, str]]:
 def parse_rows_from_path(file_path: str) -> list[dict[str, str]]:
     if _is_dropbox_path(file_path):
         return parse_rows_from_dropbox_path(file_path)
+    if _is_dropbox_shared_url(file_path):
+        return parse_rows_from_dropbox_shared_url(file_path)
 
     resolved = resolve_project_file_path(file_path)
     raw_bytes = resolved.read_bytes()

@@ -9,6 +9,7 @@ from .models import (
     ExamQuestion,
     SubjectiveSubmission,
     ExamPurchase,
+    ProblemReport,
 )
 
 
@@ -204,4 +205,44 @@ class SubjectiveSubmissionSerializer(serializers.ModelSerializer):
             'reviewed_at',
             'submitted_at',
             'file_url',
+        ]
+
+
+class ProblemReportSerializer(serializers.ModelSerializer):
+    reporter_name = serializers.SerializerMethodField()
+    reporter_username = serializers.CharField(source="reporter.username", read_only=True)
+
+    def get_reporter_name(self, obj):
+        user = getattr(obj, "reporter", None)
+        if not user:
+            return "Anonymous"
+        full_name = str(getattr(user, "full_name", "") or "").strip()
+        return full_name or user.username
+
+    class Meta:
+        model = ProblemReport
+        fields = [
+            "id",
+            "reporter",
+            "reporter_name",
+            "reporter_username",
+            "branch",
+            "section",
+            "issue_type",
+            "question_reference",
+            "description",
+            "status",
+            "admin_note",
+            "solved_at",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "reporter",
+            "status",
+            "admin_note",
+            "solved_at",
+            "created_at",
+            "updated_at",
         ]

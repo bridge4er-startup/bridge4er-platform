@@ -3,6 +3,7 @@ import API from "../../services/api";
 import toast from "react-hot-toast";
 import { getSubjectIcon } from "../../utils/subjectIcons";
 import FilePreviewModal from "../common/FilePreviewModal";
+import TimedLoadingState from "../common/TimedLoadingState";
 
 function resolveSubjectName(path = "") {
   const segments = path.split("/").filter(Boolean);
@@ -215,10 +216,7 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
       </div>
 
       {loading ? (
-        <div className="loading">
-          <div className="spinner"></div>
-          <p>Loading library materials...</p>
-        </div>
+        <TimedLoadingState baseMessage="Loading library materials..." />
       ) : subjectNames.length === 0 ? (
         <div className="empty-state">
           <i className="fas fa-inbox"></i>

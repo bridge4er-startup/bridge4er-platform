@@ -2,12 +2,13 @@ import API from "./api";
 
 export const fileService = {
   // List files by content type
-  listFiles: async (contentType, branch = "Civil Engineering") => {
+  listFiles: async (contentType, branch = "Civil Engineering", includeHidden = false) => {
     try {
       const response = await API.get("storage/files/list/", {
         params: {
           content_type: contentType,
           branch,
+          include_hidden: includeHidden,
         },
       });
       return response.data;
@@ -88,6 +89,20 @@ export const fileService = {
       return response.data;
     } catch (error) {
       console.error("Error deleting file:", error);
+      throw error;
+    }
+  },
+
+  // Toggle file visibility on website (admin only)
+  setVisibility: async (path, isVisible) => {
+    try {
+      const response = await API.post("storage/files/visibility/", {
+        path,
+        is_visible: !!isVisible,
+      });
+      return response.data;
+    } catch (error) {
+      console.error("Error updating file visibility:", error);
       throw error;
     }
   },

@@ -1,5 +1,6 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useBranch } from "../../context/BranchContext";
+import ReportProblemModal from "../common/ReportProblemModal";
 
 const SECTION_SHORTCUTS = {
   "1": "homepage",
@@ -19,7 +20,8 @@ const FIELD_BY_KEY = {
 };
 
 export default function Footer() {
-  const { setBranch } = useBranch();
+  const { branch, setBranch } = useBranch();
+  const [showReportModal, setShowReportModal] = useState(false);
 
   const jumpToSection = (sectionId) => {
     if (!sectionId) return;
@@ -105,8 +107,22 @@ export default function Footer() {
           <p style={{ marginTop: "0.5rem", fontSize: "0.8rem" }}>
             Contact us: 98400*****, 985400**** , Jorpati, Kathmandu , bridge4er@gmail.com
           </p>
+          <p style={{ marginTop: "0.65rem" }}>
+            <button
+              type="button"
+              className="btn btn-secondary footer-report-btn"
+              onClick={() => setShowReportModal(true)}
+            >
+              Report a problem
+            </button>
+          </p>
         </div>
       </div>
+      <ReportProblemModal
+        isOpen={showReportModal}
+        onClose={() => setShowReportModal(false)}
+        branch={branch}
+      />
     </footer>
   );
 }

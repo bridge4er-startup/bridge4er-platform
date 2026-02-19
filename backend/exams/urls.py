@@ -20,6 +20,8 @@ from .views import (
     SyncDropboxQuestionBankView,
     UploadSubjective,
     UserAnalyticsView,
+    ProblemReportListCreateView,
+    ProblemReportAdminDetailView,
 )
 from .views_mcq import (
     SubjectListView,
@@ -76,4 +78,8 @@ urlpatterns = [
 
     # User analytics/profile
     path('profile/analytics/', UserAnalyticsView.as_view()),
+
+    # Report issues
+    path('problem-reports/', ProblemReportListCreateView.as_view()),
+    path('problem-reports/<int:report_id>/', ProblemReportAdminDetailView.as_view()),
 ]

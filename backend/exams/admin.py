@@ -9,6 +9,7 @@ from .models import (
     ExamQuestion,
     ExamSet,
     MCQQuestion,
+    ProblemReport,
     QuestionAttempt,
     Subject,
     SubjectiveSubmission,
@@ -146,3 +147,30 @@ class SubjectiveSubmissionAdmin(admin.ModelAdmin):
             obj.reviewed_at = None
             obj.score = None
         super().save_model(request, obj, form, change)
+
+
+@admin.register(ProblemReport)
+class ProblemReportAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "reporter",
+        "branch",
+        "section",
+        "issue_type",
+        "status",
+        "created_at",
+        "solved_at",
+    )
+    list_filter = ("status", "issue_type", "branch", "created_at")
+    search_fields = ("description", "question_reference", "reporter__username", "admin_note")
+    readonly_fields = ("created_at", "updated_at", "solved_at")
+    actions = ("mark_as_solved", "mark_as_pending")
+
+    @admin.action(description="Mark selected reports as solved")
+    def mark_as_solved(self, request, queryset):
+        now = timezone.now()
+        queryset.update(status="solved", solved_at=now)
+
+    @admin.action(description="Mark selected reports as pending")
+    def mark_as_pending(self, request, queryset):
+        queryset.update(status="pending", solved_at=None)

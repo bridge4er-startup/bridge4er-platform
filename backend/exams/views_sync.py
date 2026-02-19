@@ -33,17 +33,28 @@ class SyncDropboxQuestionBankView(APIView):
         payload = {
             "branch": branch,
             "replace_existing": replace_existing,
+            "errors": [],
         }
-        with transaction.atomic():
-            if sync_objective:
-                payload["objective"] = sync_objective_mcqs_from_dropbox(
-                    branch=branch,
-                    replace_existing=replace_existing,
-                )
-            if sync_exam_sets:
-                payload["exam_sets"] = sync_exam_sets_from_dropbox(
-                    branch=branch,
-                    replace_existing=replace_existing,
-                )
+        if sync_objective:
+            try:
+                with transaction.atomic():
+                    payload["objective"] = sync_objective_mcqs_from_dropbox(
+                        branch=branch,
+                        replace_existing=replace_existing,
+                    )
+            except Exception as exc:
+                payload["errors"].append({"scope": "objective", "error": str(exc)})
 
+        if sync_exam_sets:
+            try:
+                with transaction.atomic():
+                    payload["exam_sets"] = sync_exam_sets_from_dropbox(
+                        branch=branch,
+                        replace_existing=replace_existing,
+                    )
+            except Exception as exc:
+                payload["errors"].append({"scope": "exam_sets", "error": str(exc)})
+
+        if payload["errors"] and "objective" not in payload and "exam_sets" not in payload:
+            return Response(payload, status=status.HTTP_400_BAD_REQUEST)
         return Response(payload, status=status.HTTP_200_OK)

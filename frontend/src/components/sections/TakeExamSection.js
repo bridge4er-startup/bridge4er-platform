@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { listExamSets } from "../../services/examService";
 import { initiateEsewaPayment, initiateKhaltiPayment } from "../../services/paymentService";
 import toast from "react-hot-toast";
+import TimedLoadingState from "../common/TimedLoadingState";
 
 const EXAM_TYPE_CONTENT = {
   subjective: {
@@ -236,10 +237,7 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
           </div>
 
           {currentLoading ? (
-            <div className="loading">
-              <div className="spinner"></div>
-              <p>Loading question sets...</p>
-            </div>
+            <TimedLoadingState baseMessage="Loading question sets..." />
           ) : currentSets.length > 0 ? (
             <div className="exam-set-grid">{currentSets.map((setItem) => renderSetCard(setItem, selectedExamType))}</div>
           ) : (

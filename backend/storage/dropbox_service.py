@@ -104,7 +104,7 @@ def list_folder(path):
             })
         return entries
     except Exception as e:
-        return []
+        raise Exception(f"Error listing folder: {str(e)}")
 
 
 def list_folder_with_metadata(path, include_dirs=True, recursive=False):
@@ -131,7 +131,7 @@ def list_folder_with_metadata(path, include_dirs=True, recursive=False):
         entries.sort(key=lambda x: x.get('modified', ''), reverse=True)
         return entries
     except Exception as e:
-        return []
+        raise Exception(f"Error listing folder metadata: {str(e)}")
 
 def download_file(path):
     """Download a file from Dropbox"""
@@ -208,7 +208,7 @@ def search_files(path, query):
                 })
         return entries
     except Exception as e:
-        return []
+        raise Exception(f"Error searching files: {str(e)}")
 
 def get_shareable_link(path):
     """Get a shareable link for a file"""

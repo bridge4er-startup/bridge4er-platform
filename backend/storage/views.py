@@ -10,12 +10,13 @@ from django.db.models import Q
 
 from exams.models import ExamSet, MCQQuestion
 from storage.dropbox_service import (
-    download_file, 
-    upload_file, 
+    download_file,
+    upload_file,
     list_folder_with_metadata,
     search_files,
     delete_file,
-    get_shareable_link
+    get_shareable_link,
+    get_file_metadata,
 )
 from storage.models import FileMetadata, PlatformMetrics
 
@@ -62,6 +63,9 @@ def _can_access_content_type(user, content_type):
 def _can_access_path(user, path):
     if not _is_safe_path(path):
         return False
+    is_admin = bool(user and user.is_authenticated and user.is_staff)
+    if not is_admin and not _is_visible_path(path):
+        return False
     lowered = path.lower()
     if any(marker in lowered for marker in PUBLIC_PATH_MARKERS):
         return True
@@ -84,6 +88,96 @@ def _extract_branch_from_path(path):
     return "Civil Engineering"
 
 
+def _as_bool(value, default=False):
+    if value is None:
+        return default
+    return str(value).lower() in {"1", "true", "yes", "on"}
+
+
+def _infer_content_type_from_path(path):
+    lowered = str(path or "").lower()
+    markers = {
+        "notice": "/notice/",
+        "syllabus": "/syllabus/",
+        "old_question": "/old questions/",
+        "subjective": "/subjective/",
+        "take_exam_mcq": "/take exam/multiple choice exam/",
+        "take_exam_subjective": "/take exam/subjective exam/",
+    }
+    for content_type, marker in markers.items():
+        if marker in lowered:
+            return content_type
+    return "notice"
+
+
+def _ensure_metadata_entry(path, content_type=None, branch=None, size=None):
+    if not _is_safe_path(path):
+        return None
+    metadata_obj, _ = FileMetadata.objects.get_or_create(
+        dropbox_path=path,
+        defaults={
+            "name": str(path).split("/")[-1] or "file",
+            "content_type": content_type or _infer_content_type_from_path(path),
+            "branch": branch or _extract_branch_from_path(path),
+            "file_size": int(size or 0),
+            "is_visible": True,
+        },
+    )
+    return metadata_obj
+
+
+def _sync_metadata_from_listing(files, content_type, branch):
+    for item in files:
+        file_path = item.get("path")
+        if not file_path:
+            continue
+        _ensure_metadata_entry(
+            path=file_path,
+            content_type=content_type,
+            branch=branch,
+            size=item.get("size"),
+        )
+        FileMetadata.objects.filter(dropbox_path=file_path).update(
+            name=item.get("name") or (file_path.split("/")[-1] or "file"),
+            content_type=content_type,
+            branch=branch,
+            file_size=int(item.get("size") or 0),
+        )
+
+
+def _visibility_map_for_paths(paths):
+    if not paths:
+        return {}
+    rows = FileMetadata.objects.filter(dropbox_path__in=paths).values("dropbox_path", "is_visible")
+    return {row["dropbox_path"]: bool(row["is_visible"]) for row in rows}
+
+
+def _filter_files_by_visibility(files, include_hidden=False):
+    paths = [item.get("path") for item in files if item.get("path")]
+    visibility = _visibility_map_for_paths(paths)
+    result = []
+    for item in files:
+        path = item.get("path")
+        is_visible = visibility.get(path, True)
+        enriched = {**item, "is_visible": is_visible}
+        if include_hidden or is_visible:
+            result.append(enriched)
+    return result
+
+
+def _is_visible_path(path):
+    row = FileMetadata.objects.filter(dropbox_path=path).values("is_visible").first()
+    if row is None:
+        return True
+    return bool(row["is_visible"])
+
+
+def _sync_exam_sets_for_branch(branch):
+    from exams.dropbox_sync import sync_exam_sets_from_dropbox
+
+    return sync_exam_sets_from_dropbox(branch=branch, replace_existing=True)
+
+
 def _guess_content_type(path):
     guessed, _ = mimetypes.guess_type(path or "")
     return guessed or "application/octet-stream"
@@ -98,7 +192,7 @@ def _effective_metrics_row():
 
 def _computed_platform_metrics():
     User = get_user_model()
-    library_material_count = FileMetadata.objects.filter(content_type="subjective").filter(
+    library_material_count = FileMetadata.objects.filter(content_type="subjective", is_visible=True).filter(
         Q(name__iendswith=".pdf")
         | Q(name__iendswith=".png")
         | Q(name__iendswith=".jpg")
@@ -134,7 +228,10 @@ class ListFilesView(APIView):
         """Get files by content type and branch"""
         content_type = request.GET.get("content_type")  # notice, syllabus, old_question, subjective
         branch = _normalize_branch(request.GET.get("branch", "Civil Engineering"))
-        
+        include_hidden = _as_bool(request.GET.get("include_hidden"), False)
+        if not (request.user and request.user.is_authenticated and request.user.is_staff):
+            include_hidden = False
+
         try:
             if not _can_access_content_type(request.user, content_type):
                 return Response({"error": "Authentication required"}, status=status.HTTP_401_UNAUTHORIZED)
@@ -142,9 +239,11 @@ class ListFilesView(APIView):
             path = _resolve_content_path(content_type, branch)
             if not path:
                 return Response({"error": "Invalid content type"}, status=status.HTTP_400_BAD_REQUEST)
-            
+
             files = list_folder_with_metadata(path, include_dirs=False, recursive=True)
-            return Response(files)
+            _sync_metadata_from_listing(files, content_type=content_type, branch=branch)
+            visible_files = _filter_files_by_visibility(files, include_hidden=include_hidden)
+            return Response(visible_files)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -157,10 +256,13 @@ class SearchFilesView(APIView):
         query = request.GET.get("q")
         branch = _normalize_branch(request.GET.get("branch", "Civil Engineering"))
         content_type = request.GET.get("content_type")
-        
+        include_hidden = _as_bool(request.GET.get("include_hidden"), False)
+        if not (request.user and request.user.is_authenticated and request.user.is_staff):
+            include_hidden = False
+
         if not query:
             return Response({"error": "Query required"}, status=status.HTTP_400_BAD_REQUEST)
-        
+
         try:
             if not _can_access_content_type(request.user, content_type):
                 return Response({"error": "Authentication required"}, status=status.HTTP_401_UNAUTHORIZED)
@@ -168,9 +270,11 @@ class SearchFilesView(APIView):
             path = _resolve_content_path(content_type, branch)
             if not path:
                 return Response({"error": "Invalid content type"}, status=status.HTTP_400_BAD_REQUEST)
-            
+
             results = search_files(path, query)
-            return Response(results)
+            _sync_metadata_from_listing(results, content_type=content_type, branch=branch)
+            visible_results = _filter_files_by_visibility(results, include_hidden=include_hidden)
+            return Response(visible_results)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -254,13 +358,14 @@ class UploadFileView(APIView):
         file = request.FILES.get('file')
         content_type = request.data.get('content_type')
         branch = _normalize_branch(request.data.get('branch', 'Civil Engineering'))
-        
+        requested_visibility = request.data.get("is_visible")
+
         if not file or not content_type:
             return Response(
                 {"error": "File and content_type required"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         try:
             folder = _resolve_content_path(content_type, branch)
             if not folder:
@@ -268,27 +373,95 @@ class UploadFileView(APIView):
                     {"error": "Invalid content type"},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-            
+
             path = f"{folder}/{file.name}"
             metadata = upload_file(path, file)
-            
+
             # Save metadata to database
-            FileMetadata.objects.update_or_create(
+            defaults = {
+                'name': file.name,
+                'content_type': content_type,
+                'branch': branch,
+                'file_size': metadata['size'],
+            }
+            if requested_visibility is not None:
+                defaults["is_visible"] = _as_bool(requested_visibility, True)
+
+            file_meta, _ = FileMetadata.objects.update_or_create(
                 dropbox_path=path,
-                defaults={
-                    'name': file.name,
-                    'content_type': content_type,
-                    'branch': branch,
-                    'file_size': metadata['size'],
-                }
+                defaults=defaults
             )
-            
-            return Response({
+
+            payload = {
                 "message": "File uploaded successfully",
-                "metadata": metadata
-            })
+                "metadata": metadata,
+                "is_visible": file_meta.is_visible,
+            }
+
+            if _is_exam_set_path(path):
+                try:
+                    payload["exam_sets_sync"] = _sync_exam_sets_for_branch(branch)
+                except Exception as sync_error:
+                    payload["exam_sets_sync_error"] = str(sync_error)
+
+            return Response(payload)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class FileVisibilityView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def post(self, request):
+        path = request.data.get("path")
+        if not path:
+            return Response({"error": "Path required"}, status=status.HTTP_400_BAD_REQUEST)
+        if not _is_safe_path(path):
+            return Response({"error": "Invalid path"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if "is_visible" not in request.data:
+            return Response({"error": "is_visible is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        is_visible = _as_bool(request.data.get("is_visible"), True)
+        branch = _extract_branch_from_path(path)
+        content_type = _infer_content_type_from_path(path)
+
+        meta = _ensure_metadata_entry(path=path, content_type=content_type, branch=branch)
+        if meta is None:
+            return Response({"error": "Unable to manage file metadata"}, status=status.HTTP_400_BAD_REQUEST)
+
+        file_size = meta.file_size
+        try:
+            remote = get_file_metadata(path)
+            if remote and remote.get("size") is not None:
+                file_size = int(remote.get("size") or 0)
+        except Exception:
+            # Keep metadata update non-blocking even if live metadata lookup fails.
+            pass
+
+        meta.name = str(path).split("/")[-1] or meta.name
+        meta.content_type = content_type
+        meta.branch = branch
+        meta.file_size = file_size
+        meta.is_visible = is_visible
+        meta.save(update_fields=["name", "content_type", "branch", "file_size", "is_visible", "modified_at"])
+
+        payload = {
+            "message": "Visibility updated",
+            "path": path,
+            "is_visible": is_visible,
+        }
+
+        if _is_exam_set_path(path):
+            updated_count = ExamSet.objects.filter(source_file_path=path).update(is_active=is_visible)
+            payload["exam_sets_updated"] = updated_count
+            if is_visible and updated_count == 0:
+                try:
+                    payload["exam_sets_sync"] = _sync_exam_sets_for_branch(branch)
+                except Exception as sync_error:
+                    payload["exam_sets_sync_error"] = str(sync_error)
+
+        return Response(payload, status=status.HTTP_200_OK)
 
 
 class DeleteFileView(APIView):
@@ -306,12 +479,7 @@ class DeleteFileView(APIView):
             FileMetadata.objects.filter(dropbox_path=path).delete()
             payload = {"message": "File deleted successfully"}
             if _is_exam_set_path(path):
-                from exams.dropbox_sync import sync_exam_sets_from_dropbox
-
-                payload["exam_sets_sync"] = sync_exam_sets_from_dropbox(
-                    branch=_extract_branch_from_path(path),
-                    replace_existing=True,
-                )
+                payload["exam_sets_sync"] = _sync_exam_sets_for_branch(_extract_branch_from_path(path))
             return Response(payload)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)

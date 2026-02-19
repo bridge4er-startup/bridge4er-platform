@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import API from "../../services/api";
 import toast from "react-hot-toast";
 import FilePreviewModal from "../common/FilePreviewModal";
+import TimedLoadingState from "../common/TimedLoadingState";
 
 function inferPreviewType(contentType = "", filename = "") {
   const normalized = String(contentType || "").toLowerCase();
@@ -180,10 +181,7 @@ export default function NoticeSection({ branch = "Civil Engineering", isActive =
       </div>
 
       {loading ? (
-        <div className="loading">
-          <div className="spinner"></div>
-          <p>Loading notices...</p>
-        </div>
+        <TimedLoadingState baseMessage="Loading notices..." />
       ) : filteredFiles.length === 0 ? (
         <div className="empty-state">
           <i className="fas fa-inbox"></i>

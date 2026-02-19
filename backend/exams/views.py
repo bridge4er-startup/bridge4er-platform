@@ -20,3 +20,4 @@ from .views_exam import (
     UserAnalyticsView,
 )
 from .views_sync import SyncDropboxQuestionBankView
+from .views_reports import ProblemReportAdminDetailView, ProblemReportListCreateView

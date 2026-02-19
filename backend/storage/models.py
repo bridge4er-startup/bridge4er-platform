@@ -17,6 +17,7 @@ class FileMetadata(models.Model):
     content_type = models.CharField(max_length=20, choices=CONTENT_TYPE_CHOICES)
     branch = models.CharField(max_length=200)
     file_size = models.BigIntegerField()  # in bytes
+    is_visible = models.BooleanField(default=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
     modified_at = models.DateTimeField(auto_now=True)
     

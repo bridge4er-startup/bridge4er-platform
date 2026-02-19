@@ -8,6 +8,7 @@ from .views import (
     ViewFileView,
     UploadFileView,
     DeleteFileView,
+    FileVisibilityView,
     HomePageMetricsView,
 )
 
@@ -20,5 +21,6 @@ urlpatterns = [
     path('files/preview/', PreviewFileView.as_view()),
     path('files/view/', ViewFileView.as_view()),
     path('files/upload/', UploadFileView.as_view()),
+    path('files/visibility/', FileVisibilityView.as_view()),
     path('files/delete/', DeleteFileView.as_view()),
 ]

@@ -5,6 +5,7 @@ import {
   listSubjectiveSubmissionsForAdmin,
   reviewSubjectiveSubmission,
 } from "../services/examService";
+import { reportService } from "../services/reportService";
 import API from "../services/api";
 import toast from "react-hot-toast";
 
@@ -43,11 +44,14 @@ export default function AdminDashboard() {
   const [bulkQuestionsPath, setBulkQuestionsPath] = useState("");
   const [bulkUploading, setBulkUploading] = useState(false);
   const [syncingDropbox, setSyncingDropbox] = useState(false);
+  const [quickDropboxPath, setQuickDropboxPath] = useState("");
+  const [importingQuickDropboxPath, setImportingQuickDropboxPath] = useState(false);
 
   // Manage Files State
   const [manageContentType, setManageContentType] = useState("notice");
   const [managedFiles, setManagedFiles] = useState([]);
   const [loadingManagedFiles, setLoadingManagedFiles] = useState(false);
+  const [savingManagedFilePath, setSavingManagedFilePath] = useState("");
 
   // Homepage Metrics State
   const [homepageMetrics, setHomepageMetrics] = useState({
@@ -68,6 +72,12 @@ export default function AdminDashboard() {
   const [subjectiveReviewDrafts, setSubjectiveReviewDrafts] = useState({});
   const [subjectiveEditMode, setSubjectiveEditMode] = useState({});
 
+  // Problem Reports State
+  const [problemReports, setProblemReports] = useState([]);
+  const [problemStatusFilter, setProblemStatusFilter] = useState("all");
+  const [loadingProblemReports, setLoadingProblemReports] = useState(false);
+  const [savingProblemReportId, setSavingProblemReportId] = useState(null);
+
   const statusLabel = (value) => {
     const text = String(value || "pending");
     return text.charAt(0).toUpperCase() + text.slice(1);
@@ -82,6 +92,10 @@ export default function AdminDashboard() {
       return { backgroundColor: "#e2e8f0", color: "#334155" };
     }
     return { backgroundColor: "#dbeafe", color: "#1d4ed8" };
+  };
+
+  const normalizeDropboxQuestionSource = (value) => {
+    return String(value || "").trim();
   };
 
   // File Upload Handlers
@@ -231,11 +245,22 @@ export default function AdminDashboard() {
       const objectiveImported = result?.objective?.imported_questions || 0;
       const mcqSetImported = result?.exam_sets?.mcq?.imported_questions || 0;
       const subjectiveSetImported = result?.exam_sets?.subjective?.imported_questions || 0;
-      toast.success(
-        `Dropbox sync complete. Objective: ${objectiveImported}, MCQ sets: ${mcqSetImported}, Subjective sets: ${subjectiveSetImported}`
-      );
+      const errors = Array.isArray(result?.errors) ? result.errors : [];
+      if (errors.length > 0) {
+        const details = errors.map((row) => `${row.scope}: ${row.error}`).join(" | ");
+        toast.error(`Dropbox sync partially failed. ${details}`);
+      } else {
+        toast.success(
+          `Dropbox sync complete. Objective: ${objectiveImported}, MCQ sets: ${mcqSetImported}, Subjective sets: ${subjectiveSetImported}`
+        );
+      }
     } catch (error) {
-      toast.error("Failed to sync question files from Dropbox");
+      const errorRows = error?.response?.data?.errors;
+      const details = Array.isArray(errorRows)
+        ? errorRows.map((row) => `${row.scope}: ${row.error}`).join(" | ")
+        : "";
+      const message = error?.response?.data?.error || details || "Failed to sync question files from Dropbox";
+      toast.error(message);
       console.error(error);
     } finally {
       setSyncingDropbox(false);
@@ -265,7 +290,7 @@ export default function AdminDashboard() {
   const handleLoadManagedFiles = async () => {
     setLoadingManagedFiles(true);
     try {
-      const result = await fileService.listFiles(manageContentType, branch);
+      const result = await fileService.listFiles(manageContentType, branch, true);
       setManagedFiles(result || []);
     } catch (error) {
       toast.error("Failed to load files");
@@ -281,6 +306,80 @@ export default function AdminDashboard() {
       handleLoadManagedFiles();
     } catch (error) {
       toast.error("Failed to delete file");
+    }
+  };
+
+  const handleSetManagedFileVisibility = async (path, isVisible) => {
+    setSavingManagedFilePath(path);
+    try {
+      await fileService.setVisibility(path, isVisible);
+      toast.success(isVisible ? "File is visible on website" : "File hidden from website");
+      await handleLoadManagedFiles();
+    } catch (error) {
+      toast.error(error?.response?.data?.error || "Failed to update file visibility");
+    } finally {
+      setSavingManagedFilePath("");
+    }
+  };
+
+  const handleImportQuestionsFromDropboxLink = async () => {
+    const source = normalizeDropboxQuestionSource(quickDropboxPath);
+    if (!source) {
+      toast.error("Please enter Dropbox file path/link");
+      return;
+    }
+    if (!selectedChapterId) {
+      toast.error("Please select a chapter first");
+      return;
+    }
+
+    setImportingQuickDropboxPath(true);
+    try {
+      const result = await mcqService.bulkUploadQuestionsFromPath(selectedChapterId, source);
+      toast.success(result?.message || "Questions imported from Dropbox link.");
+      setQuickDropboxPath("");
+    } catch (error) {
+      toast.error(error?.response?.data?.error || "Failed to import questions from Dropbox link");
+    } finally {
+      setImportingQuickDropboxPath(false);
+    }
+  };
+
+  const loadProblemReports = async (statusFilter = problemStatusFilter) => {
+    setLoadingProblemReports(true);
+    try {
+      const result = await reportService.listReports(statusFilter);
+      setProblemReports(result || []);
+    } catch (error) {
+      toast.error(error?.response?.data?.error || "Failed to load reports");
+    } finally {
+      setLoadingProblemReports(false);
+    }
+  };
+
+  const handleSolveProblemReport = async (reportId) => {
+    setSavingProblemReportId(reportId);
+    try {
+      await reportService.updateReport(reportId, { status: "solved" });
+      toast.success("Report marked as solved");
+      await loadProblemReports(problemStatusFilter);
+    } catch (error) {
+      toast.error(error?.response?.data?.error || "Failed to update report");
+    } finally {
+      setSavingProblemReportId(null);
+    }
+  };
+
+  const handleDeleteProblemReport = async (reportId) => {
+    setSavingProblemReportId(reportId);
+    try {
+      await reportService.deleteReport(reportId);
+      toast.success("Report deleted");
+      await loadProblemReports(problemStatusFilter);
+    } catch (error) {
+      toast.error(error?.response?.data?.error || "Failed to delete report");
+    } finally {
+      setSavingProblemReportId(null);
     }
   };
 
@@ -528,6 +627,25 @@ export default function AdminDashboard() {
             }}
           >
             Review Subjective
+          </button>
+          <button
+            onClick={() => {
+              setActiveTab("problem-reports");
+              loadProblemReports();
+            }}
+            style={{
+              padding: "0.5rem 1.5rem",
+              backgroundColor:
+                activeTab === "problem-reports" ? "#007bff" : "transparent",
+              color: activeTab === "problem-reports" ? "white" : "#333",
+              border: "none",
+              cursor: "pointer",
+              borderBottom:
+                activeTab === "problem-reports" ? "3px solid #007bff" : "none",
+              marginBottom: "-2px",
+            }}
+          >
+            Problem Reports
           </button>
         </div>
 
@@ -860,6 +978,141 @@ export default function AdminDashboard() {
           </div>
         )}
 
+        {activeTab === "problem-reports" && (
+          <div
+            style={{
+              backgroundColor: "white",
+              padding: "2rem",
+              borderRadius: "8px",
+              boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+            }}
+          >
+            <h2>Problem Reports</h2>
+            <p style={{ color: "#666", marginBottom: "1rem" }}>
+              Students report question bugs/errors here. Mark solved after correction, then delete when no longer needed.
+            </p>
+
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: "0.75rem",
+                alignItems: "flex-end",
+                marginBottom: "1.2rem",
+              }}
+            >
+              <div style={{ minWidth: "220px" }}>
+                <label style={{ display: "block", marginBottom: "0.35rem" }}>Status Filter</label>
+                <select
+                  value={problemStatusFilter}
+                  onChange={(e) => setProblemStatusFilter(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "0.6rem",
+                    borderRadius: "4px",
+                    border: "1px solid #ddd",
+                  }}
+                >
+                  <option value="all">All</option>
+                  <option value="pending">Pending</option>
+                  <option value="solved">Solved</option>
+                </select>
+              </div>
+              <button
+                className="btn btn-secondary"
+                onClick={() => loadProblemReports(problemStatusFilter)}
+              >
+                Load Reports
+              </button>
+            </div>
+
+            {loadingProblemReports ? (
+              <p>Loading reports...</p>
+            ) : problemReports.length === 0 ? (
+              <p>No reports found.</p>
+            ) : (
+              <div style={{ display: "grid", gap: "1rem" }}>
+                {problemReports.map((report) => {
+                  const isSavingCurrent = savingProblemReportId === report.id;
+                  const isSolved = String(report.status || "").toLowerCase() === "solved";
+                  return (
+                    <article
+                      key={report.id}
+                      style={{
+                        border: "1px solid #dbe4f0",
+                        borderRadius: "10px",
+                        padding: "1rem",
+                        backgroundColor: "#f8fbff",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: "1rem",
+                          flexWrap: "wrap",
+                          marginBottom: "0.6rem",
+                        }}
+                      >
+                        <div>
+                          <h4 style={{ marginBottom: "0.2rem" }}>
+                            {report.reporter_name || report.reporter_username || "Student"} -{" "}
+                            {String(report.issue_type || "other").replace("_", " ")}
+                          </h4>
+                          <p style={{ marginBottom: "0.2rem", color: "#475569", fontSize: "0.92rem" }}>
+                            <strong>Branch:</strong> {report.branch || "N/A"} | <strong>Section:</strong>{" "}
+                            {report.section || "N/A"}
+                          </p>
+                          <p style={{ marginBottom: "0.2rem", color: "#475569", fontSize: "0.92rem" }}>
+                            <strong>Reference:</strong> {report.question_reference || "N/A"}
+                          </p>
+                          <p style={{ marginBottom: 0, color: "#334155" }}>{report.description}</p>
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          <span
+                            style={{
+                              padding: "0.3rem 0.65rem",
+                              borderRadius: "999px",
+                              fontSize: "0.74rem",
+                              fontWeight: "700",
+                              backgroundColor: isSolved ? "#dcfce7" : "#dbeafe",
+                              color: isSolved ? "#166534" : "#1d4ed8",
+                            }}
+                          >
+                            {isSolved ? "Solved" : "Pending"}
+                          </span>
+                          <p style={{ marginTop: "0.5rem", color: "#64748b", fontSize: "0.85rem" }}>
+                            {report.created_at
+                              ? new Date(report.created_at).toLocaleString("en-US")
+                              : "N/A"}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.6rem" }}>
+                        <button
+                          className="btn btn-secondary"
+                          onClick={() => handleSolveProblemReport(report.id)}
+                          disabled={isSavingCurrent || isSolved}
+                        >
+                          {isSavingCurrent && !isSolved ? "Saving..." : "Mark Solved"}
+                        </button>
+                        <button
+                          className="btn btn-primary"
+                          onClick={() => handleDeleteProblemReport(report.id)}
+                          disabled={isSavingCurrent}
+                        >
+                          {isSavingCurrent ? "Deleting..." : "Delete"}
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Upload Files Tab */}
         {activeTab === "upload-files" && (
           <div
@@ -949,6 +1202,89 @@ export default function AdminDashboard() {
             >
               {uploadingFile ? "Uploading..." : "Upload File"}
             </button>
+
+            <hr style={{ margin: "1.5rem 0" }} />
+
+            <h3 style={{ marginBottom: "0.8rem" }}>Load Questions from Dropbox Link</h3>
+            <p style={{ color: "#64748b", marginBottom: "0.8rem" }}>
+              Paste Dropbox file path/link and import questions directly to a chapter.
+            </p>
+
+            {subjects.length === 0 ? (
+              <button className="btn btn-secondary" onClick={handleLoadSubjects} style={{ marginBottom: "1rem" }}>
+                Load Subjects
+              </button>
+            ) : (
+              <>
+                <div style={{ marginBottom: "0.9rem" }}>
+                  <label style={{ display: "block", marginBottom: "0.4rem" }}>Subject:</label>
+                  <select
+                    value={selectedSubject}
+                    onChange={(e) => handleSelectSubject(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "0.5rem",
+                      borderRadius: "4px",
+                      border: "1px solid #ddd",
+                    }}
+                  >
+                    <option value="">Choose a subject...</option>
+                    {subjects.map((s) => (
+                      <option key={s.id || s.name} value={s.name || s}>
+                        {s.name || s}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {selectedSubject ? (
+                  <div style={{ marginBottom: "0.9rem" }}>
+                    <label style={{ display: "block", marginBottom: "0.4rem" }}>Chapter:</label>
+                    <select
+                      value={selectedChapterId}
+                      onChange={(e) => setSelectedChapterId(e.target.value)}
+                      style={{
+                        width: "100%",
+                        padding: "0.5rem",
+                        borderRadius: "4px",
+                        border: "1px solid #ddd",
+                      }}
+                    >
+                      <option value="">Choose a chapter...</option>
+                      {chapters.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : null}
+
+                <div style={{ marginBottom: "0.9rem" }}>
+                  <label style={{ display: "block", marginBottom: "0.4rem" }}>Dropbox Path/Link:</label>
+                  <input
+                    type="text"
+                    placeholder="/bridge4er/.../questions.xlsx or https://www.dropbox.com/..."
+                    value={quickDropboxPath}
+                    onChange={(e) => setQuickDropboxPath(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "0.5rem",
+                      borderRadius: "4px",
+                      border: "1px solid #ddd",
+                    }}
+                  />
+                </div>
+
+                <button
+                  className="btn btn-primary"
+                  onClick={handleImportQuestionsFromDropboxLink}
+                  disabled={importingQuickDropboxPath || !selectedChapterId || !quickDropboxPath.trim()}
+                >
+                  {importingQuickDropboxPath ? "Importing..." : "Import Questions from Dropbox"}
+                </button>
+              </>
+            )}
           </div>
         )}
 
@@ -1007,12 +1343,33 @@ export default function AdminDashboard() {
                       <div className="file-details">
                         <h4>{f.name}</h4>
                         <p>{f.path}</p>
+                        <p style={{ marginTop: "0.3rem", fontSize: "0.85rem", color: f.is_visible ? "#047857" : "#b91c1c" }}>
+                          {f.is_visible ? "Visible on website" : "Hidden from website"}
+                        </p>
                       </div>
                     </div>
                     <div className="file-actions">
+                      {f.is_visible ? (
+                        <button
+                          className="btn btn-secondary"
+                          onClick={() => handleSetManagedFileVisibility(f.path, false)}
+                          disabled={savingManagedFilePath === f.path}
+                        >
+                          {savingManagedFilePath === f.path ? "Saving..." : "Hide"}
+                        </button>
+                      ) : (
+                        <button
+                          className="btn btn-secondary"
+                          onClick={() => handleSetManagedFileVisibility(f.path, true)}
+                          disabled={savingManagedFilePath === f.path}
+                        >
+                          {savingManagedFilePath === f.path ? "Saving..." : "Show on Website"}
+                        </button>
+                      )}
                       <button
-                        className="btn btn-secondary"
+                        className="btn btn-primary"
                         onClick={() => handleDeleteManagedFile(f.path)}
+                        disabled={savingManagedFilePath === f.path}
                       >
                         Delete
                       </button>
@@ -1250,7 +1607,7 @@ export default function AdminDashboard() {
           >
             <h2>Bulk Upload MCQs from CSV/JSON/Excel</h2>
             <p style={{color: '#666', marginBottom: '1rem'}}>
-              Upload a CSV/TSV/JSON/XLSX/XLS file or enter a backend/dropbox file path. Columns: question_header, question_text, question_image_url, option_a, option_b, option_c, option_d, correct_option, explanation
+              Upload a CSV/TSV/JSON/XLSX/XLS file or enter a backend/dropbox file path/link. Columns: question_header, question_text, question_image_url, option_a, option_b, option_c, option_d, correct_option, explanation
             </p>
             <div style={{ marginBottom: "1rem" }}>
               <button
@@ -1362,11 +1719,11 @@ export default function AdminDashboard() {
 
                     <div style={{ marginBottom: "1.5rem" }}>
                       <label style={{ display: "block", marginBottom: "0.5rem" }}>
-                        Or File Path (Backend/Dropbox):
+                        Or File Path/Link (Backend/Dropbox):
                       </label>
                       <input
                         type="text"
-                        placeholder="exams/objective_questions_template.csv or /bridge4er/Civil Engineering/Take Exam/Multiple Choice Exam/questions.xlsx"
+                        placeholder="exams/objective_questions_template.csv or /bridge4er/.../questions.xlsx or https://www.dropbox.com/..."
                         value={bulkQuestionsPath}
                         onChange={(e) => setBulkQuestionsPath(e.target.value)}
                         style={{

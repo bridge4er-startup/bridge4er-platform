@@ -27,7 +27,13 @@ def _is_supported_file(path: str) -> bool:
 
 
 def _list_supported_files(root_path: str) -> list[str]:
-    entries = list_folder_with_metadata(root_path, include_dirs=False, recursive=True)
+    try:
+        entries = list_folder_with_metadata(root_path, include_dirs=False, recursive=True)
+    except Exception as exc:
+        lowered = str(exc).lower()
+        if "not_found" in lowered or "path" in lowered:
+            return []
+        raise
     files: list[str] = []
     for entry in entries:
         file_path = entry.get("path") or ""
@@ -40,7 +46,14 @@ def _list_supported_files(root_path: str) -> list[str]:
 
 
 def _folder_signature(root_path: str) -> str:
-    entries = list_folder_with_metadata(root_path, include_dirs=False, recursive=True)
+    try:
+        entries = list_folder_with_metadata(root_path, include_dirs=False, recursive=True)
+    except Exception as exc:
+        lowered = str(exc).lower()
+        if "not_found" in lowered or "path" in lowered:
+            entries = []
+        else:
+            raise
     rows = []
     for entry in entries:
         file_path = entry.get("path") or ""

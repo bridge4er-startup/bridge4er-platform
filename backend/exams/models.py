@@ -177,3 +177,44 @@ class SubjectiveSubmission(models.Model):
         self.feedback = feedback
         self.reviewed_at = timezone.now()
         self.save(update_fields=['status', 'score', 'feedback', 'reviewed_at'])
+
+
+class ProblemReport(models.Model):
+    ISSUE_TYPE_CHOICES = [
+        ("question_error", "Question Error"),
+        ("answer_error", "Answer Error"),
+        ("technical_bug", "Technical Bug"),
+        ("other", "Other"),
+    ]
+
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("solved", "Solved"),
+    ]
+
+    reporter = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="problem_reports",
+    )
+    branch = models.CharField(max_length=200, default="Civil Engineering")
+    section = models.CharField(max_length=120, blank=True, default="")
+    issue_type = models.CharField(max_length=40, choices=ISSUE_TYPE_CHOICES, default="other")
+    question_reference = models.CharField(max_length=500, blank=True, default="")
+    description = models.TextField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    admin_note = models.TextField(blank=True, default="")
+    solved_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def mark_solved(self, admin_note=""):
+        self.status = "solved"
+        self.admin_note = str(admin_note or "").strip()
+        self.solved_at = timezone.now()
+        self.save(update_fields=["status", "admin_note", "solved_at", "updated_at"])
