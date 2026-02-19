@@ -5184,6 +5184,7 @@ footer {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-wrap: wrap;
   gap: 0.55rem;
   padding: 0.45rem 0.55rem;
   border-bottom: 1px solid #e5edf8;
@@ -5202,6 +5203,73 @@ footer {
   font-weight: 600;
 }
 
+.file-preview-page-input-wrap,
+.file-preview-page-select-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  color: #334155;
+  font-weight: 600;
+}
+
+.file-preview-page-input,
+.file-preview-page-select {
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 0.2rem 0.35rem;
+  min-height: 30px;
+  background: #fff;
+  color: #0f172a;
+  font-size: 0.9rem;
+}
+
+.file-preview-page-input {
+  width: 64px;
+}
+
+.file-preview-page-select {
+  width: 82px;
+}
+
+.file-preview-viewer {
+  width: 100%;
+  min-height: 100%;
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 0.35rem;
+  overflow: auto;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.file-preview-canvas {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+
+.file-preview-message {
+  padding: 1rem;
+  text-align: center;
+  color: #475569;
+  font-size: 0.95rem;
+}
+
+.file-preview-image-wrap {
+  width: 100%;
+  min-height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 0.35rem;
+  overflow: auto;
+  background: #ffffff;
+  border-radius: 8px;
+}
+
 .file-preview-frame {
   flex: 1;
   width: 100%;
@@ -5212,11 +5280,15 @@ footer {
 }
 
 .file-preview-image {
-  flex: 1;
-  width: 100%;
+  display: block;
+  max-width: 100%;
+  width: auto;
+  height: auto;
   object-fit: contain;
   border-radius: 10px;
   background: #fff;
+  transform-origin: top center;
+  transition: transform 0.15s ease;
 }
 
 .file-preview-note {
