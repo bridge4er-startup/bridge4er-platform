@@ -5,6 +5,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 from dotenv import load_dotenv
+from django.db.backends.signals import connection_created
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
@@ -26,10 +27,11 @@ def env_list(name, default=""):
 
 def build_database_config():
     database_url = os.getenv("DATABASE_URL", "").strip()
+    default_sqlite_path = BASE_DIR.parent / "db.sqlite3"
     if not database_url:
         return {
             "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
+            "NAME": default_sqlite_path,
         }
 
     parsed = urlparse(database_url)
@@ -49,7 +51,7 @@ def build_database_config():
     if scheme in {"sqlite", "sqlite3"}:
         db_path = unquote(parsed.path or "")
         if not db_path or db_path == "/":
-            db_name = BASE_DIR / "db.sqlite3"
+            db_name = default_sqlite_path
         else:
             db_name = Path(db_path)
             if not db_name.is_absolute():
@@ -148,6 +150,18 @@ WSGI_APPLICATION = "bridge4er.wsgi.application"
 
 DATABASES = {"default": build_database_config()}
 
+
+def _configure_sqlite_connection(sender, connection, **kwargs):
+    if connection.vendor != "sqlite":
+        return
+    cursor = connection.cursor()
+    # Keep journal file persistent so SQLite does not need delete permissions.
+    cursor.execute("PRAGMA journal_mode=PERSIST;")
+    cursor.execute("PRAGMA synchronous=NORMAL;")
+
+
+connection_created.connect(_configure_sqlite_connection)
+
 if DEBUG:
     AUTH_PASSWORD_VALIDATORS = []
 else:
@@ -196,6 +210,7 @@ X_FRAME_OPTIONS = os.getenv("X_FRAME_OPTIONS", "DENY")
 # App behavior toggles
 SHOW_OTP_IN_RESPONSE = env_bool("SHOW_OTP_IN_RESPONSE", DEBUG)
 ALLOW_INSECURE_PAYMENT_VERIFICATION = env_bool("ALLOW_INSECURE_PAYMENT_VERIFICATION", DEBUG)
+ENABLE_DEMO_EXAM_SETS = env_bool("ENABLE_DEMO_EXAM_SETS", DEBUG)
 
 # Public URLs used in payment callbacks
 FRONTEND_PUBLIC_URL = os.getenv("FRONTEND_PUBLIC_URL", "http://localhost:3000").rstrip("/")

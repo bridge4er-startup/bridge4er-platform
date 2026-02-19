@@ -72,6 +72,18 @@ def _is_subjective_path(path):
     return "/subjective/" in (path or "").lower()
 
 
+def _is_exam_set_path(path):
+    lowered = (path or "").lower()
+    return "/take exam/multiple choice exam/" in lowered or "/take exam/subjective exam/" in lowered
+
+
+def _extract_branch_from_path(path):
+    parts = [segment for segment in (path or "").split("/") if segment]
+    if len(parts) >= 2 and parts[0].lower() == "bridge4er":
+        return _normalize_branch(parts[1])
+    return "Civil Engineering"
+
+
 def _guess_content_type(path):
     guessed, _ = mimetypes.guess_type(path or "")
     return guessed or "application/octet-stream"
@@ -292,7 +304,15 @@ class DeleteFileView(APIView):
         try:
             delete_file(path)
             FileMetadata.objects.filter(dropbox_path=path).delete()
-            return Response({"message": "File deleted successfully"})
+            payload = {"message": "File deleted successfully"}
+            if _is_exam_set_path(path):
+                from exams.dropbox_sync import sync_exam_sets_from_dropbox
+
+                payload["exam_sets_sync"] = sync_exam_sets_from_dropbox(
+                    branch=_extract_branch_from_path(path),
+                    replace_existing=True,
+                )
+            return Response(payload)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 

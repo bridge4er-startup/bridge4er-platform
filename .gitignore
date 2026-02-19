@@ -5,6 +5,7 @@ __pycache__/
 *.pyd
 *.log
 *.sqlite3
+*.sqlite3-journal
 
 # Virtual environments
 venv/
@@ -40,3 +41,10 @@ frontend/build_verify_*/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Local terminal test artifacts
+perm_test_tmp.txt
+write_test_root.txt
+frontend/perm_test_tmp.txt
+frontend/src/perm_test_tmp.txt
+frontend/write_test_front.txt

@@ -249,6 +249,48 @@ def _manual_import_exam_set(exam_set: ExamSet, normalized_rows: list[dict]) -> d
     return {"new": created, "updated": 0, "imported": created, "skipped": skipped, "error_rows": 0}
 
 
+def _resolve_exam_set_for_file(branch: str, exam_type: str, source_set_name: str, desired_name: str, file_path: str):
+    by_source_path = (
+        ExamSet.objects.filter(
+            branch=branch,
+            exam_type=exam_type,
+            source_file_path=file_path,
+        )
+        .order_by("-id")
+        .first()
+    )
+    if by_source_path:
+        return by_source_path, False
+
+    by_source_name = (
+        ExamSet.objects.filter(
+            branch=branch,
+            exam_type=exam_type,
+            name=source_set_name,
+        )
+        .order_by("-id")
+        .first()
+    )
+    if by_source_name:
+        return by_source_name, False
+
+    if desired_name and desired_name != source_set_name:
+        by_desired_name = (
+            ExamSet.objects.filter(
+                branch=branch,
+                exam_type=exam_type,
+                name=desired_name,
+                managed_by_sync=True,
+            )
+            .order_by("-id")
+            .first()
+        )
+        if by_desired_name:
+            return by_desired_name, False
+
+    return None, True
+
+
 def sync_objective_mcqs_from_dropbox(branch: str, replace_existing: bool = True) -> dict:
     root_path = f"/bridge4er/{branch}/Objective MCQs/Subjects"
     file_paths = _list_supported_files(root_path)
@@ -340,12 +382,14 @@ def _sync_exam_set_type(branch: str, exam_type: str, root_path: str, replace_exi
         "discovered_files": len(file_paths),
         "processed_files": 0,
         "sets_created": 0,
+        "sets_deactivated": 0,
         "imported_questions": 0,
         "skipped_rows": 0,
         "skipped_files": 0,
         "error_files": 0,
         "files": [],
     }
+    synced_set_ids: set[int] = set()
 
     for file_path in file_paths:
         item = {"path": file_path, "status": "ok", "imported": 0, "skipped": 0}
@@ -376,13 +420,23 @@ def _sync_exam_set_type(branch: str, exam_type: str, root_path: str, replace_exi
                 exam_info=exam_info,
                 instructions=instructions,
             )
+            desired_name = set_updates.get("name") or source_set_name
 
-            exam_set, created = ExamSet.objects.get_or_create(
-                name=source_set_name,
+            exam_set, should_create = _resolve_exam_set_for_file(
                 branch=branch,
                 exam_type=exam_type,
-                defaults={key: value for key, value in set_updates.items() if key != "name"},
+                source_set_name=source_set_name,
+                desired_name=desired_name,
+                file_path=file_path,
             )
+            created = False
+            if should_create:
+                exam_set = ExamSet(
+                    name=source_set_name,
+                    branch=branch,
+                    exam_type=exam_type,
+                )
+                created = True
             if created:
                 result["sets_created"] += 1
 
@@ -393,7 +447,10 @@ def _sync_exam_set_type(branch: str, exam_type: str, root_path: str, replace_exi
                 setattr(exam_set, field_name, field_value)
                 update_fields.append(field_name)
 
-            desired_name = set_updates.get("name") or source_set_name
+            exam_set.managed_by_sync = True
+            exam_set.source_file_path = file_path
+            update_fields.extend(["managed_by_sync", "source_file_path"])
+
             has_name_conflict = (
                 ExamSet.objects.filter(name=desired_name, branch=branch, exam_type=exam_type)
                 .exclude(id=exam_set.id)
@@ -403,13 +460,16 @@ def _sync_exam_set_type(branch: str, exam_type: str, root_path: str, replace_exi
                 exam_set.name = desired_name
                 update_fields.append("name")
 
-            if update_fields:
+            if created:
+                exam_set.save()
+            elif update_fields:
                 exam_set.save(update_fields=sorted(set(update_fields)))
 
             if replace_existing:
                 exam_set.questions.all().delete()
 
             import_summary = _import_exam_set_with_resource(exam_set, valid_rows)
+            synced_set_ids.add(exam_set.id)
 
             item["exam_set"] = exam_set.name
             item["imported"] = int(import_summary.get("imported", 0))
@@ -427,6 +487,20 @@ def _sync_exam_set_type(branch: str, exam_type: str, root_path: str, replace_exi
             item["error"] = str(exc)
             result["error_files"] += 1
         result["files"].append(item)
+
+    if result["error_files"] == 0:
+        stale_qs = (
+            ExamSet.objects.filter(
+                branch=branch,
+                exam_type=exam_type,
+                managed_by_sync=True,
+                is_active=True,
+            )
+            .exclude(id__in=list(synced_set_ids))
+        )
+        result["sets_deactivated"] = stale_qs.update(is_active=False)
+    else:
+        result["prune_skipped"] = "sync_errors"
 
     return result
 
@@ -463,12 +537,13 @@ def auto_sync_dropbox_for_branch(
 
     current_signature = hashlib.sha1(json.dumps(signatures, sort_keys=True).encode("utf-8")).hexdigest()
     previous_signature = cache.get(sig_key)
-    if previous_signature and previous_signature == current_signature:
+    signature_changed = previous_signature != current_signature
+    if not signature_changed:
         return {"status": "skipped", "reason": "no_changes"}
 
     now = time.time()
     last_run = cache.get(cache_key)
-    if last_run and (now - float(last_run)) < max(5, int(cooldown_seconds)):
+    if previous_signature is None and last_run and (now - float(last_run)) < max(5, int(cooldown_seconds)):
         return {"status": "skipped", "reason": "cooldown"}
 
     cache.set(cache_key, now, timeout=max(5, int(cooldown_seconds)))

@@ -138,6 +138,7 @@ def _ensure_demo_exam_sets(branch: str, exam_type: str | None = None):
             grace_seconds=60,
             negative_marking=Decimal("0.25"),
             is_active=True,
+            managed_by_sync=False,
         )
         paid_set = ExamSet.objects.create(
             name="MCQ Premium Mock Set",
@@ -151,6 +152,7 @@ def _ensure_demo_exam_sets(branch: str, exam_type: str | None = None):
             grace_seconds=120,
             negative_marking=Decimal("0.25"),
             is_active=True,
+            managed_by_sync=False,
         )
 
         for target_set in (free_set, paid_set):
@@ -186,6 +188,7 @@ def _ensure_demo_exam_sets(branch: str, exam_type: str | None = None):
             grace_seconds=120,
             negative_marking=Decimal("0"),
             is_active=True,
+            managed_by_sync=False,
         )
         paid_set = ExamSet.objects.create(
             name="Subjective Premium Review Set",
@@ -199,6 +202,7 @@ def _ensure_demo_exam_sets(branch: str, exam_type: str | None = None):
             grace_seconds=300,
             negative_marking=Decimal("0"),
             is_active=True,
+            managed_by_sync=False,
         )
 
         for target_set in (free_set, paid_set):
@@ -215,6 +219,12 @@ def _ensure_demo_exam_sets(branch: str, exam_type: str | None = None):
         _create_mcq_sets()
     if exam_type in (None, "subjective"):
         _create_subjective_sets()
+
+
+def _maybe_seed_demo_exam_sets(branch: str, exam_type: str | None = None):
+    if not getattr(settings, "ENABLE_DEMO_EXAM_SETS", settings.DEBUG):
+        return
+    _ensure_demo_exam_sets(branch, exam_type)
 
 
 def _is_unlocked_for_user(exam_set: ExamSet, user) -> bool:
@@ -444,7 +454,7 @@ class ExamSetListView(APIView):
             replace_existing=True,
             cooldown_seconds=60,
         )
-        _ensure_demo_exam_sets(branch, exam_type)
+        _maybe_seed_demo_exam_sets(branch, exam_type)
 
         queryset = ExamSet.objects.filter(branch=branch, is_active=True)
         if exam_type:
@@ -493,6 +503,7 @@ class CreateExamSetView(APIView):
             grace_seconds=int(request.data.get("grace_seconds", default_payload["grace_seconds"])),
             negative_marking=Decimal(str(request.data.get("negative_marking", default_payload["negative_marking"]))),
             is_active=True,
+            managed_by_sync=False,
         )
 
         serializer = ExamSetSerializer(exam_set, context={"request": request})
@@ -902,7 +913,7 @@ class LoadMCQExam(APIView):
     def get(self, request):
         path = request.GET.get("path", "")
         branch, set_name = _parse_exam_from_legacy_path(path)
-        _ensure_demo_exam_sets(branch, "mcq")
+        _maybe_seed_demo_exam_sets(branch, "mcq")
 
         exam_set = ExamSet.objects.filter(branch=branch, exam_type="mcq", name=set_name, is_active=True).first()
         if not exam_set:
@@ -943,7 +954,7 @@ class LoadSubjectiveExam(APIView):
     def get(self, request):
         path = request.GET.get("path", "")
         branch, set_name = _parse_exam_from_legacy_path(path)
-        _ensure_demo_exam_sets(branch, "subjective")
+        _maybe_seed_demo_exam_sets(branch, "subjective")
 
         exam_set = ExamSet.objects.filter(
             branch=branch,
@@ -1008,7 +1019,7 @@ class UploadSubjective(APIView):
         email = request.data.get("email", "")
         mobile = request.data.get("mobile_number") or request.data.get("mobile") or ""
 
-        _ensure_demo_exam_sets(branch, "subjective")
+        _maybe_seed_demo_exam_sets(branch, "subjective")
         exam_set = ExamSet.objects.filter(branch=branch, exam_type="subjective", name=set_name, is_active=True).first()
         if not exam_set:
             exam_set = ExamSet.objects.filter(branch=branch, exam_type="subjective", is_active=True).first()
