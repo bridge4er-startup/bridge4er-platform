@@ -60,18 +60,17 @@ export default function FilePreviewModal({ preview, onClose }) {
   const [pdfError, setPdfError] = useState("");
   const [renderTick, setRenderTick] = useState(0);
 
-  if (!preview) return null;
-
-  const isPdf = preview.type === "pdf";
-  const isImage = preview.type === "image";
+  const isPdf = preview?.type === "pdf";
+  const isImage = preview?.type === "image";
 
   useEffect(() => {
+    if (!preview) return undefined;
     const onEscape = (event) => {
       if (event.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onEscape);
     return () => window.removeEventListener("keydown", onEscape);
-  }, [onClose]);
+  }, [preview, onClose]);
 
   useEffect(() => {
     if (!preview || !isPdf) {
@@ -209,6 +208,8 @@ export default function FilePreviewModal({ preview, onClose }) {
       cancelled = true;
     };
   }, [isPdf, pdfReady, renderTick]);
+
+  if (!preview) return null;
 
   return (
     <div className="payment-overlay" onClick={onClose}>
