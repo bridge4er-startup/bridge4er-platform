@@ -56,6 +56,7 @@ export default function FilePreviewModal({ preview, onClose }) {
   const bodyRef = useRef(null);
   const viewerRef = useRef(null);
   const pdfRef = useRef(null);
+  const pinchRef = useRef({ distance: null });
 
   const [pdfReady, setPdfReady] = useState(false);
   const [pdfError, setPdfError] = useState("");
@@ -228,6 +229,40 @@ export default function FilePreviewModal({ preview, onClose }) {
     setImageZoom((prev) => clamp(Number((prev + delta).toFixed(2)), 0.3, 4));
   };
 
+  const getTouchDistance = (touches) => {
+    if (!touches || touches.length < 2) return null;
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  const handleTouchStart = (event) => {
+    pinchRef.current.distance = getTouchDistance(event.touches);
+  };
+
+  const handleTouchMove = (event) => {
+    if (!event.touches || event.touches.length < 2) return;
+    const previous = pinchRef.current.distance;
+    const current = getTouchDistance(event.touches);
+    if (!previous || !current) return;
+
+    const ratioDelta = (current - previous) / previous;
+    const zoomDelta = ratioDelta * 0.6;
+    if (Math.abs(zoomDelta) < 0.005) return;
+
+    event.preventDefault();
+    if (isPdf) {
+      zoomPdf(zoomDelta);
+    } else if (isImage) {
+      zoomImage(zoomDelta);
+    }
+    pinchRef.current.distance = current;
+  };
+
+  const handleTouchEnd = () => {
+    pinchRef.current.distance = null;
+  };
+
   const handleWheelZoom = (event) => {
     if (event.shiftKey) return;
     event.preventDefault();
@@ -252,52 +287,35 @@ export default function FilePreviewModal({ preview, onClose }) {
           </button>
         </div>
 
-        <div className="file-preview-controls">
-          {isPdf ? (
-            <>
-              <button type="button" className="btn btn-secondary btn-soft-blue-action" onClick={() => zoomPdf(-0.1)}>
-                Zoom -
-              </button>
-              <span className="file-preview-page-label">{Math.round(pdfZoom * 100)}%</span>
-              <button type="button" className="btn btn-secondary btn-soft-blue-action" onClick={() => zoomPdf(0.1)}>
-                Zoom +
-              </button>
-              <button type="button" className="btn btn-secondary btn-soft-blue-action" onClick={() => setPdfZoom(1)}>
-                Reset
-              </button>
-            </>
-          ) : null}
-
-          {isImage ? (
-            <>
-              <button type="button" className="btn btn-secondary btn-soft-blue-action" onClick={() => zoomImage(-0.1)}>
-                Zoom -
-              </button>
-              <span className="file-preview-page-label">{Math.round(imageZoom * 100)}%</span>
-              <button type="button" className="btn btn-secondary btn-soft-blue-action" onClick={() => zoomImage(0.1)}>
-                Zoom +
-              </button>
-              <button type="button" className="btn btn-secondary btn-soft-blue-action" onClick={() => setImageZoom(1)}>
-                Reset
-              </button>
-            </>
-          ) : null}
-        </div>
-
         <div className="file-preview-modal-body" ref={bodyRef}>
           {isPdf ? (
             <>
               {isRendering ? <div className="file-preview-message">Rendering document...</div> : null}
               {pdfError ? <div className="file-preview-message">{pdfError}</div> : null}
-            <div className="file-preview-viewer" ref={viewerRef} onWheel={handleWheelZoom}></div>
-          </>
-        ) : null}
+              <div
+                className="file-preview-viewer"
+                ref={viewerRef}
+                onWheel={handleWheelZoom}
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
+                onTouchCancel={handleTouchEnd}
+              ></div>
+            </>
+          ) : null}
 
-        {isImage ? (
-          <div className="file-preview-image-wrap" onWheel={handleWheelZoom}>
-            <img
-              src={preview.url}
-              alt={preview.name}
+          {isImage ? (
+            <div
+              className="file-preview-image-wrap"
+              onWheel={handleWheelZoom}
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
+              onTouchCancel={handleTouchEnd}
+            >
+              <img
+                src={preview.url}
+                alt={preview.name}
                 className="file-preview-image"
                 style={{ transform: `scale(${imageZoom})` }}
               />

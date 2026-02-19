@@ -5180,29 +5180,6 @@ footer {
   overflow: auto;
 }
 
-.file-preview-controls {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 0.55rem;
-  padding: 0.45rem 0.55rem;
-  border-bottom: 1px solid #e5edf8;
-  background: #ffffff;
-}
-
-.file-preview-controls .btn {
-  min-width: 74px;
-}
-
-.file-preview-page-label {
-  min-width: 96px;
-  text-align: center;
-  font-size: 0.9rem;
-  color: #334155;
-  font-weight: 600;
-}
-
 .file-preview-viewer {
   width: 100%;
   min-height: 100%;
