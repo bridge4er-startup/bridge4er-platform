@@ -59,8 +59,6 @@ export default function FilePreviewModal({ preview, onClose }) {
 
   const [pdfReady, setPdfReady] = useState(false);
   const [pdfError, setPdfError] = useState("");
-  const [totalPages, setTotalPages] = useState(1);
-  const [currentPage, setCurrentPage] = useState(1);
   const [isRendering, setIsRendering] = useState(false);
   const [renderTick, setRenderTick] = useState(0);
   const [pdfZoom, setPdfZoom] = useState(1);
@@ -87,8 +85,6 @@ export default function FilePreviewModal({ preview, onClose }) {
     if (!preview || !isPdf) {
       setPdfReady(false);
       setPdfError("");
-      setTotalPages(1);
-      setCurrentPage(1);
       if (pdfRef.current) {
         try {
           pdfRef.current.destroy();
@@ -106,8 +102,6 @@ export default function FilePreviewModal({ preview, onClose }) {
     let cancelled = false;
     setPdfReady(false);
     setPdfError("");
-    setTotalPages(1);
-    setCurrentPage(1);
 
     const loadPdf = async () => {
       try {
@@ -126,8 +120,6 @@ export default function FilePreviewModal({ preview, onClose }) {
         }
 
         pdfRef.current = pdf;
-        setTotalPages(Math.max(1, pdf.numPages || 1));
-        setCurrentPage(1);
         setPdfReady(true);
       } catch (error) {
         setPdfError(error?.message || "Unable to render PDF on this device.");
@@ -162,22 +154,6 @@ export default function FilePreviewModal({ preview, onClose }) {
       window.removeEventListener("orientationchange", onResize);
     };
   }, [isPdf, pdfReady]);
-
-  const updateCurrentPageFromScroll = () => {
-    if (!isPdf || !bodyRef.current || !viewerRef.current) return;
-    const pageElements = viewerRef.current.querySelectorAll(".file-preview-pdf-page");
-    if (!pageElements.length) return;
-
-    const marker = bodyRef.current.scrollTop + bodyRef.current.clientHeight * 0.35;
-    let page = 1;
-    pageElements.forEach((el, idx) => {
-      if (el.offsetTop <= marker) {
-        page = idx + 1;
-      }
-    });
-
-    setCurrentPage(clamp(page, 1, totalPages));
-  };
 
   useEffect(() => {
     if (!isPdf || !pdfReady || !pdfRef.current || !viewerRef.current || !bodyRef.current) return undefined;
@@ -228,10 +204,6 @@ export default function FilePreviewModal({ preview, onClose }) {
             viewport,
           }).promise;
         }
-
-        if (!cancelled) {
-          requestAnimationFrame(() => updateCurrentPageFromScroll());
-        }
       } catch (error) {
         if (!cancelled) {
           setPdfError(error?.message || "Unable to render PDF pages.");
@@ -248,21 +220,25 @@ export default function FilePreviewModal({ preview, onClose }) {
     };
   }, [isPdf, pdfReady, pdfZoom, renderTick]);
 
-  useEffect(() => {
-    if (!isPdf || !bodyRef.current) return undefined;
-    const node = bodyRef.current;
-    const onScroll = () => updateCurrentPageFromScroll();
-    node.addEventListener("scroll", onScroll, { passive: true });
-    onScroll();
-    return () => node.removeEventListener("scroll", onScroll);
-  }, [isPdf, pdfReady, totalPages]);
-
   const zoomPdf = (delta) => {
     setPdfZoom((prev) => clamp(Number((prev + delta).toFixed(2)), 0.6, 3));
   };
 
   const zoomImage = (delta) => {
     setImageZoom((prev) => clamp(Number((prev + delta).toFixed(2)), 0.3, 4));
+  };
+
+  const handleWheelZoom = (event) => {
+    const shouldZoom = event.ctrlKey || event.metaKey || event.altKey;
+    if (!shouldZoom) return;
+    event.preventDefault();
+
+    const delta = event.deltaY < 0 ? 0.08 : -0.08;
+    if (isPdf) {
+      zoomPdf(delta);
+    } else if (isImage) {
+      zoomImage(delta);
+    }
   };
 
   if (!preview) return null;
@@ -290,7 +266,6 @@ export default function FilePreviewModal({ preview, onClose }) {
               <button type="button" className="btn btn-secondary btn-soft-blue-action" onClick={() => setPdfZoom(1)}>
                 Reset
               </button>
-              <span className="file-preview-page-label">Page {currentPage}/{totalPages}</span>
             </>
           ) : null}
 
@@ -315,15 +290,15 @@ export default function FilePreviewModal({ preview, onClose }) {
             <>
               {isRendering ? <div className="file-preview-message">Rendering document...</div> : null}
               {pdfError ? <div className="file-preview-message">{pdfError}</div> : null}
-              <div className="file-preview-viewer" ref={viewerRef}></div>
-            </>
-          ) : null}
+            <div className="file-preview-viewer" ref={viewerRef} onWheel={handleWheelZoom}></div>
+          </>
+        ) : null}
 
-          {isImage ? (
-            <div className="file-preview-image-wrap">
-              <img
-                src={preview.url}
-                alt={preview.name}
+        {isImage ? (
+          <div className="file-preview-image-wrap" onWheel={handleWheelZoom}>
+            <img
+              src={preview.url}
+              alt={preview.name}
                 className="file-preview-image"
                 style={{ transform: `scale(${imageZoom})` }}
               />
