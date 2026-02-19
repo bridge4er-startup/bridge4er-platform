@@ -5169,6 +5169,13 @@ footer {
   text-overflow: ellipsis;
 }
 
+.file-preview-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-shrink: 0;
+}
+
 .file-preview-modal-body {
   flex: 1;
   background: #f8fafc;
@@ -5185,7 +5192,10 @@ footer {
   align-items: center;
   justify-content: center;
   gap: 0.35rem;
-  padding: 0.2rem 0.35rem 0;
+  padding: 0.12rem 0.25rem;
+  background: #ffffff;
+  border: 1px solid #dbe4f1;
+  border-radius: 999px;
 }
 
 .file-preview-zoom-btn {
@@ -5197,11 +5207,33 @@ footer {
 }
 
 .file-preview-zoom-value {
-  min-width: 54px;
+  min-width: 50px;
   text-align: center;
   font-size: 0.85rem;
   font-weight: 600;
   color: #334155;
+}
+
+@media (max-width: 640px) {
+  .file-preview-modal-header {
+    padding: 0.7rem;
+    gap: 0.45rem;
+  }
+
+  .file-preview-header-actions {
+    gap: 0.3rem;
+  }
+
+  .file-preview-zoom-btn {
+    min-width: 26px;
+    height: 24px;
+    font-size: 0.85rem;
+  }
+
+  .file-preview-zoom-value {
+    min-width: 46px;
+    font-size: 0.78rem;
+  }
 }
 
 .file-preview-viewer {

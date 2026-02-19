@@ -64,8 +64,16 @@ export default function FilePreviewModal({ preview, onClose }) {
   const [renderTick, setRenderTick] = useState(0);
   const [zoomPercent, setZoomPercent] = useState(100);
 
-  const isPdf = preview?.type === "pdf";
-  const isImage = preview?.type === "image";
+  const previewType = String(preview?.type || "").toLowerCase();
+  const previewName = String(preview?.name || "").toLowerCase();
+  const previewUrl = String(preview?.url || "").toLowerCase();
+  const isPdf = previewType.includes("pdf") || previewName.endsWith(".pdf") || previewUrl.includes(".pdf");
+  const isImage =
+    previewType.includes("image") ||
+    [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"].some(
+      (ext) => previewName.endsWith(ext) || previewUrl.includes(ext)
+    );
+  const canZoom = isPdf || isImage;
 
   useEffect(() => {
     if (!preview) return undefined;
@@ -233,36 +241,37 @@ export default function FilePreviewModal({ preview, onClose }) {
       <div className="payment-modal-content file-preview-modal" onClick={(event) => event.stopPropagation()}>
         <div className="file-preview-modal-header">
           <h3>{preview.name}</h3>
-          <button className="btn btn-secondary btn-soft-blue-action" onClick={onClose}>
-            Close
-          </button>
+          <div className="file-preview-header-actions">
+            {canZoom ? (
+              <div className="file-preview-zoom-controls" role="group" aria-label="Zoom controls">
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-soft-blue-action file-preview-zoom-btn"
+                  onClick={zoomOut}
+                  disabled={zoomPercent <= ZOOM_MIN}
+                  aria-label="Zoom out"
+                >
+                  -
+                </button>
+                <span className="file-preview-zoom-value">{zoomPercent}%</span>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-soft-blue-action file-preview-zoom-btn"
+                  onClick={zoomIn}
+                  disabled={zoomPercent >= ZOOM_MAX}
+                  aria-label="Zoom in"
+                >
+                  +
+                </button>
+              </div>
+            ) : null}
+            <button className="btn btn-secondary btn-soft-blue-action" onClick={onClose}>
+              Close
+            </button>
+          </div>
         </div>
 
         <div className="file-preview-modal-body" ref={bodyRef}>
-          {(isPdf || isImage) && (
-            <div className="file-preview-zoom-controls" role="group" aria-label="Zoom controls">
-              <button
-                type="button"
-                className="btn btn-secondary btn-soft-blue-action file-preview-zoom-btn"
-                onClick={zoomOut}
-                disabled={zoomPercent <= ZOOM_MIN}
-                aria-label="Zoom out"
-              >
-                -
-              </button>
-              <span className="file-preview-zoom-value">{zoomPercent}%</span>
-              <button
-                type="button"
-                className="btn btn-secondary btn-soft-blue-action file-preview-zoom-btn"
-                onClick={zoomIn}
-                disabled={zoomPercent >= ZOOM_MAX}
-                aria-label="Zoom in"
-              >
-                +
-              </button>
-            </div>
-          )}
-
           {isPdf ? (
             <>
               {isRendering ? <div className="file-preview-message">Loading PDF...</div> : null}
