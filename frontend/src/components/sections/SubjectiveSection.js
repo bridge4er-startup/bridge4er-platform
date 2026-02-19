@@ -45,34 +45,68 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedFile, setSelectedFile] = useState(null);
+  const [previewFile, setPreviewFile] = useState(null);
   const [selectedSubject, setSelectedSubject] = useState("");
   const [viewMode, setViewMode] = useState("subjects");
 
+  const closePreview = () => {
+    setPreviewFile((current) => {
+      if (current?.previewUrl && current.previewUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(current.previewUrl);
+      }
+      return null;
+    });
+  };
+
   useEffect(() => {
     if (!isActive) return;
+
+    const loadFiles = async () => {
+      setLoading(true);
+      try {
+        const res = await API.get("storage/files/list/", {
+          params: {
+            content_type: "subjective",
+            branch,
+          },
+        });
+        setFiles(res.data || []);
+        setSelectedSubject("");
+        setViewMode("subjects");
+        closePreview();
+      } catch (_error) {
+        toast.error("Failed to load library materials");
+      } finally {
+        setLoading(false);
+      }
+    };
+
     loadFiles();
   }, [branch, isActive]);
 
-  const loadFiles = async () => {
-    setLoading(true);
-    try {
-      const res = await API.get("storage/files/list/", {
-        params: {
-          content_type: "subjective",
-          branch,
-        },
-      });
-      setFiles(res.data || []);
-      setSelectedSubject("");
-      setViewMode("subjects");
-      setSelectedFile(null);
-    } catch (_error) {
-      toast.error("Failed to load library materials");
-    } finally {
-      setLoading(false);
-    }
-  };
+  useEffect(() => {
+    return () => {
+      if (previewFile?.previewUrl && previewFile.previewUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(previewFile.previewUrl);
+      }
+    };
+  }, [previewFile]);
+
+  useEffect(() => {
+    if (!previewFile) return undefined;
+    const handleEsc = (event) => {
+      if (event.key === "Escape") {
+        setPreviewFile((current) => {
+          if (current?.previewUrl && current.previewUrl.startsWith("blob:")) {
+            URL.revokeObjectURL(current.previewUrl);
+          }
+          return null;
+        });
+      }
+    };
+    window.addEventListener("keydown", handleEsc);
+    return () => window.removeEventListener("keydown", handleEsc);
+  }, [previewFile]);
 
   const filteredFiles = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -107,45 +141,45 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
   const handleOpenSubject = (subjectName) => {
     setSelectedSubject(subjectName);
     setViewMode("books");
+    closePreview();
   };
 
   const handleViewPDF = async (file) => {
     try {
-      const res = await API.get("storage/files/view/", {
+      const res = await API.get("storage/files/preview/", {
         params: { path: file.path },
+        responseType: "blob",
       });
-      setSelectedFile({
-        ...file,
-        viewLink: res.data.link,
+
+      const contentType = String(res?.headers?.["content-type"] || "").toLowerCase();
+      const previewType = contentType.includes("pdf")
+        ? "pdf"
+        : contentType.startsWith("image/")
+          ? "image"
+          : "other";
+      const blob = new Blob([res.data], { type: contentType || undefined });
+      const previewUrl = URL.createObjectURL(blob);
+
+      setPreviewFile((current) => {
+        if (current?.previewUrl && current.previewUrl.startsWith("blob:")) {
+          URL.revokeObjectURL(current.previewUrl);
+        }
+        return {
+          ...file,
+          previewUrl,
+          previewType,
+        };
       });
-      setViewMode("viewer");
     } catch (error) {
       const message = error?.response?.data?.error || "Failed to open file";
       toast.error(message);
     }
   };
 
-  const getEmbeddedViewLink = (link) => {
-    if (!link) return "";
-    try {
-      const url = new URL(link);
-      url.searchParams.set("dl", "0");
-      url.searchParams.set("embedded", "true");
-      return url.toString();
-    } catch (_error) {
-      return link;
-    }
-  };
-
   const goToSubjects = () => {
     setViewMode("subjects");
     setSelectedSubject("");
-    setSelectedFile(null);
-  };
-
-  const goToBooks = () => {
-    setViewMode("books");
-    setSelectedFile(null);
+    closePreview();
   };
 
   return (
@@ -243,25 +277,25 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
         </div>
       ) : null}
 
-      {!loading && viewMode === "viewer" ? (
-        <div className="library-viewer-wrap">
-          <div className="pdf-viewer-header">
-            <button className="btn btn-secondary btn-soft-blue-action" onClick={goToBooks}>
-              <i className="fas fa-arrow-left"></i> Back to Shelf
-            </button>
-            <h3 style={{ margin: "0 auto", flex: 1, textAlign: "center" }}>{selectedFile?.name}</h3>
-            <div style={{ width: "80px" }}></div>
-          </div>
-
-          <div className="pdf-viewer-container">
-            <iframe
-              src={getEmbeddedViewLink(selectedFile?.viewLink)}
-              style={{ width: "100%", height: "640px", border: "none", borderRadius: "8px" }}
-              title="PDF Viewer"
-            ></iframe>
-            <p style={{ marginTop: "1rem", fontSize: "0.9rem", color: "#666" }}>
-              Read-only mode: download is disabled for this library section.
-            </p>
+      {previewFile ? (
+        <div className="payment-overlay" onClick={closePreview}>
+          <div className="payment-modal-content file-preview-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="file-preview-modal-header">
+              <h3>{previewFile.name}</h3>
+              <button className="btn btn-secondary btn-soft-blue-action" onClick={closePreview}>
+                Close
+              </button>
+            </div>
+            <div className="file-preview-modal-body">
+              {previewFile.previewType === "pdf" ? (
+                <iframe src={previewFile.previewUrl} className="file-preview-frame" title="PDF Viewer"></iframe>
+              ) : previewFile.previewType === "image" ? (
+                <img src={previewFile.previewUrl} alt={previewFile.name} className="file-preview-image" />
+              ) : (
+                <p>This file cannot be previewed inline. Use supported PDF/image files.</p>
+              )}
+              <p className="file-preview-note">Read-only mode: download is disabled for this library section.</p>
+            </div>
           </div>
         </div>
       ) : null}

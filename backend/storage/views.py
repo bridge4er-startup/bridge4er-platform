@@ -1,3 +1,5 @@
+import mimetypes
+
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
@@ -68,6 +70,11 @@ def _can_access_path(user, path):
 
 def _is_subjective_path(path):
     return "/subjective/" in (path or "").lower()
+
+
+def _guess_content_type(path):
+    guessed, _ = mimetypes.guess_type(path or "")
+    return guessed or "application/octet-stream"
 
 
 def _effective_metrics_row():
@@ -197,6 +204,32 @@ class ViewFileView(APIView):
                 return Response({"error": "Authentication required or invalid path"}, status=status.HTTP_401_UNAUTHORIZED)
             link = get_shareable_link(path)
             return Response({"link": link})
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class PreviewFileView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        """Preview file inline without forcing browser download."""
+        path = request.GET.get("path")
+
+        if not path:
+            return Response({"error": "Path required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            if not _can_access_path(request.user, path):
+                return Response({"error": "Authentication required or invalid path"}, status=status.HTTP_401_UNAUTHORIZED)
+
+            file_content = download_file(path)
+            filename = path.split("/")[-1] or "preview"
+            content_type = _guess_content_type(filename)
+
+            response = HttpResponse(file_content, content_type=content_type)
+            response["Content-Disposition"] = f'inline; filename="{filename}"'
+            response["Cache-Control"] = "private, max-age=300"
+            return response
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 

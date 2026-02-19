@@ -87,6 +87,13 @@ function fileType(path = "") {
   return "other";
 }
 
+function inferPreviewType(contentType = "", path = "") {
+  const normalized = String(contentType || "").toLowerCase();
+  if (normalized.includes("pdf")) return "pdf";
+  if (normalized.startsWith("image/")) return "image";
+  return fileType(path);
+}
+
 function formatDate(date) {
   return date.toLocaleDateString("en-US", {
     weekday: "short",
@@ -130,10 +137,43 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
   const [loading, setLoading] = useState(false);
   const [noticePage, setNoticePage] = useState(1);
 
+  const closePreview = () => {
+    setPreview((current) => {
+      if (current?.url && current.url.startsWith("blob:")) {
+        URL.revokeObjectURL(current.url);
+      }
+      return null;
+    });
+  };
+
   useEffect(() => {
     const timer = setInterval(() => setClock(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    return () => {
+      if (preview?.url && preview.url.startsWith("blob:")) {
+        URL.revokeObjectURL(preview.url);
+      }
+    };
+  }, [preview]);
+
+  useEffect(() => {
+    if (!preview) return undefined;
+    const handleEsc = (event) => {
+      if (event.key === "Escape") {
+        setPreview((current) => {
+          if (current?.url && current.url.startsWith("blob:")) {
+            URL.revokeObjectURL(current.url);
+          }
+          return null;
+        });
+      }
+    };
+    window.addEventListener("keydown", handleEsc);
+    return () => window.removeEventListener("keydown", handleEsc);
+  }, [preview]);
 
   useEffect(() => {
     if (!isActive) return;
@@ -194,12 +234,30 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
   };
 
   const openPreview = async (file) => {
+    const targetType = fileType(file.path);
+    if (targetType === "other") {
+      toast.error("This file type cannot be previewed inline. Use download.");
+      return;
+    }
+
     try {
-      const res = await API.get("storage/files/view/", { params: { path: file.path } });
-      setPreview({
+      const res = await API.get("storage/files/preview/", {
+        params: { path: file.path },
+        responseType: "blob",
+      });
+      const contentType = res?.headers?.["content-type"] || "";
+      const blob = new Blob([res.data], { type: contentType || undefined });
+      const objectUrl = URL.createObjectURL(blob);
+      const nextPreview = {
         ...file,
-        type: fileType(file.path),
-        url: res.data?.link,
+        type: inferPreviewType(contentType, file.path),
+        url: objectUrl,
+      };
+      setPreview((current) => {
+        if (current?.url && current.url.startsWith("blob:")) {
+          URL.revokeObjectURL(current.url);
+        }
+        return nextPreview;
       });
     } catch (error) {
       const message = error?.response?.data?.error || "Unable to preview this file.";
@@ -391,20 +449,24 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
       </div>
 
       {preview ? (
-        <div className="home-preview-panel">
-          <div className="home-preview-header">
-            <h3>{preview.name}</h3>
-            <button className="btn btn-secondary btn-soft-blue-action" onClick={() => setPreview(null)}>
-              Close
-            </button>
+        <div className="payment-overlay" onClick={closePreview}>
+          <div className="payment-modal-content file-preview-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="file-preview-modal-header">
+              <h3>{preview.name}</h3>
+              <button className="btn btn-secondary btn-soft-blue-action" onClick={closePreview}>
+                Close
+              </button>
+            </div>
+            <div className="file-preview-modal-body">
+              {preview.type === "pdf" ? (
+                <iframe title={preview.name} src={preview.url} className="file-preview-frame"></iframe>
+              ) : preview.type === "image" ? (
+                <img src={preview.url} alt={preview.name} className="file-preview-image" />
+              ) : (
+                <p>This file cannot be previewed inline. Use download instead.</p>
+              )}
+            </div>
           </div>
-          {preview.type === "pdf" ? (
-            <iframe title={preview.name} src={preview.url} className="home-preview-frame"></iframe>
-          ) : preview.type === "image" ? (
-            <img src={preview.url} alt={preview.name} className="home-preview-image" />
-          ) : (
-            <p>This file cannot be previewed inline. Use download instead.</p>
-          )}
         </div>
       ) : null}
     </section>
