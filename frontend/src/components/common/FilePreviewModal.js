@@ -229,8 +229,7 @@ export default function FilePreviewModal({ preview, onClose }) {
   };
 
   const handleWheelZoom = (event) => {
-    const shouldZoom = event.ctrlKey || event.metaKey || event.altKey;
-    if (!shouldZoom) return;
+    if (event.shiftKey) return;
     event.preventDefault();
 
     const delta = event.deltaY < 0 ? 0.08 : -0.08;
