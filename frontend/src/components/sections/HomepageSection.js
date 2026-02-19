@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import API from "../../services/api";
 import toast from "react-hot-toast";
 import { useBranch } from "../../context/BranchContext";
@@ -134,10 +134,13 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
   const [files, setFiles] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [preview, setPreview] = useState(null);
+  const [previewPage, setPreviewPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [noticePage, setNoticePage] = useState(1);
+  const previewBodyRef = useRef(null);
 
   const closePreview = () => {
+    setPreviewPage(1);
     setPreview((current) => {
       if (current?.url && current.url.startsWith("blob:")) {
         URL.revokeObjectURL(current.url);
@@ -163,12 +166,7 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
     if (!preview) return undefined;
     const handleEsc = (event) => {
       if (event.key === "Escape") {
-        setPreview((current) => {
-          if (current?.url && current.url.startsWith("blob:")) {
-            URL.revokeObjectURL(current.url);
-          }
-          return null;
-        });
+        closePreview();
       }
     };
     window.addEventListener("keydown", handleEsc);
@@ -253,6 +251,7 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
         type: inferPreviewType(contentType, file.path),
         url: objectUrl,
       };
+      setPreviewPage(1);
       setPreview((current) => {
         if (current?.url && current.url.startsWith("blob:")) {
           URL.revokeObjectURL(current.url);
@@ -263,6 +262,20 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
       const message = error?.response?.data?.error || "Unable to preview this file.";
       toast.error(message);
     }
+  };
+
+  const scrollPreview = (direction) => {
+    if (!preview) return;
+    if (preview.type === "pdf") {
+      setPreviewPage((prev) => Math.max(1, direction > 0 ? prev + 1 : prev - 1));
+      return;
+    }
+    if (!previewBodyRef.current) return;
+    const delta = Math.max(260, Math.floor(previewBodyRef.current.clientHeight * 0.7));
+    previewBodyRef.current.scrollBy({
+      top: direction > 0 ? delta : -delta,
+      behavior: "smooth",
+    });
   };
 
   const downloadNotice = async (file) => {
@@ -457,9 +470,33 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
                 Close
               </button>
             </div>
-            <div className="file-preview-modal-body">
+            <div className="file-preview-controls">
+              <button
+                type="button"
+                className="btn btn-secondary btn-soft-blue-action"
+                onClick={() => scrollPreview(-1)}
+                disabled={preview.type === "pdf" && previewPage <= 1}
+              >
+                Up
+              </button>
+              <span className="file-preview-page-label">
+                {preview.type === "pdf" ? `Page ${previewPage}` : "Preview"}
+              </span>
+              <button
+                type="button"
+                className="btn btn-secondary btn-soft-blue-action"
+                onClick={() => scrollPreview(1)}
+              >
+                Down
+              </button>
+            </div>
+            <div className="file-preview-modal-body" ref={previewBodyRef}>
               {preview.type === "pdf" ? (
-                <iframe title={preview.name} src={preview.url} className="file-preview-frame"></iframe>
+                <iframe
+                  title={preview.name}
+                  src={`${preview.url}#toolbar=0&navpanes=0&scrollbar=0&page=${previewPage}&zoom=page-width`}
+                  className="file-preview-frame"
+                ></iframe>
               ) : preview.type === "image" ? (
                 <img src={preview.url} alt={preview.name} className="file-preview-image" />
               ) : (

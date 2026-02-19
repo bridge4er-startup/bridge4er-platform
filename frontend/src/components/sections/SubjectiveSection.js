@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import API from "../../services/api";
 import toast from "react-hot-toast";
 import { getSubjectIcon } from "../../utils/subjectIcons";
@@ -64,10 +64,13 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [previewFile, setPreviewFile] = useState(null);
+  const [previewPage, setPreviewPage] = useState(1);
   const [selectedSubject, setSelectedSubject] = useState("");
   const [viewMode, setViewMode] = useState("subjects");
+  const previewBodyRef = useRef(null);
 
   const closePreview = () => {
+    setPreviewPage(1);
     setPreviewFile((current) => {
       if (current?.previewUrl && current.previewUrl.startsWith("blob:")) {
         URL.revokeObjectURL(current.previewUrl);
@@ -114,12 +117,7 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
     if (!previewFile) return undefined;
     const handleEsc = (event) => {
       if (event.key === "Escape") {
-        setPreviewFile((current) => {
-          if (current?.previewUrl && current.previewUrl.startsWith("blob:")) {
-            URL.revokeObjectURL(current.previewUrl);
-          }
-          return null;
-        });
+        closePreview();
       }
     };
     window.addEventListener("keydown", handleEsc);
@@ -174,6 +172,7 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
       const blob = new Blob([res.data], { type: contentType || undefined });
       const previewUrl = URL.createObjectURL(blob);
 
+      setPreviewPage(1);
       setPreviewFile((current) => {
         if (current?.previewUrl && current.previewUrl.startsWith("blob:")) {
           URL.revokeObjectURL(current.previewUrl);
@@ -188,6 +187,20 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
       const message = error?.response?.data?.error || "Failed to open file";
       toast.error(message);
     }
+  };
+
+  const scrollPreview = (direction) => {
+    if (!previewFile) return;
+    if (previewFile.previewType === "pdf") {
+      setPreviewPage((prev) => Math.max(1, direction > 0 ? prev + 1 : prev - 1));
+      return;
+    }
+    if (!previewBodyRef.current) return;
+    const delta = Math.max(260, Math.floor(previewBodyRef.current.clientHeight * 0.7));
+    previewBodyRef.current.scrollBy({
+      top: direction > 0 ? delta : -delta,
+      behavior: "smooth",
+    });
   };
 
   const goToSubjects = () => {
@@ -300,9 +313,33 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
                 Close
               </button>
             </div>
-            <div className="file-preview-modal-body">
+            <div className="file-preview-controls">
+              <button
+                type="button"
+                className="btn btn-secondary btn-soft-blue-action"
+                onClick={() => scrollPreview(-1)}
+                disabled={previewFile.previewType === "pdf" && previewPage <= 1}
+              >
+                Up
+              </button>
+              <span className="file-preview-page-label">
+                {previewFile.previewType === "pdf" ? `Page ${previewPage}` : "Preview"}
+              </span>
+              <button
+                type="button"
+                className="btn btn-secondary btn-soft-blue-action"
+                onClick={() => scrollPreview(1)}
+              >
+                Down
+              </button>
+            </div>
+            <div className="file-preview-modal-body" ref={previewBodyRef}>
               {previewFile.previewType === "pdf" ? (
-                <iframe src={previewFile.previewUrl} className="file-preview-frame" title="PDF Viewer"></iframe>
+                <iframe
+                  src={`${previewFile.previewUrl}#toolbar=0&navpanes=0&scrollbar=0&page=${previewPage}&zoom=page-width`}
+                  className="file-preview-frame"
+                  title="PDF Viewer"
+                ></iframe>
               ) : previewFile.previewType === "image" ? (
                 <img src={previewFile.previewUrl} alt={previewFile.name} className="file-preview-image" />
               ) : (
