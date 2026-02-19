@@ -2,16 +2,63 @@ import React, { useEffect, useState } from "react";
 import API from "../../services/api";
 import toast from "react-hot-toast";
 
+function inferPreviewType(contentType = "", filename = "") {
+  const normalized = String(contentType || "").toLowerCase();
+  const lowerName = String(filename || "").toLowerCase();
+
+  if (normalized.includes("pdf") || lowerName.endsWith(".pdf")) return "pdf";
+  if (
+    normalized.startsWith("image/") ||
+    lowerName.endsWith(".png") ||
+    lowerName.endsWith(".jpg") ||
+    lowerName.endsWith(".jpeg") ||
+    lowerName.endsWith(".gif") ||
+    lowerName.endsWith(".webp")
+  ) {
+    return "image";
+  }
+  return "other";
+}
+
 export default function OldQuestionsSection({ branch = "Civil Engineering", isActive = false }) {
   const [files, setFiles] = useState([]);
   const [filteredFiles, setFilteredFiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [preview, setPreview] = useState(null);
+
+  const closePreview = () => {
+    setPreview((current) => {
+      if (current?.url && current.url.startsWith("blob:")) {
+        URL.revokeObjectURL(current.url);
+      }
+      return null;
+    });
+  };
 
   useEffect(() => {
     if (!isActive) return;
     loadFiles();
   }, [branch, isActive]);
+
+  useEffect(() => {
+    return () => {
+      if (preview?.url && preview.url.startsWith("blob:")) {
+        URL.revokeObjectURL(preview.url);
+      }
+    };
+  }, [preview]);
+
+  useEffect(() => {
+    if (!preview) return undefined;
+    const handleEsc = (event) => {
+      if (event.key === "Escape") {
+        closePreview();
+      }
+    };
+    window.addEventListener("keydown", handleEsc);
+    return () => window.removeEventListener("keydown", handleEsc);
+  }, [preview]);
 
   const loadFiles = async () => {
     setLoading(true);
@@ -68,12 +115,28 @@ export default function OldQuestionsSection({ branch = "Civil Engineering", isAc
 
   const handleView = async (file) => {
     try {
-      const res = await API.get("storage/files/view/", {
+      const res = await API.get("storage/files/preview/", {
         params: { path: file.path },
+        responseType: "blob",
       });
-      window.open(res.data.link, "_blank");
+      const contentType = res?.headers?.["content-type"] || "";
+      const previewType = inferPreviewType(contentType, file.name || file.path);
+      const blob = new Blob([res.data], { type: contentType || undefined });
+      const objectUrl = URL.createObjectURL(blob);
+      const nextPreview = {
+        ...file,
+        type: previewType,
+        url: objectUrl,
+      };
+      setPreview((current) => {
+        if (current?.url && current.url.startsWith("blob:")) {
+          URL.revokeObjectURL(current.url);
+        }
+        return nextPreview;
+      });
     } catch (error) {
-      toast.error("Failed to view file");
+      const message = error?.response?.data?.error || "Failed to view file";
+      toast.error(message);
       console.error(error);
     }
   };
@@ -168,6 +231,28 @@ export default function OldQuestionsSection({ branch = "Civil Engineering", isAc
           ))}
         </ul>
       )}
+
+      {preview ? (
+        <div className="payment-overlay" onClick={closePreview}>
+          <div className="payment-modal-content file-preview-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="file-preview-modal-header">
+              <h3>{preview.name}</h3>
+              <button className="btn btn-secondary btn-soft-blue-action" onClick={closePreview}>
+                Close
+              </button>
+            </div>
+            <div className="file-preview-modal-body">
+              {preview.type === "pdf" ? (
+                <iframe title={preview.name} src={preview.url} className="file-preview-frame"></iframe>
+              ) : preview.type === "image" ? (
+                <img src={preview.url} alt={preview.name} className="file-preview-image" />
+              ) : (
+                <p>This file cannot be previewed inline. Please use Download.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

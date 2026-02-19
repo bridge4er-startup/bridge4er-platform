@@ -41,6 +41,24 @@ function formatDate(isoString) {
   });
 }
 
+function inferPreviewType(contentType = "", filename = "") {
+  const normalized = String(contentType || "").toLowerCase();
+  const lowerName = String(filename || "").toLowerCase();
+
+  if (normalized.includes("pdf") || lowerName.endsWith(".pdf")) return "pdf";
+  if (
+    normalized.startsWith("image/") ||
+    lowerName.endsWith(".png") ||
+    lowerName.endsWith(".jpg") ||
+    lowerName.endsWith(".jpeg") ||
+    lowerName.endsWith(".gif") ||
+    lowerName.endsWith(".webp")
+  ) {
+    return "image";
+  }
+  return "other";
+}
+
 export default function SubjectiveSection({ branch = "Civil Engineering", isActive = false }) {
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -152,11 +170,7 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
       });
 
       const contentType = String(res?.headers?.["content-type"] || "").toLowerCase();
-      const previewType = contentType.includes("pdf")
-        ? "pdf"
-        : contentType.startsWith("image/")
-          ? "image"
-          : "other";
+      const previewType = inferPreviewType(contentType, file.name || file.path);
       const blob = new Blob([res.data], { type: contentType || undefined });
       const previewUrl = URL.createObjectURL(blob);
 
@@ -294,7 +308,6 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
               ) : (
                 <p>This file cannot be previewed inline. Use supported PDF/image files.</p>
               )}
-              <p className="file-preview-note">Read-only mode: download is disabled for this library section.</p>
             </div>
           </div>
         </div>
