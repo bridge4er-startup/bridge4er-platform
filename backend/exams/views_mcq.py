@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from django.db import transaction
 from rest_framework import status
@@ -18,6 +19,8 @@ from .models import Chapter, MCQQuestion, QuestionAttempt, Subject
 from .question_normalizers import normalize_mcq_payload
 from .resources import MCQQuestionResource
 from .serializers import MCQQuestionPublicSerializer, MCQQuestionSerializer
+from storage.dropbox_service import delete_file, list_folder_with_metadata
+from storage.models import FileMetadata
 
 if DJANGO_IMPORT_EXPORT_AVAILABLE:
     from tablib import Dataset
@@ -176,6 +179,43 @@ def _ensure_demo_questions(chapter):
             explanation=item["explanation"],
             question_image_url=item["question_image_url"],
         )
+
+
+def _as_bool(value, default=False):
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _is_not_found_error(exc):
+    lowered = str(exc).lower()
+    return "not_found" in lowered or "path_lookup/not_found" in lowered
+
+
+def _objective_subject_root(branch, subject_name):
+    return f"/bridge4er/{branch}/Objective MCQs/Subjects/{subject_name}"
+
+
+def _list_matching_chapter_paths(branch, subject_name, chapter_name):
+    subject_root = _objective_subject_root(branch, subject_name)
+    normalized_chapter = str(chapter_name or "").strip().lower()
+    if not normalized_chapter:
+        return []
+
+    entries = list_folder_with_metadata(subject_root, include_dirs=True, recursive=True)
+    matches = set()
+    for entry in entries:
+        entry_path = str(entry.get("path") or "").strip()
+        if not entry_path:
+            continue
+        entry_name = Path(entry_path).name
+        if entry.get("is_dir"):
+            if entry_name.strip().lower() == normalized_chapter:
+                matches.add(entry_path)
+            continue
+        if Path(entry_name).stem.strip().lower() == normalized_chapter:
+            matches.add(entry_path)
+    return sorted(matches)
 
 
 class SubjectListView(APIView):
@@ -430,6 +470,92 @@ class CreateChapterView(APIView):
             return Response({"id": chapter.id, "name": chapter.name}, status=status.HTTP_201_CREATED)
         except Subject.DoesNotExist:
             return Response({"error": "Subject not found"}, status=status.HTTP_404_NOT_FOUND)
+
+
+class DeleteChapterView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def post(self, request, chapter_id):
+        delete_source_files = _as_bool(request.data.get("delete_source_files"), True)
+        try:
+            chapter = Chapter.objects.select_related("subject").get(id=chapter_id)
+        except Chapter.DoesNotExist:
+            return Response({"error": "Chapter not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        question_count = MCQQuestion.objects.filter(chapter=chapter).count()
+        branch = chapter.subject.branch
+        subject_name = chapter.subject.name
+        deleted_paths = []
+        source_errors = []
+
+        if delete_source_files:
+            try:
+                matching_paths = _list_matching_chapter_paths(branch, subject_name, chapter.name)
+                for path in matching_paths:
+                    try:
+                        delete_file(path)
+                        deleted_paths.append(path)
+                    except Exception as exc:
+                        if not _is_not_found_error(exc):
+                            source_errors.append(str(exc))
+                if deleted_paths:
+                    FileMetadata.objects.filter(dropbox_path__in=deleted_paths).delete()
+            except Exception as exc:
+                if not _is_not_found_error(exc):
+                    source_errors.append(str(exc))
+
+        chapter_name = chapter.name
+        chapter.delete()
+        payload = {
+            "message": "Chapter deleted successfully",
+            "chapter_name": chapter_name,
+            "questions_deleted": question_count,
+            "source_paths_deleted": deleted_paths,
+            "source_delete_errors": source_errors,
+        }
+        return Response(payload, status=status.HTTP_200_OK)
+
+
+class DeleteSubjectView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def post(self, request, subject_id):
+        delete_source_folder = _as_bool(request.data.get("delete_source_folder"), True)
+        try:
+            subject = Subject.objects.get(id=subject_id)
+        except Subject.DoesNotExist:
+            return Response({"error": "Subject not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        chapter_count = Chapter.objects.filter(subject=subject).count()
+        question_count = MCQQuestion.objects.filter(chapter__subject=subject).count()
+
+        source_path = _objective_subject_root(subject.branch, subject.name)
+        source_deleted = False
+        source_error = ""
+        if delete_source_folder:
+            try:
+                delete_file(source_path)
+                source_deleted = True
+                FileMetadata.objects.filter(dropbox_path=source_path).delete()
+                FileMetadata.objects.filter(dropbox_path__startswith=f"{source_path}/").delete()
+            except Exception as exc:
+                if not _is_not_found_error(exc):
+                    source_error = str(exc)
+
+        subject_name = subject.name
+        subject.delete()
+
+        payload = {
+            "message": "Subject deleted successfully",
+            "subject_name": subject_name,
+            "chapters_deleted": chapter_count,
+            "questions_deleted": question_count,
+            "source_folder_path": source_path,
+            "source_folder_deleted": source_deleted,
+        }
+        if source_error:
+            payload["source_delete_error"] = source_error
+        return Response(payload, status=status.HTTP_200_OK)
 
 
 class BulkUploadQuestionsView(APIView):

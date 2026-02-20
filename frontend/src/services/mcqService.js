@@ -89,6 +89,17 @@ export const mcqService = {
     }
   },
 
+  // Delete question (admin only)
+  deleteQuestion: async (questionId) => {
+    try {
+      const response = await API.delete(`exams/questions/${questionId}/`);
+      return response.data;
+    } catch (error) {
+      console.error("Error deleting question:", error);
+      throw error;
+    }
+  },
+
   // Create subject (admin only)
   createSubject: async (name, branch = "Civil Engineering") => {
     try {
@@ -111,6 +122,32 @@ export const mcqService = {
       return response.data;
     } catch (error) {
       console.error("Error creating chapter:", error);
+      throw error;
+    }
+  },
+
+  // Delete chapter (admin only)
+  deleteChapter: async (chapterId, deleteSourceFiles = true) => {
+    try {
+      const response = await API.post(`exams/chapters/${chapterId}/delete/`, {
+        delete_source_files: !!deleteSourceFiles,
+      });
+      return response.data;
+    } catch (error) {
+      console.error("Error deleting chapter:", error);
+      throw error;
+    }
+  },
+
+  // Delete subject (admin only)
+  deleteSubject: async (subjectId, deleteSourceFolder = true) => {
+    try {
+      const response = await API.post(`exams/subjects/${subjectId}/delete/`, {
+        delete_source_folder: !!deleteSourceFolder,
+      });
+      return response.data;
+    } catch (error) {
+      console.error("Error deleting subject:", error);
       throw error;
     }
   },

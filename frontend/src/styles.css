@@ -5696,6 +5696,20 @@ body[data-branch-theme="computer-engineering"] {
   color: color-mix(in srgb, var(--primary-color) 78%, #0f172a);
 }
 
+.folder-card .folder-display-name {
+  font-size: clamp(0.88rem, 1.2vw, 1.08rem);
+  line-height: 1.25;
+  min-height: calc(1.25em * 2);
+  max-height: calc(1.25em * 2);
+  margin-bottom: 0.45rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .chapter-card {
   border-style: dashed;
 }

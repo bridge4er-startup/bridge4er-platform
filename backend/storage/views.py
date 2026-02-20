@@ -25,6 +25,7 @@ CONTENT_TYPE_FOLDERS = {
     "syllabus": "Syllabus",
     "old_question": "Old Questions",
     "subjective": "Subjective",
+    "objective_mcq": "Objective MCQs/Subjects",
     "take_exam_mcq": "Take Exam/Multiple Choice Exam",
     "take_exam_subjective": "Take Exam/Subjective Exam",
 }
@@ -101,6 +102,7 @@ def _infer_content_type_from_path(path):
         "syllabus": "/syllabus/",
         "old_question": "/old questions/",
         "subjective": "/subjective/",
+        "objective_mcq": "/objective mcqs/subjects/",
         "take_exam_mcq": "/take exam/multiple choice exam/",
         "take_exam_subjective": "/take exam/subjective exam/",
     }
@@ -128,6 +130,8 @@ def _ensure_metadata_entry(path, content_type=None, branch=None, size=None):
 
 def _sync_metadata_from_listing(files, content_type, branch):
     for item in files:
+        if item.get("is_dir"):
+            continue
         file_path = item.get("path")
         if not file_path:
             continue
@@ -158,7 +162,7 @@ def _filter_files_by_visibility(files, include_hidden=False):
     result = []
     for item in files:
         path = item.get("path")
-        is_visible = visibility.get(path, True)
+        is_visible = True if item.get("is_dir") else visibility.get(path, True)
         enriched = {**item, "is_visible": is_visible}
         if include_hidden or is_visible:
             result.append(enriched)
@@ -229,8 +233,10 @@ class ListFilesView(APIView):
         content_type = request.GET.get("content_type")  # notice, syllabus, old_question, subjective
         branch = _normalize_branch(request.GET.get("branch", "Civil Engineering"))
         include_hidden = _as_bool(request.GET.get("include_hidden"), False)
+        include_dirs = _as_bool(request.GET.get("include_dirs"), False)
         if not (request.user and request.user.is_authenticated and request.user.is_staff):
             include_hidden = False
+            include_dirs = False
 
         try:
             if not _can_access_content_type(request.user, content_type):
@@ -240,7 +246,7 @@ class ListFilesView(APIView):
             if not path:
                 return Response({"error": "Invalid content type"}, status=status.HTTP_400_BAD_REQUEST)
 
-            files = list_folder_with_metadata(path, include_dirs=False, recursive=True)
+            files = list_folder_with_metadata(path, include_dirs=include_dirs, recursive=True)
             _sync_metadata_from_listing(files, content_type=content_type, branch=branch)
             visible_files = _filter_files_by_visibility(files, include_hidden=include_hidden)
             return Response(visible_files)

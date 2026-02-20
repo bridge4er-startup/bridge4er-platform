@@ -2,13 +2,19 @@ import API from "./api";
 
 export const fileService = {
   // List files by content type
-  listFiles: async (contentType, branch = "Civil Engineering", includeHidden = false) => {
+  listFiles: async (
+    contentType,
+    branch = "Civil Engineering",
+    includeHidden = false,
+    includeDirs = false
+  ) => {
     try {
       const response = await API.get("storage/files/list/", {
         params: {
           content_type: contentType,
           branch,
           include_hidden: includeHidden,
+          include_dirs: includeDirs,
         },
       });
       return response.data;

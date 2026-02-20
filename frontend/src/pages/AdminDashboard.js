@@ -9,6 +9,14 @@ import { reportService } from "../services/reportService";
 import API from "../services/api";
 import toast from "react-hot-toast";
 
+const BRANCH_OPTIONS = [
+  "Civil Engineering",
+  "Mechanical Engineering",
+  "Electrical Engineering",
+  "Electronics Engineering",
+  "Computer Engineering",
+];
+
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState("upload-files"); // upload-files, manage-files, manage-mcqs, bulk-upload-mcqs, review-subjective
 
@@ -43,6 +51,8 @@ export default function AdminDashboard() {
   const [bulkQuestionsFile, setBulkQuestionsFile] = useState(null);
   const [bulkQuestionsPath, setBulkQuestionsPath] = useState("");
   const [bulkUploading, setBulkUploading] = useState(false);
+  const [creatingNewChapterUpload, setCreatingNewChapterUpload] = useState(false);
+  const [newBulkChapterName, setNewBulkChapterName] = useState("");
   const [syncingDropbox, setSyncingDropbox] = useState(false);
   const [quickDropboxPath, setQuickDropboxPath] = useState("");
   const [importingQuickDropboxPath, setImportingQuickDropboxPath] = useState(false);
@@ -52,6 +62,16 @@ export default function AdminDashboard() {
   const [managedFiles, setManagedFiles] = useState([]);
   const [loadingManagedFiles, setLoadingManagedFiles] = useState(false);
   const [savingManagedFilePath, setSavingManagedFilePath] = useState("");
+  const [manageObjectiveSubject, setManageObjectiveSubject] = useState("");
+  const [manageObjectiveChapterId, setManageObjectiveChapterId] = useState("");
+  const [manageObjectiveChapters, setManageObjectiveChapters] = useState([]);
+  const [manageObjectiveQuestions, setManageObjectiveQuestions] = useState([]);
+  const [manageObjectiveQuestionPage, setManageObjectiveQuestionPage] = useState(1);
+  const [manageObjectiveTotalPages, setManageObjectiveTotalPages] = useState(1);
+  const [manageObjectiveQuestionCount, setManageObjectiveQuestionCount] = useState(0);
+  const [loadingManageObjectiveChapters, setLoadingManageObjectiveChapters] = useState(false);
+  const [loadingManageObjectiveQuestions, setLoadingManageObjectiveQuestions] = useState(false);
+  const [deletingObjectiveAction, setDeletingObjectiveAction] = useState("");
 
   // Homepage Metrics State
   const [homepageMetrics, setHomepageMetrics] = useState({
@@ -98,7 +118,62 @@ export default function AdminDashboard() {
     return String(value || "").trim();
   };
 
+  const normalizeNameForComparison = (value) =>
+    String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, " ");
+
+  const deriveChapterNameFromSource = () => {
+    const explicitName = String(newBulkChapterName || "").trim();
+    if (explicitName) {
+      return explicitName;
+    }
+    const fromUpload = String(bulkQuestionsFile?.name || "").trim();
+    if (fromUpload) {
+      return fromUpload.replace(/\.[^/.]+$/, "").trim();
+    }
+    const sourcePath = normalizeDropboxQuestionSource(bulkQuestionsPath);
+    if (!sourcePath) {
+      return "";
+    }
+    try {
+      const url = new URL(sourcePath);
+      const pathname = decodeURIComponent(url.pathname || "");
+      const rawSegment = pathname.split("/").filter(Boolean).pop() || "";
+      return rawSegment.replace(/\.[^/.]+$/, "").trim();
+    } catch (_error) {
+      const rawSegment = sourcePath.split(/[\\/]/).filter(Boolean).pop() || "";
+      return rawSegment.replace(/\?.*$/, "").replace(/\.[^/.]+$/, "").trim();
+    }
+  };
+
+  const clearBulkUploadInputs = () => {
+    setBulkQuestionsFile(null);
+    setBulkQuestionsPath("");
+    setNewBulkChapterName("");
+    const input = document.getElementById("bulk-questions-input");
+    if (input) {
+      input.value = "";
+    }
+  };
+
   // File Upload Handlers
+  const handleBranchChange = (nextBranch) => {
+    setBranch(nextBranch);
+    setSubjects([]);
+    setSelectedSubject("");
+    setChapters([]);
+    setSelectedChapterId("");
+    setManageObjectiveSubject("");
+    setManageObjectiveChapterId("");
+    setManageObjectiveChapters([]);
+    setManageObjectiveQuestions([]);
+    setManageObjectiveQuestionPage(1);
+    setManageObjectiveTotalPages(1);
+    setManageObjectiveQuestionCount(0);
+  };
+
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
   };
@@ -212,14 +287,65 @@ export default function AdminDashboard() {
         ? await mcqService.bulkUploadQuestionsFile(selectedChapterId, bulkQuestionsFile)
         : await mcqService.bulkUploadQuestionsFromPath(selectedChapterId, bulkQuestionsPath.trim());
       toast.success(result?.message || "Questions uploaded successfully!");
-      setBulkQuestionsFile(null);
-      setBulkQuestionsPath("");
-      document.getElementById("bulk-questions-input").value = "";
+      clearBulkUploadInputs();
     } catch (error) {
       toast.error("Failed to bulk upload questions");
       console.error(error);
     } finally {
       setBulkUploading(false);
+    }
+  };
+
+  const handleUploadNewChapterFile = async () => {
+    if (!selectedSubject) {
+      toast.error("Select a subject first");
+      return;
+    }
+    if (!bulkQuestionsFile && !bulkQuestionsPath.trim()) {
+      toast.error("Select a file or provide a backend/dropbox file path");
+      return;
+    }
+    const subjectObj = subjects.find((s) => s.name === selectedSubject);
+    if (!subjectObj) {
+      toast.error("Invalid subject");
+      return;
+    }
+
+    const chapterName = deriveChapterNameFromSource();
+    if (!chapterName) {
+      toast.error("Enter chapter name or upload a file with valid chapter filename");
+      return;
+    }
+
+    const alreadyExists = chapters.some(
+      (chapter) => normalizeNameForComparison(chapter.name) === normalizeNameForComparison(chapterName)
+    );
+    if (alreadyExists) {
+      toast.error("Chapter already exists. Select it above or choose a different chapter name.");
+      return;
+    }
+
+    setCreatingNewChapterUpload(true);
+    try {
+      const chapter = await mcqService.createChapter(subjectObj.id, chapterName);
+      const chapterId = chapter?.id;
+      if (!chapterId) {
+        throw new Error("Failed to create chapter");
+      }
+
+      const result = bulkQuestionsFile
+        ? await mcqService.bulkUploadQuestionsFile(chapterId, bulkQuestionsFile)
+        : await mcqService.bulkUploadQuestionsFromPath(chapterId, bulkQuestionsPath.trim());
+
+      toast.success(result?.message || `Chapter "${chapterName}" created and uploaded.`);
+      clearBulkUploadInputs();
+      await handleSelectSubject(selectedSubject);
+      setSelectedChapterId(String(chapterId));
+    } catch (error) {
+      toast.error(error?.response?.data?.error || "Failed to upload new chapter file");
+      console.error(error);
+    } finally {
+      setCreatingNewChapterUpload(false);
     }
   };
 
@@ -290,7 +416,8 @@ export default function AdminDashboard() {
   const handleLoadManagedFiles = async () => {
     setLoadingManagedFiles(true);
     try {
-      const result = await fileService.listFiles(manageContentType, branch, true);
+      const includeDirs = manageContentType === "objective_mcq";
+      const result = await fileService.listFiles(manageContentType, branch, true, includeDirs);
       setManagedFiles(result || []);
     } catch (error) {
       toast.error("Failed to load files");
@@ -300,12 +427,15 @@ export default function AdminDashboard() {
   };
 
   const handleDeleteManagedFile = async (path) => {
+    if (!window.confirm(`Delete this path from Dropbox?\n${path}`)) {
+      return;
+    }
     try {
       await fileService.deleteFile(path);
-      toast.success("File deleted successfully");
-      handleLoadManagedFiles();
+      toast.success("Path deleted successfully");
+      await handleLoadManagedFiles();
     } catch (error) {
-      toast.error("Failed to delete file");
+      toast.error(error?.response?.data?.error || "Failed to delete file/folder");
     }
   };
 
@@ -319,6 +449,152 @@ export default function AdminDashboard() {
       toast.error(error?.response?.data?.error || "Failed to update file visibility");
     } finally {
       setSavingManagedFilePath("");
+    }
+  };
+
+  const handleManageObjectiveSubjectChange = async (subject) => {
+    setManageObjectiveSubject(subject);
+    setManageObjectiveChapterId("");
+    setManageObjectiveQuestions([]);
+    setManageObjectiveQuestionPage(1);
+    setManageObjectiveTotalPages(1);
+    setManageObjectiveQuestionCount(0);
+
+    if (!subject) {
+      setManageObjectiveChapters([]);
+      return;
+    }
+
+    setLoadingManageObjectiveChapters(true);
+    try {
+      const result = await mcqService.getChapters(subject, branch);
+      setManageObjectiveChapters(result || []);
+    } catch (error) {
+      toast.error("Failed to load chapters");
+    } finally {
+      setLoadingManageObjectiveChapters(false);
+    }
+  };
+
+  const handleLoadManageObjectiveQuestions = async (targetPage = 1) => {
+    if (!manageObjectiveSubject || !manageObjectiveChapterId) {
+      toast.error("Select subject and chapter first");
+      return;
+    }
+    const chapterObj = manageObjectiveChapters.find(
+      (chapter) => String(chapter.id) === String(manageObjectiveChapterId)
+    );
+    if (!chapterObj) {
+      toast.error("Invalid chapter");
+      return;
+    }
+
+    setLoadingManageObjectiveQuestions(true);
+    try {
+      const result = await mcqService.getQuestions(
+        manageObjectiveSubject,
+        chapterObj.name,
+        branch,
+        targetPage,
+        20
+      );
+      setManageObjectiveQuestions(result?.results || []);
+      setManageObjectiveQuestionPage(result?.page || targetPage);
+      setManageObjectiveTotalPages(result?.total_pages || 1);
+      setManageObjectiveQuestionCount(result?.count || 0);
+    } catch (error) {
+      toast.error("Failed to load chapter questions");
+    } finally {
+      setLoadingManageObjectiveQuestions(false);
+    }
+  };
+
+  const handleDeleteObjectiveQuestion = async (questionId) => {
+    if (!window.confirm("Delete this question permanently?")) {
+      return;
+    }
+    setDeletingObjectiveAction(`question-${questionId}`);
+    try {
+      await mcqService.deleteQuestion(questionId);
+      toast.success("Question deleted");
+      await handleLoadManageObjectiveQuestions(manageObjectiveQuestionPage);
+    } catch (error) {
+      toast.error(error?.response?.data?.error || "Failed to delete question");
+    } finally {
+      setDeletingObjectiveAction("");
+    }
+  };
+
+  const handleDeleteObjectiveChapter = async () => {
+    if (!manageObjectiveChapterId) {
+      toast.error("Select a chapter first");
+      return;
+    }
+    const chapterObj = manageObjectiveChapters.find(
+      (chapter) => String(chapter.id) === String(manageObjectiveChapterId)
+    );
+    if (!chapterObj) {
+      toast.error("Invalid chapter");
+      return;
+    }
+
+    if (
+      !window.confirm(
+        `Delete chapter "${chapterObj.name}" and all questions in it? This also removes matching chapter files from Dropbox.`
+      )
+    ) {
+      return;
+    }
+
+    setDeletingObjectiveAction(`chapter-${chapterObj.id}`);
+    try {
+      await mcqService.deleteChapter(chapterObj.id, true);
+      toast.success("Chapter deleted");
+      await handleManageObjectiveSubjectChange(manageObjectiveSubject);
+      await handleLoadManagedFiles();
+    } catch (error) {
+      toast.error(error?.response?.data?.error || "Failed to delete chapter");
+    } finally {
+      setDeletingObjectiveAction("");
+    }
+  };
+
+  const handleDeleteObjectiveSubject = async () => {
+    if (!manageObjectiveSubject) {
+      toast.error("Select a subject first");
+      return;
+    }
+    const subjectObj = subjects.find((subject) => subject.name === manageObjectiveSubject);
+    if (!subjectObj) {
+      toast.error("Invalid subject");
+      return;
+    }
+
+    if (
+      !window.confirm(
+        `Delete subject "${subjectObj.name}" with all chapters/questions? This also removes its Dropbox subject folder.`
+      )
+    ) {
+      return;
+    }
+
+    setDeletingObjectiveAction(`subject-${subjectObj.id}`);
+    try {
+      await mcqService.deleteSubject(subjectObj.id, true);
+      toast.success("Subject deleted");
+      await handleLoadSubjects();
+      setManageObjectiveSubject("");
+      setManageObjectiveChapterId("");
+      setManageObjectiveChapters([]);
+      setManageObjectiveQuestions([]);
+      setManageObjectiveQuestionPage(1);
+      setManageObjectiveTotalPages(1);
+      setManageObjectiveQuestionCount(0);
+      await handleLoadManagedFiles();
+    } catch (error) {
+      toast.error(error?.response?.data?.error || "Failed to delete subject");
+    } finally {
+      setDeletingObjectiveAction("");
     }
   };
 
@@ -1131,7 +1407,7 @@ export default function AdminDashboard() {
               </label>
               <select
                 value={branch}
-                onChange={(e) => setBranch(e.target.value)}
+                onChange={(e) => handleBranchChange(e.target.value)}
                 style={{
                   width: "100%",
                   padding: "0.5rem",
@@ -1139,11 +1415,11 @@ export default function AdminDashboard() {
                   border: "1px solid #ddd",
                 }}
               >
-                <option>Civil Engineering</option>
-                <option>Mechanical Engineering</option>
-                <option>Electrical Engineering</option>
-                <option>Electronics Engineering</option>
-                <option>Computer Engineering</option>
+                {BRANCH_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -1302,11 +1578,36 @@ export default function AdminDashboard() {
 
             <div style={{ marginBottom: "1rem" }}>
               <label style={{ display: "block", marginBottom: "0.5rem" }}>
+                Select Branch:
+              </label>
+              <select
+                value={branch}
+                onChange={(e) => handleBranchChange(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "0.5rem",
+                  borderRadius: "4px",
+                  border: "1px solid #ddd",
+                }}
+              >
+                {BRANCH_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ marginBottom: "1rem" }}>
+              <label style={{ display: "block", marginBottom: "0.5rem" }}>
                 Content Type:
               </label>
               <select
                 value={manageContentType}
-                onChange={(e) => setManageContentType(e.target.value)}
+                onChange={(e) => {
+                  setManageContentType(e.target.value);
+                  setManagedFiles([]);
+                }}
                 style={{
                   width: "100%",
                   padding: "0.5rem",
@@ -1318,6 +1619,7 @@ export default function AdminDashboard() {
                 <option value="syllabus">Syllabus</option>
                 <option value="old_question">Old Question</option>
                 <option value="subjective">Library</option>
+                <option value="objective_mcq">Objective MCQs - Files/Folders</option>
                 <option value="take_exam_mcq">Exam Hall - MCQ Sets</option>
                 <option value="take_exam_subjective">Exam Hall - Subjective Sets</option>
               </select>
@@ -1328,7 +1630,7 @@ export default function AdminDashboard() {
               className="btn btn-primary"
               style={{ marginBottom: "1rem" }}
             >
-              Load Files
+              {manageContentType === "objective_mcq" ? "Load Files and Folders" : "Load Files"}
             </button>
 
             {loadingManagedFiles ? (
@@ -1337,46 +1639,223 @@ export default function AdminDashboard() {
               <p>No files loaded yet.</p>
             ) : (
               <ul className="file-list">
-                {managedFiles.map((f) => (
-                  <li key={f.path} className="file-item">
-                    <div className="file-info">
-                      <div className="file-details">
-                        <h4>{f.name}</h4>
-                        <p>{f.path}</p>
-                        <p style={{ marginTop: "0.3rem", fontSize: "0.85rem", color: f.is_visible ? "#047857" : "#b91c1c" }}>
-                          {f.is_visible ? "Visible on website" : "Hidden from website"}
-                        </p>
+                {managedFiles.map((f) => {
+                  const isDirectory = !!f.is_dir;
+                  const supportsVisibility =
+                    manageContentType !== "objective_mcq" && !isDirectory;
+                  const isSavingVisibility = savingManagedFilePath === f.path;
+                  return (
+                    <li key={f.path} className="file-item">
+                      <div className="file-info">
+                        <div className="file-details">
+                          <h4>{f.name}</h4>
+                          <p>{f.path}</p>
+                          <p
+                            style={{
+                              marginTop: "0.3rem",
+                              fontSize: "0.85rem",
+                              color: isDirectory
+                                ? "#1d4ed8"
+                                : f.is_visible
+                                ? "#047857"
+                                : "#b91c1c",
+                            }}
+                          >
+                            {isDirectory
+                              ? "Folder"
+                              : f.is_visible
+                              ? "Visible on website"
+                              : "Hidden from website"}
+                          </p>
+                        </div>
                       </div>
+                      <div className="file-actions">
+                        {supportsVisibility ? (
+                          f.is_visible ? (
+                            <button
+                              className="btn btn-secondary"
+                              onClick={() => handleSetManagedFileVisibility(f.path, false)}
+                              disabled={isSavingVisibility}
+                            >
+                              {isSavingVisibility ? "Saving..." : "Hide"}
+                            </button>
+                          ) : (
+                            <button
+                              className="btn btn-secondary"
+                              onClick={() => handleSetManagedFileVisibility(f.path, true)}
+                              disabled={isSavingVisibility}
+                            >
+                              {isSavingVisibility ? "Saving..." : "Show on Website"}
+                            </button>
+                          )
+                        ) : null}
+                        <button
+                          className="btn btn-primary"
+                          onClick={() => handleDeleteManagedFile(f.path)}
+                          disabled={isSavingVisibility}
+                        >
+                          {isDirectory ? "Delete Folder" : "Delete"}
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+
+            {manageContentType === "objective_mcq" && (
+              <>
+                <hr style={{ margin: "1.5rem 0" }} />
+                <h3 style={{ marginBottom: "0.6rem" }}>Objective MCQ Database Management</h3>
+                <p style={{ color: "#64748b", marginBottom: "1rem" }}>
+                  Manually delete questions, chapters, and subjects.
+                </p>
+
+                {subjects.length === 0 ? (
+                  <button className="btn btn-secondary" onClick={handleLoadSubjects} style={{ marginBottom: "1rem" }}>
+                    Load Subjects
+                  </button>
+                ) : (
+                  <>
+                    <div style={{ marginBottom: "0.9rem" }}>
+                      <label style={{ display: "block", marginBottom: "0.4rem" }}>Subject:</label>
+                      <select
+                        value={manageObjectiveSubject}
+                        onChange={(e) => handleManageObjectiveSubjectChange(e.target.value)}
+                        style={{
+                          width: "100%",
+                          padding: "0.5rem",
+                          borderRadius: "4px",
+                          border: "1px solid #ddd",
+                        }}
+                      >
+                        <option value="">Choose a subject...</option>
+                        {subjects.map((subject) => (
+                          <option key={subject.id} value={subject.name}>
+                            {subject.name}
+                          </option>
+                        ))}
+                      </select>
                     </div>
-                    <div className="file-actions">
-                      {f.is_visible ? (
-                        <button
-                          className="btn btn-secondary"
-                          onClick={() => handleSetManagedFileVisibility(f.path, false)}
-                          disabled={savingManagedFilePath === f.path}
-                        >
-                          {savingManagedFilePath === f.path ? "Saving..." : "Hide"}
-                        </button>
-                      ) : (
-                        <button
-                          className="btn btn-secondary"
-                          onClick={() => handleSetManagedFileVisibility(f.path, true)}
-                          disabled={savingManagedFilePath === f.path}
-                        >
-                          {savingManagedFilePath === f.path ? "Saving..." : "Show on Website"}
-                        </button>
-                      )}
+
+                    {manageObjectiveSubject ? (
+                      <div style={{ marginBottom: "0.9rem" }}>
+                        <label style={{ display: "block", marginBottom: "0.4rem" }}>Chapter:</label>
+                        {loadingManageObjectiveChapters ? (
+                          <p>Loading chapters...</p>
+                        ) : (
+                          <select
+                            value={manageObjectiveChapterId}
+                            onChange={(e) => {
+                              setManageObjectiveChapterId(e.target.value);
+                              setManageObjectiveQuestions([]);
+                              setManageObjectiveQuestionPage(1);
+                              setManageObjectiveTotalPages(1);
+                              setManageObjectiveQuestionCount(0);
+                            }}
+                            style={{
+                              width: "100%",
+                              padding: "0.5rem",
+                              borderRadius: "4px",
+                              border: "1px solid #ddd",
+                            }}
+                          >
+                            <option value="">Choose a chapter...</option>
+                            {manageObjectiveChapters.map((chapter) => (
+                              <option key={chapter.id} value={chapter.id}>
+                                {chapter.name}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                    ) : null}
+
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "0.6rem", marginBottom: "1rem" }}>
+                      <button
+                        className="btn btn-secondary"
+                        onClick={() => handleLoadManageObjectiveQuestions(1)}
+                        disabled={!manageObjectiveChapterId || loadingManageObjectiveQuestions}
+                      >
+                        {loadingManageObjectiveQuestions ? "Loading..." : "Load Chapter Questions"}
+                      </button>
+                      <button
+                        className="btn btn-secondary"
+                        onClick={handleDeleteObjectiveChapter}
+                        disabled={!manageObjectiveChapterId || deletingObjectiveAction.startsWith("chapter-")}
+                      >
+                        {deletingObjectiveAction.startsWith("chapter-")
+                          ? "Deleting Chapter..."
+                          : "Delete Chapter"}
+                      </button>
                       <button
                         className="btn btn-primary"
-                        onClick={() => handleDeleteManagedFile(f.path)}
-                        disabled={savingManagedFilePath === f.path}
+                        onClick={handleDeleteObjectiveSubject}
+                        disabled={!manageObjectiveSubject || deletingObjectiveAction.startsWith("subject-")}
                       >
-                        Delete
+                        {deletingObjectiveAction.startsWith("subject-")
+                          ? "Deleting Subject..."
+                          : "Delete Subject"}
                       </button>
                     </div>
-                  </li>
-                ))}
-              </ul>
+
+                    {loadingManageObjectiveQuestions ? (
+                      <p>Loading questions...</p>
+                    ) : manageObjectiveQuestions.length > 0 ? (
+                      <>
+                        <p style={{ marginBottom: "0.8rem", color: "#475569" }}>
+                          Total questions: {manageObjectiveQuestionCount} | Page {manageObjectiveQuestionPage} of{" "}
+                          {manageObjectiveTotalPages}
+                        </p>
+                        <ul className="file-list">
+                          {manageObjectiveQuestions.map((question) => (
+                            <li key={question.id} className="file-item">
+                              <div className="file-info">
+                                <div className="file-details">
+                                  <h4>Question #{question.id}</h4>
+                                  <p style={{ whiteSpace: "pre-wrap" }}>{question.question_text}</p>
+                                </div>
+                              </div>
+                              <div className="file-actions">
+                                <button
+                                  className="btn btn-primary"
+                                  onClick={() => handleDeleteObjectiveQuestion(question.id)}
+                                  disabled={deletingObjectiveAction === `question-${question.id}`}
+                                >
+                                  {deletingObjectiveAction === `question-${question.id}`
+                                    ? "Deleting..."
+                                    : "Delete Question"}
+                                </button>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                        <div style={{ display: "flex", gap: "0.6rem", marginTop: "0.8rem" }}>
+                          <button
+                            className="btn btn-secondary"
+                            onClick={() => handleLoadManageObjectiveQuestions(manageObjectiveQuestionPage - 1)}
+                            disabled={manageObjectiveQuestionPage <= 1 || loadingManageObjectiveQuestions}
+                          >
+                            Previous
+                          </button>
+                          <button
+                            className="btn btn-secondary"
+                            onClick={() => handleLoadManageObjectiveQuestions(manageObjectiveQuestionPage + 1)}
+                            disabled={
+                              manageObjectiveQuestionPage >= manageObjectiveTotalPages ||
+                              loadingManageObjectiveQuestions
+                            }
+                          >
+                            Next
+                          </button>
+                        </div>
+                      </>
+                    ) : manageObjectiveChapterId ? (
+                      <p>No chapter questions loaded yet.</p>
+                    ) : null}
+                  </>
+                )}
+              </>
             )}
           </div>
         )}
@@ -1606,8 +2085,10 @@ export default function AdminDashboard() {
             }}
           >
             <h2>Bulk Upload MCQs from CSV/JSON/Excel</h2>
-            <p style={{color: '#666', marginBottom: '1rem'}}>
-              Upload a CSV/TSV/JSON/XLSX/XLS file or enter a backend/dropbox file path/link. Columns: question_header, question_text, question_image_url, option_a, option_b, option_c, option_d, correct_option, explanation
+            <p style={{ color: "#666", marginBottom: "1rem" }}>
+              Upload a CSV/TSV/JSON/XLSX/XLS file or enter a backend/dropbox file path/link.
+              Columns: question_header, question_text, question_image_url, option_a, option_b,
+              option_c, option_d, correct_option, explanation.
             </p>
             <div style={{ marginBottom: "1rem" }}>
               <button
@@ -1657,18 +2138,18 @@ export default function AdminDashboard() {
                       <option key={s.id || s.name} value={s.name || s}>
                         {s.name || s}
                       </option>
-                    ))}
-                  </select>
-                </div>
+                ))}
+              </select>
+            </div>
 
-                {selectedSubject && (
+                {selectedSubject ? (
                   <>
                     {loadingChapters ? (
                       <p>Loading chapters...</p>
                     ) : (
                       <div style={{ marginBottom: "1.5rem" }}>
                         <label style={{ display: "block", marginBottom: "0.5rem" }}>
-                          Select Chapter:
+                          Select Existing Chapter (Optional for new chapter upload):
                         </label>
                         <select
                           value={selectedChapterId}
@@ -1689,11 +2170,7 @@ export default function AdminDashboard() {
                         </select>
                       </div>
                     )}
-                  </>
-                )}
 
-                {selectedChapterId && (
-                  <>
                     <div style={{ marginBottom: "1.5rem" }}>
                       <label style={{ display: "block", marginBottom: "0.5rem" }}>
                         Select Question File:
@@ -1735,26 +2212,73 @@ export default function AdminDashboard() {
                       />
                     </div>
 
-                    <button
-                      onClick={handleBulkUpload}
-                      disabled={bulkUploading || (!bulkQuestionsFile && !bulkQuestionsPath.trim())}
-                      style={{
-                        backgroundColor:
-                          bulkUploading || (!bulkQuestionsFile && !bulkQuestionsPath.trim()) ? "#ccc" : "#28a745",
-                        color: "white",
-                        padding: "0.75rem 1.5rem",
-                        border: "none",
-                        borderRadius: "4px",
-                        cursor:
-                          bulkUploading || (!bulkQuestionsFile && !bulkQuestionsPath.trim())
-                            ? "not-allowed"
-                            : "pointer",
-                      }}
-                    >
-                      {bulkUploading ? "Uploading..." : "Upload Questions"}
-                    </button>
+                    <div style={{ marginBottom: "1.5rem" }}>
+                      <label style={{ display: "block", marginBottom: "0.5rem" }}>
+                        New Chapter Name (Optional):
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="If empty, chapter name is auto-derived from file name"
+                        value={newBulkChapterName}
+                        onChange={(e) => setNewBulkChapterName(e.target.value)}
+                        style={{
+                          width: "100%",
+                          padding: "0.5rem",
+                          borderRadius: "4px",
+                          border: "1px solid #ddd",
+                        }}
+                      />
+                    </div>
+
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "0.7rem" }}>
+                      <button
+                        onClick={handleBulkUpload}
+                        disabled={
+                          bulkUploading ||
+                          !selectedChapterId ||
+                          (!bulkQuestionsFile && !bulkQuestionsPath.trim())
+                        }
+                        style={{
+                          backgroundColor:
+                            bulkUploading ||
+                            !selectedChapterId ||
+                            (!bulkQuestionsFile && !bulkQuestionsPath.trim())
+                              ? "#ccc"
+                              : "#28a745",
+                          color: "white",
+                          padding: "0.75rem 1.5rem",
+                          border: "none",
+                          borderRadius: "4px",
+                          cursor:
+                            bulkUploading ||
+                            !selectedChapterId ||
+                            (!bulkQuestionsFile && !bulkQuestionsPath.trim())
+                              ? "not-allowed"
+                              : "pointer",
+                        }}
+                      >
+                        {bulkUploading ? "Uploading..." : "Upload to Selected Chapter"}
+                      </button>
+
+                      <button
+                        className="btn btn-primary"
+                        onClick={handleUploadNewChapterFile}
+                        disabled={
+                          creatingNewChapterUpload ||
+                          !selectedSubject ||
+                          (!bulkQuestionsFile && !bulkQuestionsPath.trim())
+                        }
+                      >
+                        {creatingNewChapterUpload
+                          ? "Creating Chapter..."
+                          : "Upload as New Chapter File"}
+                      </button>
+                    </div>
+                    <p style={{ color: "#64748b", marginTop: "0.8rem", marginBottom: 0 }}>
+                      Use the second button to create a new chapter directly from the uploaded file.
+                    </p>
                   </>
-                )}
+                ) : null}
               </>
             )}
           </div>
