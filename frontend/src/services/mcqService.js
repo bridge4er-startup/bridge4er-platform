@@ -112,16 +112,30 @@ export const mcqService = {
   },
 
   // Create chapter (admin only)
-  createChapter: async (subjectId, name, order = 0) => {
+  createChapter: async (subjectId, name, order = 0, smallNote = "") => {
     try {
       const response = await API.post("exams/chapters/create/", {
         subject_id: subjectId,
         name,
         order,
+        small_note: smallNote,
       });
       return response.data;
     } catch (error) {
       console.error("Error creating chapter:", error);
+      throw error;
+    }
+  },
+
+  // Update chapter note (admin only)
+  updateChapterNote: async (chapterId, smallNote) => {
+    try {
+      const response = await API.patch(`exams/chapters/${chapterId}/`, {
+        small_note: smallNote,
+      });
+      return response.data;
+    } catch (error) {
+      console.error("Error updating chapter note:", error);
       throw error;
     }
   },

@@ -197,7 +197,10 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
                 <div key={subject.id || subject.name || subject} className="subject-card folder-card">
                   <i className={getSubjectIcon(subject.name || subject, "fas fa-folder-open")}></i>
                   <h3 className="folder-display-name">{subject.name || subject}</h3>
-                  <button className="btn btn-primary" onClick={() => handleSelectSubject(subject.name || subject)}>
+                  <button
+                    className="btn btn-primary mcq-folder-open-btn"
+                    onClick={() => handleSelectSubject(subject.name || subject)}
+                  >
                     Open Subject Folder
                   </button>
                 </div>
@@ -243,7 +246,11 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
                 <div key={chapter.id || chapter.name} className="subject-card folder-card chapter-card">
                   <i className={getSubjectIcon(chapter.name || chapter, "fas fa-file-lines")}></i>
                   <h3 className="folder-display-name">{chapter.name || chapter}</h3>
-                  <button className="btn btn-primary" onClick={() => handleSelectChapter(chapter.name || chapter)}>
+                  {chapter.small_note ? <p className="chapter-small-note">{chapter.small_note}</p> : null}
+                  <button
+                    className="btn btn-primary mcq-folder-open-btn"
+                    onClick={() => handleSelectChapter(chapter.name || chapter)}
+                  >
                     Open Question Set
                   </button>
                 </div>

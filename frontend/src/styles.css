@@ -5690,6 +5690,9 @@ body[data-branch-theme="computer-engineering"] {
 .folder-card {
   border: 1px solid color-mix(in srgb, var(--primary-color) 20%, #cbd5e1);
   background: linear-gradient(165deg, #ffffff, color-mix(in srgb, var(--branch-soft, #f8fafc) 82%, #ffffff));
+  height: auto;
+  min-height: 180px;
+  justify-content: flex-start;
 }
 
 .folder-card i {
@@ -5701,7 +5704,7 @@ body[data-branch-theme="computer-engineering"] {
   line-height: 1.25;
   min-height: calc(1.25em * 2);
   max-height: calc(1.25em * 2);
-  margin-bottom: 0.45rem;
+  margin-bottom: 0.2rem;
   overflow: hidden;
   text-overflow: ellipsis;
   word-break: break-word;
@@ -5712,6 +5715,40 @@ body[data-branch-theme="computer-engineering"] {
 
 .chapter-card {
   border-style: dashed;
+}
+
+.chapter-small-note {
+  margin: 0;
+  min-height: calc(1.2em * 2);
+  max-height: calc(1.2em * 2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 0.66rem;
+  line-height: 1.2;
+  color: #64748b;
+  letter-spacing: 0.01em;
+}
+
+.mcq-folder-open-btn {
+  margin-top: auto;
+  padding: 0.38rem 0.75rem;
+  font-size: 0.74rem;
+  line-height: 1.1;
+  border-radius: 8px;
+}
+
+@media (max-width: 640px) {
+  .mcq-folder-open-btn {
+    padding: 0.32rem 0.62rem;
+    font-size: 0.68rem;
+  }
+
+  .chapter-small-note {
+    font-size: 0.62rem;
+  }
 }
 
 .library-bookshelf-grid {

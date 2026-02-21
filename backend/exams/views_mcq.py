@@ -260,7 +260,7 @@ class ChapterListView(APIView):
         )
         try:
             subject_obj = Subject.objects.get(name=subject, branch=branch)
-            chapters = Chapter.objects.filter(subject=subject_obj).values("id", "name")
+            chapters = Chapter.objects.filter(subject=subject_obj).values("id", "name", "small_note")
             return Response(list(chapters))
         except Subject.DoesNotExist:
             return Response({"error": "Subject not found"}, status=status.HTTP_404_NOT_FOUND)
@@ -469,6 +469,7 @@ class CreateChapterView(APIView):
         subject_id = request.data.get("subject_id")
         name = request.data.get("name")
         order = request.data.get("order", 0)
+        small_note = str(request.data.get("small_note") or "").strip()
 
         if not subject_id or not name:
             return Response(
@@ -478,10 +479,46 @@ class CreateChapterView(APIView):
 
         try:
             subject = Subject.objects.get(id=subject_id)
-            chapter = Chapter.objects.create(subject=subject, name=name, order=order)
-            return Response({"id": chapter.id, "name": chapter.name}, status=status.HTTP_201_CREATED)
+            chapter = Chapter.objects.create(
+                subject=subject,
+                name=name,
+                order=order,
+                small_note=small_note[:255],
+            )
+            return Response(
+                {
+                    "id": chapter.id,
+                    "name": chapter.name,
+                    "small_note": chapter.small_note,
+                },
+                status=status.HTTP_201_CREATED,
+            )
         except Subject.DoesNotExist:
             return Response({"error": "Subject not found"}, status=status.HTTP_404_NOT_FOUND)
+
+
+class UpdateChapterView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def patch(self, request, chapter_id):
+        try:
+            chapter = Chapter.objects.get(id=chapter_id)
+        except Chapter.DoesNotExist:
+            return Response({"error": "Chapter not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        if "small_note" not in request.data:
+            return Response({"error": "small_note is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        chapter.small_note = str(request.data.get("small_note") or "").strip()[:255]
+        chapter.save(update_fields=["small_note"])
+        return Response(
+            {
+                "id": chapter.id,
+                "name": chapter.name,
+                "small_note": chapter.small_note,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class DeleteChapterView(APIView):

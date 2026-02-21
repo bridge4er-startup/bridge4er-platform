@@ -22,7 +22,7 @@ class SubjectSerializer(serializers.ModelSerializer):
 class ChapterSerializer(serializers.ModelSerializer):
     class Meta:
         model = Chapter
-        fields = ['id', 'name', 'subject', 'order']
+        fields = ['id', 'name', 'subject', 'order', 'small_note']
 
 
 class MCQQuestionSerializer(serializers.ModelSerializer):

@@ -32,6 +32,7 @@ from .views_mcq import (
     CreateQuestionView,
     CreateSubjectView,
     CreateChapterView,
+    UpdateChapterView,
     DeleteSubjectView,
     DeleteChapterView,
     BulkUploadQuestionsView,
@@ -61,6 +62,7 @@ urlpatterns = [
     # Admin endpoints
     path('subjects/create/', CreateSubjectView.as_view()),
     path('chapters/create/', CreateChapterView.as_view()),
+    path('chapters/<int:chapter_id>/', UpdateChapterView.as_view()),
     path('subjects/<int:subject_id>/delete/', DeleteSubjectView.as_view()),
     path('chapters/<int:chapter_id>/delete/', DeleteChapterView.as_view()),
     path('questions/create/', CreateQuestionView.as_view()),

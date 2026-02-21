@@ -34,6 +34,7 @@ export default function AdminDashboard() {
   const [loadingChapters, setLoadingChapters] = useState(false);
   const [newSubjectName, setNewSubjectName] = useState("");
   const [newChapterName, setNewChapterName] = useState("");
+  const [newChapterNote, setNewChapterNote] = useState("");
 
   // Single Question State
   const [questionData, setQuestionData] = useState({
@@ -53,6 +54,7 @@ export default function AdminDashboard() {
   const [bulkUploading, setBulkUploading] = useState(false);
   const [creatingNewChapterUpload, setCreatingNewChapterUpload] = useState(false);
   const [newBulkChapterName, setNewBulkChapterName] = useState("");
+  const [newBulkChapterNote, setNewBulkChapterNote] = useState("");
   const [syncingDropbox, setSyncingDropbox] = useState(false);
   const [quickDropboxPath, setQuickDropboxPath] = useState("");
   const [importingQuickDropboxPath, setImportingQuickDropboxPath] = useState(false);
@@ -72,6 +74,8 @@ export default function AdminDashboard() {
   const [loadingManageObjectiveChapters, setLoadingManageObjectiveChapters] = useState(false);
   const [loadingManageObjectiveQuestions, setLoadingManageObjectiveQuestions] = useState(false);
   const [deletingObjectiveAction, setDeletingObjectiveAction] = useState("");
+  const [manageObjectiveChapterNoteDraft, setManageObjectiveChapterNoteDraft] = useState("");
+  const [savingManageObjectiveChapterNote, setSavingManageObjectiveChapterNote] = useState(false);
 
   // Homepage Metrics State
   const [homepageMetrics, setHomepageMetrics] = useState({
@@ -152,6 +156,7 @@ export default function AdminDashboard() {
     setBulkQuestionsFile(null);
     setBulkQuestionsPath("");
     setNewBulkChapterName("");
+    setNewBulkChapterNote("");
     const input = document.getElementById("bulk-questions-input");
     if (input) {
       input.value = "";
@@ -165,6 +170,8 @@ export default function AdminDashboard() {
     setSelectedSubject("");
     setChapters([]);
     setSelectedChapterId("");
+    setNewChapterNote("");
+    setNewBulkChapterNote("");
     setManageObjectiveSubject("");
     setManageObjectiveChapterId("");
     setManageObjectiveChapters([]);
@@ -172,6 +179,7 @@ export default function AdminDashboard() {
     setManageObjectiveQuestionPage(1);
     setManageObjectiveTotalPages(1);
     setManageObjectiveQuestionCount(0);
+    setManageObjectiveChapterNoteDraft("");
   };
 
   const handleFileChange = (e) => {
@@ -327,7 +335,12 @@ export default function AdminDashboard() {
 
     setCreatingNewChapterUpload(true);
     try {
-      const chapter = await mcqService.createChapter(subjectObj.id, chapterName);
+      const chapter = await mcqService.createChapter(
+        subjectObj.id,
+        chapterName,
+        0,
+        newBulkChapterNote.trim()
+      );
       const chapterId = chapter?.id;
       if (!chapterId) {
         throw new Error("Failed to create chapter");
@@ -404,9 +417,10 @@ export default function AdminDashboard() {
       return;
     }
     try {
-      await mcqService.createChapter(subjectObj.id, newChapterName.trim());
+      await mcqService.createChapter(subjectObj.id, newChapterName.trim(), 0, newChapterNote.trim());
       toast.success("Chapter created");
       setNewChapterName("");
+      setNewChapterNote("");
       handleSelectSubject(selectedSubject);
     } catch (error) {
       toast.error("Failed to create chapter");
@@ -455,6 +469,7 @@ export default function AdminDashboard() {
   const handleManageObjectiveSubjectChange = async (subject) => {
     setManageObjectiveSubject(subject);
     setManageObjectiveChapterId("");
+    setManageObjectiveChapterNoteDraft("");
     setManageObjectiveQuestions([]);
     setManageObjectiveQuestionPage(1);
     setManageObjectiveTotalPages(1);
@@ -473,6 +488,49 @@ export default function AdminDashboard() {
       toast.error("Failed to load chapters");
     } finally {
       setLoadingManageObjectiveChapters(false);
+    }
+  };
+
+  const handleUpdateObjectiveChapterNote = async () => {
+    if (!manageObjectiveChapterId) {
+      toast.error("Select a chapter first");
+      return;
+    }
+    const chapterObj = manageObjectiveChapters.find(
+      (chapter) => String(chapter.id) === String(manageObjectiveChapterId)
+    );
+    if (!chapterObj) {
+      toast.error("Invalid chapter");
+      return;
+    }
+
+    setSavingManageObjectiveChapterNote(true);
+    try {
+      const updated = await mcqService.updateChapterNote(
+        chapterObj.id,
+        manageObjectiveChapterNoteDraft.trim()
+      );
+
+      setManageObjectiveChapters((prev) =>
+        prev.map((chapter) =>
+          String(chapter.id) === String(chapterObj.id)
+            ? { ...chapter, small_note: updated?.small_note || "" }
+            : chapter
+        )
+      );
+      setManageObjectiveChapterNoteDraft(updated?.small_note || "");
+      setChapters((prev) =>
+        prev.map((chapter) =>
+          String(chapter.id) === String(chapterObj.id)
+            ? { ...chapter, small_note: updated?.small_note || "" }
+            : chapter
+        )
+      );
+      toast.success("Chapter note saved");
+    } catch (error) {
+      toast.error(error?.response?.data?.error || "Failed to save chapter note");
+    } finally {
+      setSavingManageObjectiveChapterNote(false);
     }
   };
 
@@ -590,6 +648,7 @@ export default function AdminDashboard() {
       setManageObjectiveQuestionPage(1);
       setManageObjectiveTotalPages(1);
       setManageObjectiveQuestionCount(0);
+      setManageObjectiveChapterNoteDraft("");
       await handleLoadManagedFiles();
     } catch (error) {
       toast.error(error?.response?.data?.error || "Failed to delete subject");
@@ -1747,7 +1806,12 @@ export default function AdminDashboard() {
                           <select
                             value={manageObjectiveChapterId}
                             onChange={(e) => {
-                              setManageObjectiveChapterId(e.target.value);
+                              const nextChapterId = e.target.value;
+                              setManageObjectiveChapterId(nextChapterId);
+                              const nextChapter = manageObjectiveChapters.find(
+                                (chapter) => String(chapter.id) === String(nextChapterId)
+                              );
+                              setManageObjectiveChapterNoteDraft(nextChapter?.small_note || "");
                               setManageObjectiveQuestions([]);
                               setManageObjectiveQuestionPage(1);
                               setManageObjectiveTotalPages(1);
@@ -1768,6 +1832,39 @@ export default function AdminDashboard() {
                             ))}
                           </select>
                         )}
+                      </div>
+                    ) : null}
+
+                    {manageObjectiveChapterId ? (
+                      <div style={{ marginBottom: "1rem" }}>
+                        <label style={{ display: "block", marginBottom: "0.4rem" }}>
+                          Chapter Note (Small text shown below chapter name):
+                        </label>
+                        <input
+                          type="text"
+                          value={manageObjectiveChapterNoteDraft}
+                          onChange={(e) => setManageObjectiveChapterNoteDraft(e.target.value)}
+                          maxLength={255}
+                          placeholder="Optional short note"
+                          style={{
+                            width: "100%",
+                            padding: "0.5rem",
+                            borderRadius: "4px",
+                            border: "1px solid #ddd",
+                          }}
+                        />
+                        <div style={{ marginTop: "0.5rem", display: "flex", justifyContent: "space-between", gap: "0.5rem" }}>
+                          <span style={{ color: "#64748b", fontSize: "0.8rem" }}>
+                            {manageObjectiveChapterNoteDraft.length}/255
+                          </span>
+                          <button
+                            className="btn btn-secondary"
+                            onClick={handleUpdateObjectiveChapterNote}
+                            disabled={savingManageObjectiveChapterNote}
+                          >
+                            {savingManageObjectiveChapterNote ? "Saving Note..." : "Save Chapter Note"}
+                          </button>
+                        </div>
                       </div>
                     ) : null}
 
@@ -1938,6 +2035,15 @@ export default function AdminDashboard() {
                       <button className="btn btn-secondary" onClick={handleCreateChapter}>
                         Add Chapter
                       </button>
+                    </div>
+                    <div style={{ marginBottom: "1rem" }}>
+                      <input
+                        placeholder="Short chapter note (optional, shown below chapter name)"
+                        value={newChapterNote}
+                        onChange={(e) => setNewChapterNote(e.target.value)}
+                        maxLength={255}
+                        style={{ width: "100%", padding: "0.5rem", borderRadius: "4px", border: "1px solid #ddd" }}
+                      />
                     </div>
                     {loadingChapters ? (
                       <p>Loading chapters...</p>
@@ -2221,6 +2327,25 @@ export default function AdminDashboard() {
                         placeholder="If empty, chapter name is auto-derived from file name"
                         value={newBulkChapterName}
                         onChange={(e) => setNewBulkChapterName(e.target.value)}
+                        style={{
+                          width: "100%",
+                          padding: "0.5rem",
+                          borderRadius: "4px",
+                          border: "1px solid #ddd",
+                        }}
+                      />
+                    </div>
+
+                    <div style={{ marginBottom: "1.5rem" }}>
+                      <label style={{ display: "block", marginBottom: "0.5rem" }}>
+                        New Chapter Note (Optional):
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Small note shown below chapter name"
+                        value={newBulkChapterNote}
+                        onChange={(e) => setNewBulkChapterNote(e.target.value)}
+                        maxLength={255}
                         style={{
                           width: "100%",
                           padding: "0.5rem",

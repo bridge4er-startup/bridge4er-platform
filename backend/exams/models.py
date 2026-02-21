@@ -18,6 +18,7 @@ class Chapter(models.Model):
     name = models.CharField(max_length=200)
     subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name='chapters')
     order = models.IntegerField(default=0)
+    small_note = models.CharField(max_length=255, blank=True, default="")
 
     class Meta:
         ordering = ['order']
