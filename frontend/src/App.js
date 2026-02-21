@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import Home from "./pages/Home";
 import MCQExamPage from "./pages/MCQExamPage";
@@ -10,6 +10,7 @@ import AdminDashboard from "./pages/AdminDashboard";
 import PaymentResultPage from "./pages/PaymentResultPage";
 import { Toaster } from "react-hot-toast";
 import { useAuth } from "./context/AuthContext";
+import { startBackendHeartbeat } from "./services/api";
 
 function ProtectedRoute({ children, adminOnly = false }) {
   const { loading, isAuthenticated, isAdmin } = useAuth();
@@ -26,6 +27,11 @@ function ProtectedRoute({ children, adminOnly = false }) {
 }
 
 function App() {
+  useEffect(() => {
+    const stopHeartbeat = startBackendHeartbeat();
+    return () => stopHeartbeat();
+  }, []);
+
   return (
     <div className="App">
       <Toaster position="top-right" />

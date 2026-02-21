@@ -25,6 +25,20 @@ def env_list(name, default=""):
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
+def env_int(name, default=0, minimum=None):
+    raw = os.getenv(name)
+    if raw is None:
+        value = default
+    else:
+        try:
+            value = int(raw.strip())
+        except ValueError:
+            value = default
+    if minimum is not None:
+        value = max(minimum, value)
+    return value
+
+
 def build_database_config():
     database_url = os.getenv("DATABASE_URL", "").strip()
     default_sqlite_path = BASE_DIR.parent / "db.sqlite3"
@@ -211,6 +225,13 @@ X_FRAME_OPTIONS = os.getenv("X_FRAME_OPTIONS", "DENY")
 SHOW_OTP_IN_RESPONSE = env_bool("SHOW_OTP_IN_RESPONSE", DEBUG)
 ALLOW_INSECURE_PAYMENT_VERIFICATION = env_bool("ALLOW_INSECURE_PAYMENT_VERIFICATION", DEBUG)
 ENABLE_DEMO_EXAM_SETS = env_bool("ENABLE_DEMO_EXAM_SETS", DEBUG)
+DROPBOX_AUTO_SYNC_COOLDOWN_SECONDS = env_int("DROPBOX_AUTO_SYNC_COOLDOWN_SECONDS", 600, minimum=60)
+DROPBOX_LIST_CACHE_TTL_SECONDS = env_int("DROPBOX_LIST_CACHE_TTL_SECONDS", 300, minimum=30)
+DROPBOX_LIST_CACHE_STALE_TTL_SECONDS = env_int(
+    "DROPBOX_LIST_CACHE_STALE_TTL_SECONDS",
+    1800,
+    minimum=DROPBOX_LIST_CACHE_TTL_SECONDS,
+)
 
 # Public URLs used in payment callbacks
 FRONTEND_PUBLIC_URL = os.getenv("FRONTEND_PUBLIC_URL", "http://localhost:3000").rstrip("/")

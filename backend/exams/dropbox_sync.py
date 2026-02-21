@@ -538,8 +538,23 @@ def auto_sync_dropbox_for_branch(
         return {"status": "skipped", "reason": "nothing_requested"}
 
     key_seed = f"{branch}|{int(sync_objective)}|{int(sync_exam_sets)}|{int(replace_existing)}"
-    cache_key = f"{_AUTO_SYNC_KEY_PREFIX}:{hashlib.sha1(key_seed.encode('utf-8')).hexdigest()}"
+    key_hash = hashlib.sha1(key_seed.encode("utf-8")).hexdigest()
+    cache_key = f"{_AUTO_SYNC_KEY_PREFIX}:{key_hash}"
     sig_key = f"{cache_key}:signature"
+    cooldown = max(5, int(cooldown_seconds))
+    now = time.time()
+
+    # Avoid repeated expensive Dropbox scans on read-heavy endpoints.
+    last_probe = cache.get(cache_key)
+    if last_probe is not None:
+        try:
+            elapsed = now - float(last_probe)
+        except (TypeError, ValueError):
+            elapsed = cooldown + 1
+        if elapsed < cooldown:
+            return {"status": "skipped", "reason": "cooldown"}
+
+    cache.set(cache_key, now, timeout=cooldown)
 
     signatures = {}
     if sync_objective:
@@ -553,13 +568,6 @@ def auto_sync_dropbox_for_branch(
     signature_changed = previous_signature != current_signature
     if not signature_changed:
         return {"status": "skipped", "reason": "no_changes"}
-
-    now = time.time()
-    last_run = cache.get(cache_key)
-    if previous_signature is None and last_run and (now - float(last_run)) < max(5, int(cooldown_seconds)):
-        return {"status": "skipped", "reason": "cooldown"}
-
-    cache.set(cache_key, now, timeout=max(5, int(cooldown_seconds)))
 
     result = {"status": "ok", "branch": branch}
     try:

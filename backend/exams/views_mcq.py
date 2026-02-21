@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from django.conf import settings
 from django.db import transaction
 from rest_framework import status
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
@@ -83,6 +84,17 @@ DEMO_OBJECTIVE_QUESTIONS = [
         "question_image_url": "",
     },
 ]
+
+
+def _auto_sync_cooldown_seconds():
+    value = getattr(settings, "DROPBOX_AUTO_SYNC_COOLDOWN_SECONDS", 600)
+    try:
+        return max(60, int(value))
+    except (TypeError, ValueError):
+        return 600
+
+
+AUTO_SYNC_COOLDOWN_SECONDS = _auto_sync_cooldown_seconds()
 
 
 def _normalize_question_payload(raw):
@@ -228,7 +240,7 @@ class SubjectListView(APIView):
             sync_objective=True,
             sync_exam_sets=False,
             replace_existing=True,
-            cooldown_seconds=60,
+            cooldown_seconds=AUTO_SYNC_COOLDOWN_SECONDS,
         )
         subjects = Subject.objects.filter(branch=branch).values("id", "name")
         return Response(list(subjects))
@@ -244,7 +256,7 @@ class ChapterListView(APIView):
             sync_objective=True,
             sync_exam_sets=False,
             replace_existing=True,
-            cooldown_seconds=60,
+            cooldown_seconds=AUTO_SYNC_COOLDOWN_SECONDS,
         )
         try:
             subject_obj = Subject.objects.get(name=subject, branch=branch)
@@ -264,7 +276,7 @@ class QuestionListView(APIView):
             sync_objective=True,
             sync_exam_sets=False,
             replace_existing=True,
-            cooldown_seconds=60,
+            cooldown_seconds=AUTO_SYNC_COOLDOWN_SECONDS,
         )
 
         try:

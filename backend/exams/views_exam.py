@@ -121,6 +121,17 @@ DEMO_SUBJECTIVE_QUESTIONS = [
 ]
 
 
+def _auto_sync_cooldown_seconds():
+    value = getattr(settings, "DROPBOX_AUTO_SYNC_COOLDOWN_SECONDS", 600)
+    try:
+        return max(60, int(value))
+    except (TypeError, ValueError):
+        return 600
+
+
+AUTO_SYNC_COOLDOWN_SECONDS = _auto_sync_cooldown_seconds()
+
+
 def _ensure_demo_exam_sets(branch: str, exam_type: str | None = None):
     def _create_mcq_sets():
         if ExamSet.objects.filter(branch=branch, exam_type="mcq").exists():
@@ -452,7 +463,7 @@ class ExamSetListView(APIView):
             sync_objective=False,
             sync_exam_sets=True,
             replace_existing=True,
-            cooldown_seconds=60,
+            cooldown_seconds=AUTO_SYNC_COOLDOWN_SECONDS,
         )
         _maybe_seed_demo_exam_sets(branch, exam_type)
 

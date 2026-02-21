@@ -1,10 +1,14 @@
+import hashlib
 import mimetypes
+import time
 
+from django.conf import settings
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from rest_framework import status
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.http import HttpResponse
 from django.db.models import Q
 
@@ -37,6 +41,27 @@ PUBLIC_PATH_MARKERS = (
     "/notice/",
 )
 ALLOWED_ROOT = "/bridge4er/"
+FILE_LIST_CACHE_KEY_PREFIX = "storage:file-list:v1"
+
+
+def _as_positive_int(value, default, minimum=1):
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(minimum, parsed)
+
+
+FILE_LIST_CACHE_TTL_SECONDS = _as_positive_int(
+    getattr(settings, "DROPBOX_LIST_CACHE_TTL_SECONDS", 300),
+    300,
+    minimum=30,
+)
+FILE_LIST_CACHE_STALE_TTL_SECONDS = _as_positive_int(
+    getattr(settings, "DROPBOX_LIST_CACHE_STALE_TTL_SECONDS", 1800),
+    1800,
+    minimum=FILE_LIST_CACHE_TTL_SECONDS,
+)
 
 
 def _is_safe_path(path):
@@ -53,6 +78,36 @@ def _resolve_content_path(content_type, branch):
     if not folder:
         return None
     return f"/bridge4er/{_normalize_branch(branch)}/{folder}"
+
+
+def _list_cache_token_key(content_type, branch):
+    return f"{FILE_LIST_CACHE_KEY_PREFIX}:token:{content_type}:{str(branch).lower()}"
+
+
+def _list_cache_token(content_type, branch):
+    token_key = _list_cache_token_key(content_type, branch)
+    token = cache.get(token_key)
+    if token is None:
+        token = "0"
+        cache.set(token_key, token, timeout=None)
+    return str(token)
+
+
+def _list_cache_keys(content_type, branch, include_dirs):
+    normalized_branch = _normalize_branch(branch).lower()
+    token = _list_cache_token(content_type, normalized_branch)
+    seed = f"{content_type}|{normalized_branch}|{int(bool(include_dirs))}|{token}"
+    digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()
+    payload_key = f"{FILE_LIST_CACHE_KEY_PREFIX}:payload:{digest}"
+    stale_key = f"{payload_key}:stale"
+    return payload_key, stale_key
+
+
+def _invalidate_list_cache(content_type, branch):
+    if not content_type or not branch:
+        return
+    token_key = _list_cache_token_key(content_type, _normalize_branch(branch))
+    cache.set(token_key, str(time.time_ns()), timeout=None)
 
 
 def _can_access_content_type(user, content_type):
@@ -110,6 +165,15 @@ def _infer_content_type_from_path(path):
         if marker in lowered:
             return content_type
     return "notice"
+
+
+def _invalidate_list_cache_for_path(path):
+    if not path:
+        return
+    _invalidate_list_cache(
+        content_type=_infer_content_type_from_path(path),
+        branch=_extract_branch_from_path(path),
+    )
 
 
 def _ensure_metadata_entry(path, content_type=None, branch=None, size=None):
@@ -246,8 +310,21 @@ class ListFilesView(APIView):
             if not path:
                 return Response({"error": "Invalid content type"}, status=status.HTTP_400_BAD_REQUEST)
 
-            files = list_folder_with_metadata(path, include_dirs=include_dirs, recursive=True)
-            _sync_metadata_from_listing(files, content_type=content_type, branch=branch)
+            cache_key, stale_key = _list_cache_keys(content_type, branch, include_dirs)
+            files = cache.get(cache_key)
+
+            if files is None:
+                try:
+                    files = list_folder_with_metadata(path, include_dirs=include_dirs, recursive=True)
+                    _sync_metadata_from_listing(files, content_type=content_type, branch=branch)
+                    cache.set(cache_key, files, timeout=FILE_LIST_CACHE_TTL_SECONDS)
+                    cache.set(stale_key, files, timeout=FILE_LIST_CACHE_STALE_TTL_SECONDS)
+                except Exception:
+                    stale_files = cache.get(stale_key)
+                    if stale_files is None:
+                        raise
+                    files = stale_files
+
             visible_files = _filter_files_by_visibility(files, include_hidden=include_hidden)
             return Response(visible_files)
         except Exception as e:
@@ -397,6 +474,7 @@ class UploadFileView(APIView):
                 dropbox_path=path,
                 defaults=defaults
             )
+            _invalidate_list_cache(content_type=content_type, branch=branch)
 
             payload = {
                 "message": "File uploaded successfully",
@@ -451,6 +529,7 @@ class FileVisibilityView(APIView):
         meta.file_size = file_size
         meta.is_visible = is_visible
         meta.save(update_fields=["name", "content_type", "branch", "file_size", "is_visible", "modified_at"])
+        _invalidate_list_cache(content_type=content_type, branch=branch)
 
         payload = {
             "message": "Visibility updated",
@@ -483,6 +562,7 @@ class DeleteFileView(APIView):
         try:
             delete_file(path)
             FileMetadata.objects.filter(dropbox_path=path).delete()
+            _invalidate_list_cache_for_path(path)
             payload = {"message": "File deleted successfully"}
             if _is_exam_set_path(path):
                 payload["exam_sets_sync"] = _sync_exam_sets_for_branch(_extract_branch_from_path(path))

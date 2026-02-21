@@ -176,7 +176,7 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
     const load = async () => {
       try {
         setLoading(true);
-        const [metricsRes, filesRes] = await Promise.all([
+        const [metricsRes, filesRes] = await Promise.allSettled([
           API.get("storage/homepage/stats/"),
           API.get("storage/files/list/", {
             params: {
@@ -185,8 +185,16 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
             },
           }),
         ]);
-        setMetrics(metricsRes.data);
-        setFiles(filesRes.data || []);
+
+        if (metricsRes.status === "fulfilled") {
+          setMetrics(metricsRes.value.data);
+        }
+        if (filesRes.status === "fulfilled") {
+          setFiles(filesRes.value.data || []);
+        }
+        if (metricsRes.status !== "fulfilled" && filesRes.status !== "fulfilled") {
+          toast.error("Failed to load homepage content.");
+        }
         setNoticePage(1);
       } catch (_error) {
         toast.error("Failed to load homepage content.");
