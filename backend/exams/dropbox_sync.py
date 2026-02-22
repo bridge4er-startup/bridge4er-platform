@@ -13,6 +13,7 @@ from storage.dropbox_service import list_folder_with_metadata
 from .import_utils import DJANGO_IMPORT_EXPORT_AVAILABLE, SUPPORTED_IMPORT_EXTENSIONS, parse_rows_from_path
 from .exam_file_metadata import build_exam_set_update_payload, extract_exam_rows_and_metadata
 from .models import Chapter, ExamQuestion, ExamSet, MCQQuestion, Subject
+from .path_utils import parse_exam_source_path, parse_objective_file_path
 from .question_normalizers import normalize_exam_question_payload, normalize_mcq_payload
 from .resources import ExamQuestionResource, MCQQuestionResource
 
@@ -304,8 +305,60 @@ def _resolve_exam_set_for_file(branch: str, exam_type: str, source_set_name: str
     return None, True
 
 
+def _candidate_synced_exam_set_name(
+    file_path: str,
+    branch: str,
+    exam_type: str,
+    base_name: str,
+) -> str:
+    parsed = parse_exam_source_path(file_path, branch, exam_type)
+    fallback_name = str(parsed.get("source_name") or Path(file_path).stem or "").strip()
+    cleaned_base = str(base_name or fallback_name).strip()
+    folder_path = str(parsed.get("folder_path") or "").strip()
+    if folder_path:
+        lowered_base = cleaned_base.lower()
+        lowered_folder = folder_path.lower()
+        if lowered_base.startswith(lowered_folder):
+            candidate = cleaned_base
+        else:
+            candidate = f"{folder_path} - {cleaned_base}"
+    else:
+        candidate = cleaned_base
+    candidate = candidate.strip()
+    if not candidate:
+        candidate = fallback_name or "Synced Exam Set"
+    return candidate[:200]
+
+
+def _ensure_unique_exam_set_name(
+    name: str,
+    branch: str,
+    exam_type: str,
+    source_hint: str,
+    exclude_id: int | None = None,
+) -> str:
+    base = (str(name or "").strip() or "Synced Exam Set")[:200]
+    queryset = ExamSet.objects.filter(name=base, branch=branch, exam_type=exam_type)
+    if exclude_id:
+        queryset = queryset.exclude(id=exclude_id)
+    if not queryset.exists():
+        return base
+
+    digest = hashlib.sha1(str(source_hint or base).encode("utf-8")).hexdigest()[:6]
+    for counter in range(1, 50):
+        suffix = f"#{digest}-{counter}"
+        max_len = max(1, 200 - len(suffix) - 1)
+        candidate = f"{base[:max_len].rstrip()} {suffix}".strip()
+        conflict_qs = ExamSet.objects.filter(name=candidate, branch=branch, exam_type=exam_type)
+        if exclude_id:
+            conflict_qs = conflict_qs.exclude(id=exclude_id)
+        if not conflict_qs.exists():
+            return candidate
+    return f"{base[:180].rstrip()} #{digest}"[:200]
+
+
 def sync_objective_mcqs_from_dropbox(branch: str, replace_existing: bool = True) -> dict:
-    root_path = f"/bridge4er/{branch}/Objective MCQs/Subjects"
+    root_path = f"/bridge4er/{branch}/Objective MCQs"
     file_paths = _list_supported_files(root_path)
 
     summary = {
@@ -339,24 +392,21 @@ def sync_objective_mcqs_from_dropbox(branch: str, replace_existing: bool = True)
                 summary["files"].append(item)
                 continue
 
-            relative = file_path[len(root_path):].lstrip("/")
-            parts = [p for p in relative.split("/") if p]
-            if len(parts) < 2:
-                raise ValueError("Expected path format: <Subject>/<ChapterFile>")
+            objective_meta = parse_objective_file_path(file_path=file_path, branch=branch)
+            if not objective_meta:
+                raise ValueError(
+                    "Expected objective path format: "
+                    "<Institution>/<Subject>/<ChapterFile> or Subjects/<Subject>/<ChapterFile>"
+                )
 
-            subject_name = parts[0].strip()
-            chapter_name = Path(parts[-1]).stem.strip()
-            if not subject_name or not chapter_name:
-                raise ValueError("Subject or chapter name missing in file path")
-
-            subject, subject_created = Subject.objects.get_or_create(name=subject_name, branch=branch)
+            subject, subject_created = Subject.objects.get_or_create(name=objective_meta["subject_key"], branch=branch)
             if subject_created:
                 summary["subjects_created"] += 1
 
             next_order = (Chapter.objects.filter(subject=subject).aggregate(max_order=Max("order")).get("max_order") or 0) + 1
             chapter, chapter_created = Chapter.objects.get_or_create(
                 subject=subject,
-                name=chapter_name,
+                name=objective_meta["chapter_name"],
                 defaults={"order": next_order},
             )
             if chapter_created:
@@ -367,7 +417,9 @@ def sync_objective_mcqs_from_dropbox(branch: str, replace_existing: bool = True)
 
             import_summary = _import_mcq_with_resource(chapter, valid_questions)
 
+            item["institution"] = objective_meta["institution_display"]
             item["subject"] = subject.name
+            item["subject_display"] = objective_meta["subject_name"]
             item["chapter"] = chapter.name
             item["imported"] = int(import_summary.get("imported", 0))
             item["skipped"] += int(import_summary.get("skipped", 0))
@@ -433,7 +485,12 @@ def _sync_exam_set_type(branch: str, exam_type: str, root_path: str, replace_exi
                 exam_info=exam_info,
                 instructions=instructions,
             )
-            desired_name = set_updates.get("name") or source_set_name
+            desired_name = _candidate_synced_exam_set_name(
+                file_path=file_path,
+                branch=branch,
+                exam_type=exam_type,
+                base_name=set_updates.get("name") or source_set_name,
+            )
 
             exam_set, should_create = _resolve_exam_set_for_file(
                 branch=branch,
@@ -464,13 +521,15 @@ def _sync_exam_set_type(branch: str, exam_type: str, root_path: str, replace_exi
             exam_set.source_file_path = file_path
             update_fields.extend(["managed_by_sync", "source_file_path"])
 
-            has_name_conflict = (
-                ExamSet.objects.filter(name=desired_name, branch=branch, exam_type=exam_type)
-                .exclude(id=exam_set.id)
-                .exists()
+            final_name = _ensure_unique_exam_set_name(
+                desired_name,
+                branch=branch,
+                exam_type=exam_type,
+                source_hint=file_path,
+                exclude_id=exam_set.id,
             )
-            if desired_name and not has_name_conflict and exam_set.name != desired_name:
-                exam_set.name = desired_name
+            if final_name and exam_set.name != final_name:
+                exam_set.name = final_name
                 update_fields.append("name")
 
             if created:
@@ -484,7 +543,10 @@ def _sync_exam_set_type(branch: str, exam_type: str, root_path: str, replace_exi
             import_summary = _import_exam_set_with_resource(exam_set, valid_rows)
             synced_set_ids.add(exam_set.id)
 
+            source_meta = parse_exam_source_path(file_path, branch, exam_type)
             item["exam_set"] = exam_set.name
+            item["institution"] = source_meta.get("institution")
+            item["folder_path"] = source_meta.get("folder_path")
             item["imported"] = int(import_summary.get("imported", 0))
             item["skipped"] += int(import_summary.get("skipped", 0))
             result["imported_questions"] += item["imported"]
@@ -558,7 +620,7 @@ def auto_sync_dropbox_for_branch(
 
     signatures = {}
     if sync_objective:
-        signatures["objective"] = _folder_signature(f"/bridge4er/{branch}/Objective MCQs/Subjects")
+        signatures["objective"] = _folder_signature(f"/bridge4er/{branch}/Objective MCQs")
     if sync_exam_sets:
         signatures["exam_mcq"] = _folder_signature(f"/bridge4er/{branch}/Take Exam/Multiple Choice Exam")
         signatures["exam_subjective"] = _folder_signature(f"/bridge4er/{branch}/Take Exam/Subjective Exam")

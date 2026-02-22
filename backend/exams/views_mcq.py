@@ -17,6 +17,7 @@ from .import_utils import (
 )
 from .dropbox_sync import auto_sync_dropbox_for_branch
 from .models import Chapter, MCQQuestion, QuestionAttempt, Subject
+from .path_utils import objective_subject_roots, parse_subject_key
 from .question_normalizers import normalize_mcq_payload
 from .resources import MCQQuestionResource
 from .serializers import MCQQuestionPublicSerializer, MCQQuestionSerializer
@@ -204,29 +205,34 @@ def _is_not_found_error(exc):
     return "not_found" in lowered or "path_lookup/not_found" in lowered
 
 
-def _objective_subject_root(branch, subject_name):
-    return f"/bridge4er/{branch}/Objective MCQs/Subjects/{subject_name}"
+def _objective_subject_root_paths(branch, subject_name):
+    return objective_subject_roots(branch, subject_name)
 
 
 def _list_matching_chapter_paths(branch, subject_name, chapter_name):
-    subject_root = _objective_subject_root(branch, subject_name)
     normalized_chapter = str(chapter_name or "").strip().lower()
     if not normalized_chapter:
         return []
 
-    entries = list_folder_with_metadata(subject_root, include_dirs=True, recursive=True)
     matches = set()
-    for entry in entries:
-        entry_path = str(entry.get("path") or "").strip()
-        if not entry_path:
-            continue
-        entry_name = Path(entry_path).name
-        if entry.get("is_dir"):
-            if entry_name.strip().lower() == normalized_chapter:
+    for subject_root in _objective_subject_root_paths(branch, subject_name):
+        try:
+            entries = list_folder_with_metadata(subject_root, include_dirs=True, recursive=True)
+        except Exception as exc:
+            if _is_not_found_error(exc):
+                continue
+            raise
+        for entry in entries:
+            entry_path = str(entry.get("path") or "").strip()
+            if not entry_path:
+                continue
+            entry_name = Path(entry_path).name
+            if entry.get("is_dir"):
+                if entry_name.strip().lower() == normalized_chapter:
+                    matches.add(entry_path)
+                continue
+            if Path(entry_name).stem.strip().lower() == normalized_chapter:
                 matches.add(entry_path)
-            continue
-        if Path(entry_name).stem.strip().lower() == normalized_chapter:
-            matches.add(entry_path)
     return sorted(matches)
 
 
@@ -242,8 +248,20 @@ class SubjectListView(APIView):
             replace_existing=True,
             cooldown_seconds=AUTO_SYNC_COOLDOWN_SECONDS,
         )
-        subjects = Subject.objects.filter(branch=branch).values("id", "name")
-        return Response(list(subjects))
+        records = []
+        for subject in Subject.objects.filter(branch=branch).values("id", "name"):
+            meta = parse_subject_key(subject.get("name", ""))
+            records.append(
+                {
+                    "id": subject.get("id"),
+                    "name": subject.get("name"),
+                    "display_name": meta.get("subject_name") or subject.get("name"),
+                    "institution": meta.get("institution_display"),
+                    "institution_key": meta.get("institution_key"),
+                }
+            )
+        records.sort(key=lambda item: ((item.get("institution") or "").lower(), (item.get("display_name") or "").lower()))
+        return Response(records)
 
 
 class ChapterListView(APIView):
@@ -578,18 +596,19 @@ class DeleteSubjectView(APIView):
         chapter_count = Chapter.objects.filter(subject=subject).count()
         question_count = MCQQuestion.objects.filter(chapter__subject=subject).count()
 
-        source_path = _objective_subject_root(subject.branch, subject.name)
-        source_deleted = False
-        source_error = ""
+        source_paths = _objective_subject_root_paths(subject.branch, subject.name)
+        source_deleted_paths = []
+        source_errors = []
         if delete_source_folder:
-            try:
-                delete_file(source_path)
-                source_deleted = True
-                FileMetadata.objects.filter(dropbox_path=source_path).delete()
-                FileMetadata.objects.filter(dropbox_path__startswith=f"{source_path}/").delete()
-            except Exception as exc:
-                if not _is_not_found_error(exc):
-                    source_error = str(exc)
+            for source_path in source_paths:
+                try:
+                    delete_file(source_path)
+                    source_deleted_paths.append(source_path)
+                    FileMetadata.objects.filter(dropbox_path=source_path).delete()
+                    FileMetadata.objects.filter(dropbox_path__startswith=f"{source_path}/").delete()
+                except Exception as exc:
+                    if not _is_not_found_error(exc):
+                        source_errors.append(str(exc))
 
         subject_name = subject.name
         subject.delete()
@@ -599,11 +618,11 @@ class DeleteSubjectView(APIView):
             "subject_name": subject_name,
             "chapters_deleted": chapter_count,
             "questions_deleted": question_count,
-            "source_folder_path": source_path,
-            "source_folder_deleted": source_deleted,
+            "source_folder_paths": source_paths,
+            "source_folders_deleted": source_deleted_paths,
         }
-        if source_error:
-            payload["source_delete_error"] = source_error
+        if source_errors:
+            payload["source_delete_errors"] = source_errors
         return Response(payload, status=status.HTTP_200_OK)
 
 

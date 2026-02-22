@@ -1,18 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import API from "../../services/api";
 import toast from "react-hot-toast";
-import { getSubjectIcon } from "../../utils/subjectIcons";
+import { getInstitutionIcon, getSubjectIcon } from "../../utils/subjectIcons";
 import FilePreviewModal from "../common/FilePreviewModal";
 import TimedLoadingState from "../common/TimedLoadingState";
-
-function resolveSubjectName(path = "") {
-  const segments = path.split("/").filter(Boolean);
-  const subjectiveIndex = segments.findIndex((item) => item.toLowerCase() === "subjective");
-  if (subjectiveIndex >= 0 && segments[subjectiveIndex + 1]) {
-    return segments[subjectiveIndex + 1];
-  }
-  return "General";
-}
 
 function resolveFileIcon(name = "") {
   const lower = name.toLowerCase();
@@ -35,7 +26,9 @@ function formatFileSize(bytes) {
 }
 
 function formatDate(isoString) {
+  if (!isoString) return "Unknown";
   const date = new Date(isoString);
+  if (Number.isNaN(date.getTime())) return "Unknown";
   return date.toLocaleDateString("en-US", {
     year: "numeric",
     month: "short",
@@ -61,13 +54,29 @@ function inferPreviewType(contentType = "", filename = "") {
   return "other";
 }
 
+function getRelativeLibraryParts(path = "") {
+  const segments = String(path || "").split("/").filter(Boolean);
+  const libraryIndex = segments.findIndex((segment) => segment.toLowerCase() === "subjective");
+  if (libraryIndex >= 0) {
+    return segments.slice(libraryIndex + 1);
+  }
+  return segments;
+}
+
+function startsWithParts(parts = [], prefix = []) {
+  if (prefix.length > parts.length) return false;
+  for (let index = 0; index < prefix.length; index += 1) {
+    if (parts[index] !== prefix[index]) return false;
+  }
+  return true;
+}
+
 export default function SubjectiveSection({ branch = "Civil Engineering", isActive = false }) {
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [previewFile, setPreviewFile] = useState(null);
-  const [selectedSubject, setSelectedSubject] = useState("");
-  const [viewMode, setViewMode] = useState("subjects");
+  const [currentFolderParts, setCurrentFolderParts] = useState([]);
 
   const closePreview = () => {
     setPreviewFile((current) => {
@@ -91,8 +100,7 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
           },
         });
         setFiles(res.data || []);
-        setSelectedSubject("");
-        setViewMode("subjects");
+        setCurrentFolderParts([]);
         closePreview();
       } catch (_error) {
         toast.error("Failed to load library materials");
@@ -123,39 +131,70 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
     return () => window.removeEventListener("keydown", handleEsc);
   }, [previewFile]);
 
-  const filteredFiles = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
-    if (!query) return files;
-    return files.filter((file) => {
-      const subject = resolveSubjectName(file.path || "").toLowerCase();
-      return file.name.toLowerCase().includes(query) || subject.includes(query);
-    });
-  }, [files, searchQuery]);
-
-  const groupedBySubject = useMemo(() => {
-    return filteredFiles.reduce((acc, file) => {
-      const subjectName = resolveSubjectName(file.path || "");
-      if (!acc[subjectName]) {
-        acc[subjectName] = [];
-      }
-      acc[subjectName].push(file);
-      return acc;
-    }, {});
-  }, [filteredFiles]);
-
-  const subjectNames = useMemo(
-    () => Object.keys(groupedBySubject).sort((a, b) => a.localeCompare(b)),
-    [groupedBySubject]
+  const fileItems = useMemo(
+    () =>
+      files.map((file) => {
+        const relativeParts = getRelativeLibraryParts(file.path || "");
+        const folderParts = relativeParts.length > 1 ? relativeParts.slice(0, -1) : [];
+        const filename = relativeParts.length > 0 ? relativeParts[relativeParts.length - 1] : file.name;
+        return {
+          ...file,
+          __folderParts: folderParts,
+          __filename: filename,
+          __searchPath: `${folderParts.join(" / ")} ${filename}`.toLowerCase(),
+        };
+      }),
+    [files]
   );
 
-  const selectedSubjectFiles = useMemo(() => {
-    if (!selectedSubject) return [];
-    return (groupedBySubject[selectedSubject] || []).slice().sort((a, b) => a.name.localeCompare(b.name));
-  }, [groupedBySubject, selectedSubject]);
+  const filteredFileItems = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return fileItems;
+    return fileItems.filter((file) => file.__searchPath.includes(query));
+  }, [fileItems, searchQuery]);
 
-  const handleOpenSubject = (subjectName) => {
-    setSelectedSubject(subjectName);
-    setViewMode("books");
+  const folderView = useMemo(() => {
+    const folderMap = new Map();
+    const directFiles = [];
+
+    filteredFileItems.forEach((file) => {
+      if (!startsWithParts(file.__folderParts, currentFolderParts)) {
+        return;
+      }
+
+      const remainder = file.__folderParts.slice(currentFolderParts.length);
+      if (remainder.length > 0) {
+        const folderName = remainder[0];
+        const folderKey = [...currentFolderParts, folderName].join("/");
+        if (!folderMap.has(folderKey)) {
+          folderMap.set(folderKey, {
+            key: folderKey,
+            name: folderName,
+            parts: [...currentFolderParts, folderName],
+            fileCount: 0,
+          });
+        }
+        const existing = folderMap.get(folderKey);
+        existing.fileCount += 1;
+        return;
+      }
+
+      directFiles.push(file);
+    });
+
+    const folders = [...folderMap.values()].sort((a, b) => a.name.localeCompare(b.name));
+    directFiles.sort((a, b) => String(a.__filename || "").localeCompare(String(b.__filename || "")));
+
+    return {
+      folders,
+      files: directFiles,
+    };
+  }, [filteredFileItems, currentFolderParts]);
+
+  const breadcrumbParts = ["Library", ...currentFolderParts];
+
+  const handleOpenFolder = (parts) => {
+    setCurrentFolderParts(parts);
     closePreview();
   };
 
@@ -187,11 +226,7 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
     }
   };
 
-  const goToSubjects = () => {
-    setViewMode("subjects");
-    setSelectedSubject("");
-    closePreview();
-  };
+  const isAtRoot = currentFolderParts.length === 0;
 
   return (
     <section id="library" className={`section professional-background ${isActive ? "active" : ""}`}>
@@ -201,13 +236,13 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
           <i className="fas fa-building"></i> {branch}
         </span>
       </h2>
-      <p>Library shelves are grouped by subject folder. Students can read resources online in read-only mode.</p>
+      <p>Library shelves are grouped by institution and subject folders. Open any folder to browse files.</p>
 
       <div className="search-container">
         <div className="search-box">
           <input
             type="text"
-            placeholder="Search subjects or book files..."
+            placeholder="Search folder names or files..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -215,75 +250,93 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
         </div>
       </div>
 
+      {!loading ? (
+        <div className="library-breadcrumbs">
+          {breadcrumbParts.map((crumb, index) => {
+            const isLast = index === breadcrumbParts.length - 1;
+            const targetParts = currentFolderParts.slice(0, Math.max(0, index));
+            return (
+              <button
+                key={`${crumb}-${index}`}
+                type="button"
+                className={`library-breadcrumb-btn ${isLast ? "active" : ""}`}
+                onClick={() => handleOpenFolder(targetParts)}
+                disabled={isLast}
+              >
+                {crumb}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+
       {loading ? (
         <TimedLoadingState baseMessage="Loading library materials..." />
-      ) : subjectNames.length === 0 ? (
+      ) : folderView.folders.length === 0 && folderView.files.length === 0 ? (
         <div className="empty-state">
           <i className="fas fa-inbox"></i>
           <h4>No materials found</h4>
         </div>
-      ) : null}
-
-      {!loading && subjectNames.length > 0 && viewMode === "subjects" ? (
-        <div className="library-bookshelf-grid">
-          {subjectNames.map((subject) => (
-            <button
-              key={subject}
-              type="button"
-              className="library-subject-folder"
-              onClick={() => handleOpenSubject(subject)}
-            >
-              <div className="library-folder-icon">
-                <i className={getSubjectIcon(subject, "fas fa-folder-open")}></i>
-              </div>
-              <div className="library-folder-info">
-                <h3>{subject}</h3>
-                <p>{groupedBySubject[subject].length} files available</p>
-              </div>
-              <span className="library-folder-action">Open Shelf</span>
-            </button>
-          ))}
-        </div>
-      ) : null}
-
-      {!loading && viewMode === "books" ? (
-        <div className="library-books-view">
-          <div className="library-view-toolbar">
-            <button className="btn btn-secondary btn-soft-blue-action" onClick={goToSubjects}>
-              <i className="fas fa-arrow-left"></i> Back to Subject Folders
-            </button>
-            <h3>
-              <i className="fas fa-layer-group"></i> {selectedSubject} Shelf
-            </h3>
-          </div>
-
-          {selectedSubjectFiles.length === 0 ? (
-            <div className="empty-state">
-              <i className="fas fa-book-dead"></i>
-              <h4>No files found in this subject</h4>
-            </div>
-          ) : (
-            <div className="library-book-list">
-              {selectedSubjectFiles.map((file) => (
-                <article key={file.path} className="library-book-item">
-                  <div className="library-book-icon">
-                    <i className={resolveFileIcon(file.name)}></i>
+      ) : (
+        <>
+          {folderView.folders.length > 0 ? (
+            <div className="library-bookshelf-grid">
+              {folderView.folders.map((folder) => (
+                <button
+                  key={folder.key}
+                  type="button"
+                  className="library-subject-folder"
+                  onClick={() => handleOpenFolder(folder.parts)}
+                >
+                  <div className="library-folder-icon">
+                    <i
+                      className={
+                        isAtRoot
+                          ? getInstitutionIcon(folder.name, "fas fa-building-columns")
+                          : getSubjectIcon(folder.name, "fas fa-folder-open")
+                      }
+                    ></i>
                   </div>
-                  <div className="library-book-meta">
-                    <h4>{file.name}</h4>
-                    <p>
-                      {formatFileSize(file.size)} | Updated: {formatDate(file.modified)}
-                    </p>
+                  <div className="library-folder-info">
+                    <h3>{folder.name}</h3>
+                    <p>{folder.fileCount} files available</p>
                   </div>
-                  <button className="btn btn-primary btn-soft-blue-action" onClick={() => handleViewPDF(file)}>
-                    <i className="fas fa-book-reader"></i> Read
-                  </button>
-                </article>
+                  <span className="library-folder-action">Open Folder</span>
+                </button>
               ))}
             </div>
-          )}
-        </div>
-      ) : null}
+          ) : null}
+
+          {folderView.files.length > 0 ? (
+            <div className="library-books-view">
+              <div className="library-view-toolbar">
+                <h3>
+                  <i className="fas fa-layer-group"></i> Files in {currentFolderParts[currentFolderParts.length - 1] || "Library"}
+                </h3>
+              </div>
+
+              <div className="library-book-list">
+                {folderView.files.map((file) => (
+                  <article key={file.path} className="library-book-item">
+                    <div className="library-book-icon">
+                      <i className={resolveFileIcon(file.__filename || file.name)}></i>
+                    </div>
+                    <div className="library-book-meta">
+                      <h4>{file.__filename || file.name}</h4>
+                      <p>
+                        {formatFileSize(file.size)} | Updated: {formatDate(file.modified)}
+                      </p>
+                    </div>
+                    <button className="btn btn-primary btn-soft-blue-action" onClick={() => handleViewPDF(file)}>
+                      <i className="fas fa-book-reader"></i> Read
+                    </button>
+                  </article>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </>
+      )}
 
       <FilePreviewModal preview={previewFile} onClose={closePreview} />
     </section>

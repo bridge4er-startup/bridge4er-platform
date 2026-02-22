@@ -37,6 +37,29 @@ const SUBJECT_ICON_MAP = {
   "computer networks": "fas fa-network-wired",
 };
 
+const INSTITUTION_ICON_MAP = {
+  "public service commission": "fas fa-landmark",
+  psc: "fas fa-landmark",
+  "nepal engineering council": "fas fa-certificate",
+  nec: "fas fa-certificate",
+  "nepal telecommunications": "fas fa-tower-broadcast",
+  ntc: "fas fa-tower-broadcast",
+  "nepal electricity authority": "fas fa-bolt",
+  nea: "fas fa-bolt",
+  "ioe msc entrance": "fas fa-graduation-cap",
+  ioe: "fas fa-graduation-cap",
+  "civil sub engineer": "fas fa-helmet-safety",
+  "kathmandu upatyaka khanepani limited": "fas fa-faucet-drip",
+  kukl: "fas fa-faucet-drip",
+  caan: "fas fa-plane",
+  "nepal army": "fas fa-shield-halved",
+  "building and architecture": "fas fa-city",
+  "nepal engineering council nec": "fas fa-certificate",
+  "public service commission psc": "fas fa-landmark",
+  "nepal telecommunications ntc": "fas fa-tower-broadcast",
+  "nepal electricity authority nea": "fas fa-bolt",
+};
+
 function normalize(value = "") {
   return String(value)
     .toLowerCase()
@@ -53,6 +76,23 @@ export function getSubjectIcon(subjectName = "", fallback = "fas fa-folder-open"
   }
 
   for (const [key, icon] of Object.entries(SUBJECT_ICON_MAP)) {
+    if (normalized.includes(key) || key.includes(normalized)) {
+      return icon;
+    }
+  }
+
+  return fallback;
+}
+
+export function getInstitutionIcon(institutionName = "", fallback = "fas fa-building-columns") {
+  const normalized = normalize(institutionName);
+  if (!normalized) return fallback;
+
+  if (INSTITUTION_ICON_MAP[normalized]) {
+    return INSTITUTION_ICON_MAP[normalized];
+  }
+
+  for (const [key, icon] of Object.entries(INSTITUTION_ICON_MAP)) {
     if (normalized.includes(key) || key.includes(normalized)) {
       return icon;
     }

@@ -29,7 +29,7 @@ CONTENT_TYPE_FOLDERS = {
     "syllabus": "Syllabus",
     "old_question": "Old Questions",
     "subjective": "Subjective",
-    "objective_mcq": "Objective MCQs/Subjects",
+    "objective_mcq": "Objective MCQs",
     "take_exam_mcq": "Take Exam/Multiple Choice Exam",
     "take_exam_subjective": "Take Exam/Subjective Exam",
 }
@@ -157,7 +157,7 @@ def _infer_content_type_from_path(path):
         "syllabus": "/syllabus/",
         "old_question": "/old questions/",
         "subjective": "/subjective/",
-        "objective_mcq": "/objective mcqs/subjects/",
+        "objective_mcq": "/objective mcqs/",
         "take_exam_mcq": "/take exam/multiple choice exam/",
         "take_exam_subjective": "/take exam/subjective exam/",
     }

@@ -5740,6 +5740,48 @@ body[data-branch-theme="computer-engineering"] {
   border-radius: 8px;
 }
 
+.institution-card i {
+  font-size: 1.65rem;
+}
+
+.library-breadcrumbs,
+.exam-breadcrumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0.4rem 0 0.95rem;
+}
+
+.library-breadcrumb-btn {
+  border: 1px solid #cdd7e7;
+  background: #ffffff;
+  color: #334155;
+  border-radius: 999px;
+  padding: 0.28rem 0.7rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.library-breadcrumb-btn.active {
+  border-color: color-mix(in srgb, var(--primary-color) 62%, #bfdbfe);
+  background: color-mix(in srgb, var(--primary-color) 11%, #ffffff);
+  color: var(--primary-color);
+}
+
+.library-breadcrumb-btn:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+
+.exam-folder-grid {
+  margin-bottom: 1rem;
+}
+
+.exam-folder-card {
+  min-height: 150px;
+}
+
 @media (max-width: 640px) {
   .mcq-folder-open-btn {
     padding: 0.32rem 0.62rem;

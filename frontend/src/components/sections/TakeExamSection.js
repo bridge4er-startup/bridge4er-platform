@@ -4,6 +4,7 @@ import { listExamSets } from "../../services/examService";
 import { initiateEsewaPayment, initiateKhaltiPayment } from "../../services/paymentService";
 import toast from "react-hot-toast";
 import TimedLoadingState from "../common/TimedLoadingState";
+import { getInstitutionIcon, getSubjectIcon } from "../../utils/subjectIcons";
 
 const EXAM_TYPE_CONTENT = {
   subjective: {
@@ -22,10 +23,36 @@ function toMinutes(seconds = 0) {
   return Math.max(1, Math.floor(Number(seconds || 0) / 60));
 }
 
+function normalizeFolderParts(folderParts) {
+  if (Array.isArray(folderParts)) {
+    return folderParts.map((part) => String(part || "").trim()).filter(Boolean);
+  }
+  if (typeof folderParts === "string") {
+    return folderParts
+      .split("/")
+      .map((part) => part.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function startsWithParts(parts = [], prefix = []) {
+  if (prefix.length > parts.length) return false;
+  for (let index = 0; index < prefix.length; index += 1) {
+    if (parts[index] !== prefix[index]) return false;
+  }
+  return true;
+}
+
+function getSetDisplayName(setItem) {
+  return setItem?.display_name || setItem?.source_file_name || setItem?.name || "Exam Set";
+}
+
 export default function TakeExamSection({ branch = "Civil Engineering", isActive = false }) {
   const [setsByType, setSetsByType] = useState({ mcq: [], subjective: [] });
   const [loadingByType, setLoadingByType] = useState({ mcq: false, subjective: false });
   const [typeLoaded, setTypeLoaded] = useState({ mcq: false, subjective: false });
+  const [folderPathByType, setFolderPathByType] = useState({ mcq: [], subjective: [] });
   const [selectedExamType, setSelectedExamType] = useState("");
   const [paying, setPaying] = useState(false);
   const [selectedSet, setSelectedSet] = useState(null);
@@ -41,8 +68,13 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
     setLoadingByType((prev) => ({ ...prev, [type]: true }));
     try {
       const data = await listExamSets(branch, type);
-      setSetsByType((prev) => ({ ...prev, [type]: data || [] }));
+      const normalized = (data || []).map((setItem) => ({
+        ...setItem,
+        folder_parts: normalizeFolderParts(setItem.folder_parts),
+      }));
+      setSetsByType((prev) => ({ ...prev, [type]: normalized }));
       setTypeLoaded((prev) => ({ ...prev, [type]: true }));
+      setFolderPathByType((prev) => ({ ...prev, [type]: [] }));
     } catch (_error) {
       toast.error(`Failed to load ${type.toUpperCase()} exam sets`);
     } finally {
@@ -55,6 +87,7 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
     setSetsByType({ mcq: [], subjective: [] });
     setLoadingByType({ mcq: false, subjective: false });
     setTypeLoaded({ mcq: false, subjective: false });
+    setFolderPathByType({ mcq: [], subjective: [] });
     setSelectedExamType("");
     setSelectedSet(null);
   }, [branch, isActive]);
@@ -153,6 +186,7 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
     const isUnlocked = !!setItem.is_unlocked || !!setItem.is_free;
     const totalMarks = Number(setItem.total_marks || setItem.question_count || 0);
     const feeLabel = setItem.is_free ? "FREE" : `NPR ${setItem.fee}`;
+    const displayName = getSetDisplayName(setItem);
 
     return (
       <article
@@ -168,7 +202,7 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
           </span>
         ) : null}
 
-        <h4>{setItem.name}</h4>
+        <h4>{displayName}</h4>
 
         <p className="set-meta-inline">
           <small>
@@ -182,7 +216,10 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
               Start {type === "mcq" ? "MCQ" : "Subjective"} Exam
             </Link>
           ) : (
-            <button className="btn btn-secondary" onClick={() => setSelectedSet({ ...setItem, exam_type: type })}>
+            <button
+              className="btn btn-secondary"
+              onClick={() => setSelectedSet({ ...setItem, exam_type: type, display_name: displayName })}
+            >
               Unlock by Payment
             </button>
           )}
@@ -191,12 +228,60 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
     );
   };
 
-  const currentSets = useMemo(() => {
+  const allSetsForCurrentType = useMemo(() => {
     if (!selectedExamType) return [];
     return setsByType[selectedExamType] || [];
   }, [selectedExamType, setsByType]);
 
   const currentLoading = selectedExamType ? loadingByType[selectedExamType] : false;
+  const currentFolderParts = selectedExamType ? folderPathByType[selectedExamType] || [] : [];
+
+  const folderView = useMemo(() => {
+    if (!selectedExamType) {
+      return { folders: [], sets: [] };
+    }
+
+    const folderMap = new Map();
+    const directSets = [];
+
+    allSetsForCurrentType.forEach((setItem) => {
+      const folderParts = normalizeFolderParts(setItem.folder_parts);
+      if (!startsWithParts(folderParts, currentFolderParts)) {
+        return;
+      }
+
+      const remainder = folderParts.slice(currentFolderParts.length);
+      if (remainder.length > 0) {
+        const folderName = remainder[0];
+        const key = [...currentFolderParts, folderName].join("/");
+        if (!folderMap.has(key)) {
+          folderMap.set(key, {
+            key,
+            name: folderName,
+            parts: [...currentFolderParts, folderName],
+            count: 0,
+          });
+        }
+        const current = folderMap.get(key);
+        current.count += 1;
+        return;
+      }
+
+      directSets.push(setItem);
+    });
+
+    const folders = [...folderMap.values()].sort((a, b) => a.name.localeCompare(b.name));
+    directSets.sort((a, b) => getSetDisplayName(a).localeCompare(getSetDisplayName(b)));
+
+    return { folders, sets: directSets };
+  }, [allSetsForCurrentType, currentFolderParts, selectedExamType]);
+
+  const openFolder = (parts) => {
+    if (!selectedExamType) return;
+    setFolderPathByType((prev) => ({ ...prev, [selectedExamType]: parts }));
+  };
+
+  const breadcrumbParts = [EXAM_TYPE_CONTENT[selectedExamType]?.title || "Exam Sets", ...currentFolderParts];
 
   return (
     <section id="exam-hall" className={`section exam-hall-modern ${isActive ? "active" : ""}`}>
@@ -230,16 +315,61 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
       ) : (
         <div className="exam-set-selection-container">
           <div className="exam-list-header">
-            <button className="btn btn-secondary btn-soft-blue-action" onClick={() => setSelectedExamType("")}>
+            <button className="btn btn-secondary btn-soft-blue-action" onClick={() => setSelectedExamType("")}> 
               <i className="fas fa-arrow-left"></i> Back to Exam Types
             </button>
             <h3>{EXAM_TYPE_CONTENT[selectedExamType].title} Sets</h3>
           </div>
 
+          {!currentLoading ? (
+            <div className="exam-breadcrumbs">
+              {breadcrumbParts.map((crumb, index) => {
+                const isLast = index === breadcrumbParts.length - 1;
+                const target = currentFolderParts.slice(0, Math.max(0, index));
+                return (
+                  <button
+                    key={`${crumb}-${index}`}
+                    type="button"
+                    className={`library-breadcrumb-btn ${isLast ? "active" : ""}`}
+                    onClick={() => openFolder(target)}
+                    disabled={isLast}
+                  >
+                    {crumb}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+
           {currentLoading ? (
             <TimedLoadingState baseMessage="Loading question sets..." />
-          ) : currentSets.length > 0 ? (
-            <div className="exam-set-grid">{currentSets.map((setItem) => renderSetCard(setItem, selectedExamType))}</div>
+          ) : folderView.folders.length > 0 || folderView.sets.length > 0 ? (
+            <>
+              {folderView.folders.length > 0 ? (
+                <div className="subject-grid exam-folder-grid">
+                  {folderView.folders.map((folder) => (
+                    <div key={folder.key} className="subject-card folder-card exam-folder-card">
+                      <i
+                        className={
+                          currentFolderParts.length === 0
+                            ? getInstitutionIcon(folder.name, "fas fa-building-columns")
+                            : getSubjectIcon(folder.name, "fas fa-folder-open")
+                        }
+                      ></i>
+                      <h3 className="folder-display-name">{folder.name}</h3>
+                      <p className="chapter-small-note">{folder.count} sets</p>
+                      <button className="btn btn-primary mcq-folder-open-btn" onClick={() => openFolder(folder.parts)}>
+                        Open Folder
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              {folderView.sets.length > 0 ? (
+                <div className="exam-set-grid">{folderView.sets.map((setItem) => renderSetCard(setItem, selectedExamType))}</div>
+              ) : null}
+            </>
           ) : (
             <div className="empty-state">
               <i className="fas fa-inbox"></i>
@@ -253,7 +383,7 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
         <div className="payment-overlay">
           <div className="payment-modal-content professional-payment-modal">
             <div className="payment-modal-head">
-              <h3>Unlock {selectedSet.name}</h3>
+              <h3>Unlock {selectedSet.display_name || selectedSet.name}</h3>
               <button className="btn" onClick={closePayment} disabled={paying}>
                 <i className="fas fa-xmark"></i>
               </button>
@@ -308,9 +438,7 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
                   onChange={(e) => updatePaymentField("mobile_number", e.target.value)}
                 />
               </label>
-              <div className="full-width">
-                You will be redirected to the selected payment gateway to complete payment.
-              </div>
+              <div className="full-width">You will be redirected to the selected payment gateway to complete payment.</div>
             </div>
 
             <div className="payment-modal-actions">

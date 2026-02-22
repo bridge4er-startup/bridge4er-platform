@@ -1,4 +1,6 @@
 from rest_framework import serializers
+
+from .path_utils import parse_exam_source_path
 from .models import (
     Subject,
     Chapter,
@@ -119,6 +121,29 @@ class ExamSetSerializer(serializers.ModelSerializer):
     is_unlocked = serializers.SerializerMethodField()
     question_count = serializers.SerializerMethodField()
     total_marks = serializers.SerializerMethodField()
+    display_name = serializers.SerializerMethodField()
+    institution = serializers.SerializerMethodField()
+    folder_path = serializers.SerializerMethodField()
+    folder_parts = serializers.SerializerMethodField()
+    topic_path = serializers.SerializerMethodField()
+    source_file_name = serializers.SerializerMethodField()
+
+    def _source_meta(self, obj):
+        source_path = getattr(obj, "source_file_path", "") or ""
+        if not getattr(obj, "managed_by_sync", False) or not source_path.lower().startswith("/bridge4er/"):
+            return {
+                "relative_parts": [],
+                "folder_parts": [],
+                "folder_path": "",
+                "institution": "General",
+                "topic_path": "",
+                "source_name": "",
+            }
+        return parse_exam_source_path(
+            source_file_path=source_path,
+            branch=getattr(obj, "branch", ""),
+            exam_type=getattr(obj, "exam_type", ""),
+        )
 
     def get_question_count(self, obj):
         return obj.questions.count()
@@ -134,11 +159,32 @@ class ExamSetSerializer(serializers.ModelSerializer):
             return False
         return ExamPurchase.objects.filter(user=request.user, exam_set=obj).exists()
 
+    def get_display_name(self, obj):
+        source_name = self._source_meta(obj).get("source_name")
+        return source_name or obj.name
+
+    def get_institution(self, obj):
+        return self._source_meta(obj).get("institution")
+
+    def get_folder_path(self, obj):
+        return self._source_meta(obj).get("folder_path")
+
+    def get_folder_parts(self, obj):
+        return self._source_meta(obj).get("folder_parts") or []
+
+    def get_topic_path(self, obj):
+        return self._source_meta(obj).get("topic_path")
+
+    def get_source_file_name(self, obj):
+        source_name = self._source_meta(obj).get("source_name")
+        return source_name or obj.name
+
     class Meta:
         model = ExamSet
         fields = [
             'id',
             'name',
+            'display_name',
             'branch',
             'exam_type',
             'description',
@@ -152,6 +198,12 @@ class ExamSetSerializer(serializers.ModelSerializer):
             'question_count',
             'total_marks',
             'is_unlocked',
+            'institution',
+            'folder_path',
+            'folder_parts',
+            'topic_path',
+            'source_file_path',
+            'source_file_name',
             'created_at',
             'updated_at',
         ]

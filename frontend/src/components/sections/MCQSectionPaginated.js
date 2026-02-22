@@ -1,16 +1,39 @@
 import React, { useEffect, useState } from "react";
 import API from "../../services/api";
 import toast from "react-hot-toast";
-import { getSubjectIcon } from "../../utils/subjectIcons";
+import { getInstitutionIcon, getSubjectIcon } from "../../utils/subjectIcons";
+
+function normalizeSubjectRecord(subject) {
+  if (typeof subject === "string") {
+    return {
+      id: subject,
+      name: subject,
+      display_name: subject,
+      institution: "General",
+      institution_key: "General",
+    };
+  }
+
+  const name = subject?.name || "";
+  return {
+    id: subject?.id ?? name,
+    name,
+    display_name: subject?.display_name || name,
+    institution: subject?.institution || "General",
+    institution_key: subject?.institution_key || subject?.institution || "General",
+  };
+}
 
 export default function MCQSectionPaginated({ branch = "Civil Engineering", isActive = false }) {
   const [subjects, setSubjects] = useState([]);
   const [chapters, setChapters] = useState([]);
   const [questions, setQuestions] = useState([]);
 
+  const [selectedInstitution, setSelectedInstitution] = useState("");
   const [selectedSubject, setSelectedSubject] = useState("");
+  const [selectedSubjectLabel, setSelectedSubjectLabel] = useState("");
   const [selectedChapter, setSelectedChapter] = useState("");
-  const [view, setView] = useState("subjects");
+  const [view, setView] = useState("institutions");
 
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -30,8 +53,10 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
   useEffect(() => {
     if (!isActive) return;
     loadSubjects();
-    setView("subjects");
+    setView("institutions");
+    setSelectedInstitution("");
     setSelectedSubject("");
+    setSelectedSubjectLabel("");
     setSelectedChapter("");
     setChapters([]);
     resetQuestionSession();
@@ -43,7 +68,7 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
       const res = await API.get("exams/subjects/", {
         params: { branch },
       });
-      setSubjects(res.data || []);
+      setSubjects((res.data || []).map(normalizeSubjectRecord));
     } catch (error) {
       toast.error("Failed to load subjects");
       console.error(error);
@@ -52,13 +77,26 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
     }
   };
 
+  const handleSelectInstitution = (institution) => {
+    setSelectedInstitution(institution);
+    setSelectedSubject("");
+    setSelectedSubjectLabel("");
+    setSelectedChapter("");
+    setChapters([]);
+    resetQuestionSession();
+    setView("subjects");
+  };
+
   const handleSelectSubject = async (subject) => {
-    setSelectedSubject(subject);
+    const subjectName = subject?.name || "";
+    const displayName = subject?.display_name || subjectName;
+    setSelectedSubject(subjectName);
+    setSelectedSubjectLabel(displayName);
     setSelectedChapter("");
     resetQuestionSession();
     setLoading(true);
     try {
-      const res = await API.get(`exams/subjects/${encodeURIComponent(subject)}/chapters/`, {
+      const res = await API.get(`exams/subjects/${encodeURIComponent(subjectName)}/chapters/`, {
         params: { branch },
       });
       setChapters(res.data || []);
@@ -168,6 +206,13 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
     ));
   };
 
+  const institutionNames = [...new Set(subjects.map((subject) => subject.institution || "General"))].sort((a, b) =>
+    a.localeCompare(b)
+  );
+  const visibleSubjects = subjects
+    .filter((subject) => (subject.institution || "General") === selectedInstitution)
+    .sort((a, b) => (a.display_name || "").localeCompare(b.display_name || ""));
+
   return (
     <section id="objective-mcqs" className={`section ${isActive ? "active" : ""}`}>
       <h2 className="section-title">
@@ -177,29 +222,80 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
         </span>
       </h2>
 
+      {view === "institutions" && (
+        <>
+          <p>Select an institution folder to browse objective subjects and question sets.</p>
+
+          {loading ? (
+            <div className="loading">
+              <div className="spinner"></div>
+              <p>Loading institution folders...</p>
+            </div>
+          ) : institutionNames.length === 0 ? (
+            <div className="empty-state">
+              <i className="fas fa-inbox"></i>
+              <h4>No institution folders found</h4>
+            </div>
+          ) : (
+            <div className="subject-grid">
+              {institutionNames.map((institutionName) => (
+                <div key={institutionName} className="subject-card folder-card institution-card">
+                  <i className={getInstitutionIcon(institutionName, "fas fa-building-columns")}></i>
+                  <h3 className="folder-display-name">{institutionName}</h3>
+                  <button
+                    className="btn btn-primary mcq-folder-open-btn"
+                    onClick={() => handleSelectInstitution(institutionName)}
+                  >
+                    Open Institution Folder
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
       {view === "subjects" && (
         <>
-          <p>Select a subject to practice MCQs with instant answer checking.</p>
+          <p>
+            Select a subject from <strong>{selectedInstitution}</strong>.
+          </p>
+
+          <button
+            className="btn btn-secondary btn-soft-blue-action"
+            onClick={() => {
+              setView("institutions");
+              setSelectedInstitution("");
+              setSelectedSubject("");
+              setSelectedSubjectLabel("");
+              setSelectedChapter("");
+              setChapters([]);
+              resetQuestionSession();
+            }}
+            style={{ marginBottom: "1rem" }}
+          >
+            <i className="fas fa-arrow-left"></i> Back to Institutions
+          </button>
 
           {loading ? (
             <div className="loading">
               <div className="spinner"></div>
               <p>Loading subjects...</p>
             </div>
-          ) : subjects.length === 0 ? (
+          ) : visibleSubjects.length === 0 ? (
             <div className="empty-state">
               <i className="fas fa-inbox"></i>
               <h4>No subjects found</h4>
             </div>
           ) : (
             <div className="subject-grid">
-              {subjects.map((subject) => (
-                <div key={subject.id || subject.name || subject} className="subject-card folder-card">
-                  <i className={getSubjectIcon(subject.name || subject, "fas fa-folder-open")}></i>
-                  <h3 className="folder-display-name">{subject.name || subject}</h3>
+              {visibleSubjects.map((subject) => (
+                <div key={subject.id || subject.name} className="subject-card folder-card">
+                  <i className={getSubjectIcon(subject.display_name || subject.name, "fas fa-folder-open")}></i>
+                  <h3 className="folder-display-name">{subject.display_name || subject.name}</h3>
                   <button
                     className="btn btn-primary mcq-folder-open-btn"
-                    onClick={() => handleSelectSubject(subject.name || subject)}
+                    onClick={() => handleSelectSubject(subject)}
                   >
                     Open Subject Folder
                   </button>
@@ -213,7 +309,7 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
       {view === "chapters" && (
         <>
           <p>
-            Select a chapter to practice questions from <strong>{selectedSubject}</strong>.
+            Select a chapter to practice questions from <strong>{selectedSubjectLabel || selectedSubject}</strong>.
           </p>
 
           <button
@@ -221,6 +317,7 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
             onClick={() => {
               setView("subjects");
               setSelectedSubject("");
+              setSelectedSubjectLabel("");
               setSelectedChapter("");
               setChapters([]);
               resetQuestionSession();
@@ -264,7 +361,7 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
         <div className="mcq-paginated-container">
           <div className="mcq-header">
             <div className="mcq-pagination-info">
-              {selectedSubject} / {selectedChapter} - Page {page} of {totalPages}
+              {selectedInstitution} / {selectedSubjectLabel || selectedSubject} / {selectedChapter} - Page {page} of {totalPages}
             </div>
             <div className="questions-per-page-selector">
               <label htmlFor="questions-per-page">Questions per page</label>

@@ -470,6 +470,7 @@ class ExamSetListView(APIView):
         queryset = ExamSet.objects.filter(branch=branch, is_active=True)
         if exam_type:
             queryset = queryset.filter(exam_type=exam_type)
+        queryset = queryset.order_by("name", "id")
 
         serializer = ExamSetSerializer(queryset, many=True, context={"request": request})
         return Response(serializer.data)
