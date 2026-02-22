@@ -4,6 +4,8 @@ import toast from "react-hot-toast";
 import FilePreviewModal from "../common/FilePreviewModal";
 import TimedLoadingState from "../common/TimedLoadingState";
 
+const FILES_PAGE_SIZE = 7;
+
 function inferPreviewType(contentType = "", filename = "") {
   const normalized = String(contentType || "").toLowerCase();
   const lowerName = String(filename || "").toLowerCase();
@@ -28,6 +30,7 @@ export default function SyllabusSection({ branch = "Civil Engineering", isActive
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [preview, setPreview] = useState(null);
+  const [page, setPage] = useState(1);
 
   const closePreview = () => {
     setPreview((current) => {
@@ -73,6 +76,7 @@ export default function SyllabusSection({ branch = "Civil Engineering", isActive
       });
       setFiles(res.data || []);
       setFilteredFiles(res.data || []);
+      setPage(1);
     } catch (error) {
       toast.error("Failed to load syllabus");
       console.error(error);
@@ -83,6 +87,7 @@ export default function SyllabusSection({ branch = "Civil Engineering", isActive
 
   const handleSearch = (query) => {
     setSearchQuery(query);
+    setPage(1);
     if (!query.trim()) {
       setFilteredFiles(files);
       return;
@@ -160,7 +165,15 @@ export default function SyllabusSection({ branch = "Civil Engineering", isActive
     });
   };
 
-  const shouldScrollSyllabusList = files.length > 10;
+  const totalPages = Math.max(1, Math.ceil(filteredFiles.length / FILES_PAGE_SIZE));
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
+
+  const paginatedFiles = filteredFiles.slice((page - 1) * FILES_PAGE_SIZE, page * FILES_PAGE_SIZE);
 
   return (
     <section id="syllabus" className={`section ${isActive ? "active" : ""}`}>
@@ -197,39 +210,64 @@ export default function SyllabusSection({ branch = "Civil Engineering", isActive
           <h4>No syllabus found</h4>
         </div>
       ) : (
-        <ul className={`file-list ${shouldScrollSyllabusList ? "file-list-scroll file-list-scroll-large" : ""}`}>
-          {filteredFiles.map((file, idx) => (
-            <li key={idx} className="file-item">
-              <div className="file-info">
-                <div className="file-icon">
-                  <i className="fas fa-file-pdf"></i>
+        <>
+          <ul className="file-list">
+            {paginatedFiles.map((file) => (
+              <li key={file.path} className="file-item">
+                <div className="file-info">
+                  <div className="file-icon">
+                    <i className="fas fa-file-pdf"></i>
+                  </div>
+                  <div className="file-details">
+                    <h4>{file.name}</h4>
+                    <p className="file-meta">
+                      Size: {formatFileSize(file.size)} | Date: {formatDate(file.modified)}
+                    </p>
+                  </div>
                 </div>
-                <div className="file-details">
-                  <h4>{file.name}</h4>
-                  <p className="file-meta">
-                    Size: {formatFileSize(file.size)} | Date: {formatDate(file.modified)}
-                  </p>
+                <div className="file-actions">
+                  <button
+                    className="btn btn-secondary btn-soft-blue-action"
+                    onClick={() => handleView(file)}
+                    title="View file"
+                  >
+                    <i className="fas fa-eye"></i> View
+                  </button>
+                  <button
+                    className="btn btn-primary btn-soft-blue-action"
+                    onClick={() => handleDownload(file)}
+                    title="Download file"
+                  >
+                    <i className="fas fa-download"></i> Download
+                  </button>
                 </div>
-              </div>
-              <div className="file-actions">
-                <button
-                  className="btn btn-secondary btn-soft-blue-action"
-                  onClick={() => handleView(file)}
-                  title="View file"
-                >
-                  <i className="fas fa-eye"></i> View
-                </button>
-                <button
-                  className="btn btn-primary btn-soft-blue-action"
-                  onClick={() => handleDownload(file)}
-                  title="Download file"
-                >
-                  <i className="fas fa-download"></i> Download
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
+              </li>
+            ))}
+          </ul>
+          {totalPages > 1 ? (
+            <div className="notice-pagination-wrap">
+              <button
+                type="button"
+                className="btn btn-secondary btn-soft-blue-action"
+                disabled={page <= 1}
+                onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+              >
+                Prev
+              </button>
+              <span>
+                Page {page} of {totalPages}
+              </span>
+              <button
+                type="button"
+                className="btn btn-secondary btn-soft-blue-action"
+                disabled={page >= totalPages}
+                onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+              >
+                Next
+              </button>
+            </div>
+          ) : null}
+        </>
       )}
 
       <FilePreviewModal preview={preview} onClose={closePreview} />

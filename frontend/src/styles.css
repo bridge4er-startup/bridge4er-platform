@@ -7646,3 +7646,196 @@ body[data-branch-theme="computer-engineering"] {
     padding: 0.26rem 0;
   }
 }
+
+/* ----------------------------------------------------------------------
+   Homepage compact layout updates (stats/explore/institutions)
+   ---------------------------------------------------------------------- */
+
+.homepage-section {
+  --homepage-field-name-size: 0.85rem;
+}
+
+.homepage-section .homepage-info-heading {
+  margin: 0 0 0.62rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-family: "Space Grotesk", "Manrope", sans-serif;
+  font-size: clamp(1.04rem, 1.6vw, 1.28rem);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: color-mix(in srgb, var(--primary-color) 82%, #0f172a);
+}
+
+.homepage-section .homepage-info-heading-outside {
+  margin: 0.2rem 0 0.58rem;
+  padding-left: 1.1rem;
+}
+
+.homepage-section .metric-spotlight-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.homepage-section .metric-spotlight-item {
+  padding: 0.62rem 0.68rem;
+}
+
+.homepage-section .metric-spotlight-label {
+  font-size: 0.64rem;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+}
+
+.homepage-section .metric-spotlight-label i {
+  font-size: 0.66rem;
+}
+
+.homepage-section .field-feature-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.homepage-section .field-feature-grid .feature-card-action {
+  padding: 0.66rem 0.58rem;
+  border-radius: 12px;
+}
+
+.homepage-section .field-feature-grid .feature-card-action i {
+  font-size: 0.98rem;
+  margin-bottom: 0.28rem;
+}
+
+.homepage-section .field-feature-grid .feature-card-action h4 {
+  margin: 0.08rem 0 0.2rem;
+  font-size: var(--homepage-field-name-size);
+  line-height: 1.15;
+}
+
+.homepage-section .field-feature-grid .feature-card-action p {
+  margin-bottom: 0;
+  font-size: 0.7rem;
+  line-height: 1.2;
+}
+
+.homepage-section .field-feature-grid .feature-card-action .feature-action-text {
+  margin-top: 0.4rem;
+  font-size: 0.64rem;
+}
+
+.homepage-section .institutions-covered-card {
+  border: 1px solid color-mix(in srgb, var(--primary-color) 28%, #dbeafe);
+  background: linear-gradient(
+    155deg,
+    color-mix(in srgb, var(--branch-soft, #f8fafc) 72%, #ffffff),
+    #ffffff
+  );
+}
+
+.homepage-section .institutions-note-panel {
+  margin-top: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+  column-gap: 1.1rem;
+}
+
+.homepage-section .institution-note-item {
+  margin: 0;
+  font-size: var(--homepage-field-name-size);
+  line-height: 1.3;
+  color: #0f172a;
+}
+
+.homepage-section .institution-note-item::before {
+  content: "- ";
+  color: color-mix(in srgb, var(--primary-color) 82%, #0f172a);
+}
+
+.homepage-section .institution-note-item strong {
+  font-weight: 800;
+}
+
+.homepage-section .homepage-motivation-wrap {
+  border: 1px solid color-mix(in srgb, var(--primary-color) 24%, #dbeafe);
+  background: linear-gradient(
+    140deg,
+    color-mix(in srgb, var(--branch-soft, #f8fafc) 58%, #ffffff),
+    #ffffff
+  );
+}
+
+.homepage-section .clock-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.homepage-section .clock-card p {
+  margin-top: auto;
+}
+
+.homepage-section .homepage-motivation-wrap .homepage-motivation-card {
+  margin-top: 0;
+}
+
+.homepage-section .motivation-empty-slot {
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  padding: 0.72rem;
+  font-size: 0.86rem;
+  color: #64748b;
+  text-align: center;
+}
+
+@media (max-width: 960px) {
+  .homepage-section .metric-spotlight-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .homepage-section .field-feature-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .homepage-section {
+    --homepage-field-name-size: 0.8rem;
+  }
+
+  .homepage-section .metric-spotlight-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .homepage-section .field-feature-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .homepage-section .metric-spotlight-item {
+    padding: 0.54rem 0.6rem;
+  }
+
+  .homepage-section .metric-spotlight-label {
+    font-size: 0.6rem;
+  }
+
+  .homepage-section .field-feature-grid .feature-card-action p {
+    font-size: 0.66rem;
+  }
+
+  .homepage-section .institutions-note-panel {
+    grid-template-columns: 1fr;
+    column-gap: 0;
+  }
+
+  .homepage-section .institution-note-item {
+    font-size: var(--homepage-field-name-size);
+  }
+
+  .homepage-section .homepage-info-heading {
+    font-size: 1rem;
+  }
+
+  .homepage-section .homepage-info-heading-outside {
+    padding-left: 1.1rem;
+  }
+}

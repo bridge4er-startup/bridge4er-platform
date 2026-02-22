@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import API from "../../services/api";
 import toast from "react-hot-toast";
 import { useBranch } from "../../context/BranchContext";
@@ -8,8 +8,7 @@ const FEATURE_CARDS = [
   {
     title: "Civil Engineering",
     icon: "fas fa-city",
-    description:
-      "Syllabus, Objective MCQs, Library and demo exam sets free for first enrolled 1000 students.",
+    description: "Explore Syllabus, MCQs, Library and Exam Hall",
     descriptionClass: "",
   },
   {
@@ -63,6 +62,19 @@ const METRIC_CONFIG = [
     toneClass: "tone-d",
     icon: "fas fa-file-signature",
   },
+];
+
+const INSTITUTIONS_COVERED = [
+  "संघिय लोकसेवा आयोग",
+  "प्रदेश  लोकसेवा आयोग",
+  "Nepal Engineering Council (NEC) License Exam",
+  "IOE M.Sc. Entrance Exam",
+  "नेपाल बिद्युत प्राधिकरण (NEA)",
+  "नेपाल दुरसंचार प्राधिकरण (NTC)",
+  "नेपाल नागरिक उड्डयन प्राधिकरण (CAAN)",
+  "काठमाडौँ उपत्यका खानेपानी लिमिटेड (KUKL)",
+  "नेपाली सेना",
+  "+ थप अन्य संस्थानहरु",
 ];
 
 const NOTICE_PAGE_SIZE = 5;
@@ -129,6 +141,7 @@ function formatMetric(value) {
 
 export default function HomepageSection({ branch = "Civil Engineering", isActive = false }) {
   const { setBranch } = useBranch();
+  const metricCardRef = useRef(null);
 
   const [clock, setClock] = useState(new Date());
   const [metrics, setMetrics] = useState(null);
@@ -137,6 +150,7 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
   const [preview, setPreview] = useState(null);
   const [loading, setLoading] = useState(false);
   const [noticePage, setNoticePage] = useState(1);
+  const [syncedClockHeight, setSyncedClockHeight] = useState(null);
 
   const closePreview = () => {
     setPreview((current) => {
@@ -170,6 +184,38 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
     window.addEventListener("keydown", handleEsc);
     return () => window.removeEventListener("keydown", handleEsc);
   }, [preview]);
+
+  useLayoutEffect(() => {
+    if (!isActive) {
+      setSyncedClockHeight(null);
+      return undefined;
+    }
+
+    const updateSyncHeight = () => {
+      if (typeof window !== "undefined" && window.innerWidth <= 960) {
+        setSyncedClockHeight(null);
+        return;
+      }
+      const measuredHeight = metricCardRef.current?.offsetHeight || 0;
+      setSyncedClockHeight(measuredHeight > 0 ? measuredHeight : null);
+    };
+
+    updateSyncHeight();
+
+    let observer = null;
+    if (typeof ResizeObserver !== "undefined" && metricCardRef.current) {
+      observer = new ResizeObserver(() => updateSyncHeight());
+      observer.observe(metricCardRef.current);
+    }
+
+    window.addEventListener("resize", updateSyncHeight);
+    return () => {
+      window.removeEventListener("resize", updateSyncHeight);
+      if (observer) {
+        observer.disconnect();
+      }
+    };
+  }, [isActive, metrics]);
 
   useEffect(() => {
     if (!isActive) return;
@@ -304,8 +350,21 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
 
       <div className="homepage-grid">
         <div className="homepage-left">
+          <div ref={metricCardRef} className="home-info-card metric-spotlight-card">
+            <div className="metric-grid artistic-metric-grid metric-spotlight-grid">
+              {METRIC_CONFIG.map((metric) => (
+                <article key={metric.key} className={`metric-card metric-float metric-spotlight-item ${metric.toneClass}`}>
+                  <span className="metric-spotlight-label">
+                    <i className={metric.icon}></i> {metric.label}
+                  </span>
+                  <strong>{formatMetric(metrics?.[metric.key])}</strong>
+                </article>
+              ))}
+            </div>
+          </div>
+
           <div className="home-info-card home-explore-card">
-            <h3>Explore By Field</h3>
+            <h3 className="homepage-info-heading">Explore By Field</h3>
             <div className="feature-grid field-feature-grid">
               {FEATURE_CARDS.map((card) => (
                 <button
@@ -328,18 +387,19 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
             </div>
           </div>
 
-          <div className="home-info-card metric-spotlight-card">
-            <div className="metric-grid artistic-metric-grid metric-spotlight-grid">
-              {METRIC_CONFIG.map((metric) => (
-                <article key={metric.key} className={`metric-card metric-float metric-spotlight-item ${metric.toneClass}`}>
-                  <span className="metric-spotlight-label">
-                    <i className={metric.icon}></i> {metric.label}
-                  </span>
-                  <strong>{formatMetric(metrics?.[metric.key])}</strong>
-                </article>
+          <h3 className="homepage-info-heading homepage-info-heading-outside">Institutions Covered</h3>
+          <div className="home-info-card institutions-covered-card">
+            <div className="institutions-note-panel">
+              {INSTITUTIONS_COVERED.map((institution) => (
+                <p key={institution} className="institution-note-item">
+                  <strong>{institution}</strong>
+                </p>
               ))}
             </div>
-            {(motivationalQuote || motivationalImageUrl) && (
+          </div>
+
+          <div className="home-info-card homepage-motivation-wrap">
+            {(motivationalQuote || motivationalImageUrl) ? (
               <div className="homepage-motivation-card">
                 {motivationalImageUrl ? (
                   <img
@@ -352,12 +412,17 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
                   <p className="homepage-motivation-quote">"{motivationalQuote}"</p>
                 ) : null}
               </div>
+            ) : (
+              <div className="motivation-empty-slot">Motivational content will appear here.</div>
             )}
           </div>
         </div>
 
         <div className="homepage-right">
-          <div className="clock-card">
+          <div
+            className="clock-card"
+            style={syncedClockHeight ? { minHeight: `${syncedClockHeight}px` } : undefined}
+          >
             <div className="clock-title-row">
               <h3>Today</h3>
               <span className="clock-location">Location: Kathmandu, Nepal</span>
