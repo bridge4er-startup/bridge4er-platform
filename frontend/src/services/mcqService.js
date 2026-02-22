@@ -2,10 +2,10 @@ import API from "./api";
 
 export const mcqService = {
   // Get all subjects for a branch
-  getSubjects: async (branch = "Civil Engineering") => {
+  getSubjects: async (branch = "Civil Engineering", refresh = false) => {
     try {
       const response = await API.get("exams/subjects/", {
-        params: { branch },
+        params: { branch, refresh: !!refresh },
       });
       return response.data;
     } catch (error) {
@@ -15,11 +15,11 @@ export const mcqService = {
   },
 
   // Get chapters for a subject
-  getChapters: async (subject, branch = "Civil Engineering") => {
+  getChapters: async (subject, branch = "Civil Engineering", refresh = false) => {
     try {
       const response = await API.get(
         `exams/subjects/${encodeURIComponent(subject)}/chapters/`,
-        { params: { branch } }
+        { params: { branch, refresh: !!refresh } }
       );
       return response.data;
     } catch (error) {
@@ -34,14 +34,15 @@ export const mcqService = {
     chapter,
     branch = "Civil Engineering",
     page = 1,
-    pageSize = 5
+    pageSize = 5,
+    refresh = false
   ) => {
     try {
       const response = await API.get(
         `exams/subjects/${encodeURIComponent(subject)}/chapters/${encodeURIComponent(
           chapter
         )}/questions/`,
-        { params: { branch, page, page_size: pageSize } }
+        { params: { branch, page, page_size: pageSize, refresh: !!refresh } }
       );
       return response.data;
     } catch (error) {

@@ -6,7 +6,8 @@ export const fileService = {
     contentType,
     branch = "Civil Engineering",
     includeHidden = false,
-    includeDirs = false
+    includeDirs = false,
+    refresh = true
   ) => {
     try {
       const response = await API.get("storage/files/list/", {
@@ -15,6 +16,7 @@ export const fileService = {
           branch,
           include_hidden: includeHidden,
           include_dirs: includeDirs,
+          refresh: !!refresh,
         },
       });
       return response.data;

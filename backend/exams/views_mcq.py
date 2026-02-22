@@ -88,11 +88,11 @@ DEMO_OBJECTIVE_QUESTIONS = [
 
 
 def _auto_sync_cooldown_seconds():
-    value = getattr(settings, "DROPBOX_AUTO_SYNC_COOLDOWN_SECONDS", 600)
+    value = getattr(settings, "DROPBOX_AUTO_SYNC_COOLDOWN_SECONDS", 60)
     try:
-        return max(60, int(value))
+        return max(30, int(value))
     except (TypeError, ValueError):
-        return 600
+        return 60
 
 
 AUTO_SYNC_COOLDOWN_SECONDS = _auto_sync_cooldown_seconds()
@@ -241,12 +241,13 @@ class SubjectListView(APIView):
 
     def get(self, request):
         branch = request.GET.get("branch", "Civil Engineering")
+        force_refresh = _as_bool(request.GET.get("refresh"), False)
         auto_sync_dropbox_for_branch(
             branch=branch,
             sync_objective=True,
             sync_exam_sets=False,
             replace_existing=True,
-            cooldown_seconds=AUTO_SYNC_COOLDOWN_SECONDS,
+            cooldown_seconds=5 if force_refresh else AUTO_SYNC_COOLDOWN_SECONDS,
         )
         records = []
         for subject in Subject.objects.filter(branch=branch).values("id", "name"):
@@ -269,12 +270,13 @@ class ChapterListView(APIView):
 
     def get(self, request, subject):
         branch = request.GET.get("branch", "Civil Engineering")
+        force_refresh = _as_bool(request.GET.get("refresh"), False)
         auto_sync_dropbox_for_branch(
             branch=branch,
             sync_objective=True,
             sync_exam_sets=False,
             replace_existing=True,
-            cooldown_seconds=AUTO_SYNC_COOLDOWN_SECONDS,
+            cooldown_seconds=5 if force_refresh else AUTO_SYNC_COOLDOWN_SECONDS,
         )
         try:
             subject_obj = Subject.objects.get(name=subject, branch=branch)
@@ -289,12 +291,13 @@ class QuestionListView(APIView):
 
     def get(self, request, subject, chapter):
         branch = request.GET.get("branch", "Civil Engineering")
+        force_refresh = _as_bool(request.GET.get("refresh"), False)
         auto_sync_dropbox_for_branch(
             branch=branch,
             sync_objective=True,
             sync_exam_sets=False,
             replace_existing=True,
-            cooldown_seconds=AUTO_SYNC_COOLDOWN_SECONDS,
+            cooldown_seconds=5 if force_refresh else AUTO_SYNC_COOLDOWN_SECONDS,
         )
 
         try:

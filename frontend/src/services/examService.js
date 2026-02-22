@@ -1,8 +1,8 @@
 import API from "./api";
 
-export const listExamSets = async (branch, examType) => {
+export const listExamSets = async (branch, examType, refresh = false) => {
   const res = await API.get("exams/sets/", {
-    params: { branch, exam_type: examType },
+    params: { branch, exam_type: examType, refresh: !!refresh },
   });
   return res.data;
 };

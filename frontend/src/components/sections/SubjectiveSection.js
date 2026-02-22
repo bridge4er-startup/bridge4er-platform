@@ -72,7 +72,7 @@ function startsWithParts(parts = [], prefix = []) {
 }
 
 export default function SubjectiveSection({ branch = "Civil Engineering", isActive = false }) {
-  const [files, setFiles] = useState([]);
+  const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [previewFile, setPreviewFile] = useState(null);
@@ -97,9 +97,11 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
           params: {
             content_type: "subjective",
             branch,
+            include_dirs: true,
+            refresh: true,
           },
         });
-        setFiles(res.data || []);
+        setEntries(res.data || []);
         setCurrentFolderParts([]);
         closePreview();
       } catch (_error) {
@@ -133,29 +135,73 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
 
   const fileItems = useMemo(
     () =>
-      files.map((file) => {
-        const relativeParts = getRelativeLibraryParts(file.path || "");
-        const folderParts = relativeParts.length > 1 ? relativeParts.slice(0, -1) : [];
-        const filename = relativeParts.length > 0 ? relativeParts[relativeParts.length - 1] : file.name;
-        return {
-          ...file,
-          __folderParts: folderParts,
-          __filename: filename,
-          __searchPath: `${folderParts.join(" / ")} ${filename}`.toLowerCase(),
-        };
-      }),
-    [files]
+      (entries || [])
+        .filter((entry) => !entry?.is_dir)
+        .map((file) => {
+          const relativeParts = getRelativeLibraryParts(file.path || "");
+          const folderParts = relativeParts.length > 1 ? relativeParts.slice(0, -1) : [];
+          const filename = relativeParts.length > 0 ? relativeParts[relativeParts.length - 1] : file.name;
+          return {
+            ...file,
+            __folderParts: folderParts,
+            __filename: filename,
+            __searchPath: `${folderParts.join(" / ")} ${filename}`.toLowerCase(),
+          };
+        }),
+    [entries]
   );
 
+  const directoryItems = useMemo(
+    () =>
+      (entries || [])
+        .filter((entry) => !!entry?.is_dir)
+        .map((dir) => {
+          const relativeParts = getRelativeLibraryParts(dir.path || "");
+          return {
+            ...dir,
+            __parts: relativeParts,
+            __searchPath: relativeParts.join(" / ").toLowerCase(),
+          };
+        }),
+    [entries]
+  );
+
+  const query = searchQuery.trim().toLowerCase();
   const filteredFileItems = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
     if (!query) return fileItems;
     return fileItems.filter((file) => file.__searchPath.includes(query));
-  }, [fileItems, searchQuery]);
+  }, [fileItems, query]);
+
+  const filteredDirectoryItems = useMemo(() => {
+    if (!query) return directoryItems;
+    return directoryItems.filter((dir) => dir.__searchPath.includes(query));
+  }, [directoryItems, query]);
 
   const folderView = useMemo(() => {
     const folderMap = new Map();
     const directFiles = [];
+
+    filteredDirectoryItems.forEach((dir) => {
+      if (!startsWithParts(dir.__parts, currentFolderParts)) {
+        return;
+      }
+      const remainder = dir.__parts.slice(currentFolderParts.length);
+      if (remainder.length === 0) {
+        return;
+      }
+      const folderName = remainder[0];
+      const folderKey = [...currentFolderParts, folderName].join("/");
+      if (!folderMap.has(folderKey)) {
+        folderMap.set(folderKey, {
+          key: folderKey,
+          name: folderName,
+          parts: [...currentFolderParts, folderName],
+          fileCount: 0,
+        });
+      }
+      const existing = folderMap.get(folderKey);
+      existing.fileCount += 1;
+    });
 
     filteredFileItems.forEach((file) => {
       if (!startsWithParts(file.__folderParts, currentFolderParts)) {
@@ -189,7 +235,7 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
       folders,
       files: directFiles,
     };
-  }, [filteredFileItems, currentFolderParts]);
+  }, [filteredDirectoryItems, filteredFileItems, currentFolderParts]);
 
   const breadcrumbParts = ["Library", ...currentFolderParts];
 

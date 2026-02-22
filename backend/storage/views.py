@@ -298,9 +298,9 @@ class ListFilesView(APIView):
         branch = _normalize_branch(request.GET.get("branch", "Civil Engineering"))
         include_hidden = _as_bool(request.GET.get("include_hidden"), False)
         include_dirs = _as_bool(request.GET.get("include_dirs"), False)
+        refresh = _as_bool(request.GET.get("refresh"), False)
         if not (request.user and request.user.is_authenticated and request.user.is_staff):
             include_hidden = False
-            include_dirs = False
 
         try:
             if not _can_access_content_type(request.user, content_type):
@@ -311,7 +311,7 @@ class ListFilesView(APIView):
                 return Response({"error": "Invalid content type"}, status=status.HTTP_400_BAD_REQUEST)
 
             cache_key, stale_key = _list_cache_keys(content_type, branch, include_dirs)
-            files = cache.get(cache_key)
+            files = None if refresh else cache.get(cache_key)
 
             if files is None:
                 try:

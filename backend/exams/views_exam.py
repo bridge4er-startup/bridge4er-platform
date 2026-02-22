@@ -122,14 +122,20 @@ DEMO_SUBJECTIVE_QUESTIONS = [
 
 
 def _auto_sync_cooldown_seconds():
-    value = getattr(settings, "DROPBOX_AUTO_SYNC_COOLDOWN_SECONDS", 600)
+    value = getattr(settings, "DROPBOX_AUTO_SYNC_COOLDOWN_SECONDS", 60)
     try:
-        return max(60, int(value))
+        return max(30, int(value))
     except (TypeError, ValueError):
-        return 600
+        return 60
 
 
 AUTO_SYNC_COOLDOWN_SECONDS = _auto_sync_cooldown_seconds()
+
+
+def _as_bool(value, default=False):
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _ensure_demo_exam_sets(branch: str, exam_type: str | None = None):
@@ -455,6 +461,7 @@ class ExamSetListView(APIView):
     def get(self, request):
         branch = request.GET.get("branch", "Civil Engineering")
         exam_type = request.GET.get("exam_type")
+        force_refresh = _as_bool(request.GET.get("refresh"), False)
         if exam_type and exam_type not in {"mcq", "subjective"}:
             return Response({"error": "Invalid exam_type"}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -463,7 +470,7 @@ class ExamSetListView(APIView):
             sync_objective=False,
             sync_exam_sets=True,
             replace_existing=True,
-            cooldown_seconds=AUTO_SYNC_COOLDOWN_SECONDS,
+            cooldown_seconds=5 if force_refresh else AUTO_SYNC_COOLDOWN_SECONDS,
         )
         _maybe_seed_demo_exam_sets(branch, exam_type)
 

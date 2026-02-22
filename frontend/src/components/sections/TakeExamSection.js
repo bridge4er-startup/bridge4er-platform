@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { listExamSets } from "../../services/examService";
+import API from "../../services/api";
 import { initiateEsewaPayment, initiateKhaltiPayment } from "../../services/paymentService";
 import toast from "react-hot-toast";
 import TimedLoadingState from "../common/TimedLoadingState";
@@ -21,6 +22,18 @@ const EXAM_TYPE_CONTENT = {
 
 function toMinutes(seconds = 0) {
   return Math.max(1, Math.floor(Number(seconds || 0) / 60));
+}
+
+function getRelativeExamParts(path = "", type = "mcq") {
+  const segments = String(path || "").split("/").filter(Boolean);
+  const lowered = segments.map((segment) => segment.toLowerCase());
+  const marker = type === "mcq" ? ["take exam", "multiple choice exam"] : ["take exam", "subjective exam"];
+  for (let index = 0; index <= lowered.length - marker.length; index += 1) {
+    if (lowered[index] === marker[0] && lowered[index + 1] === marker[1]) {
+      return segments.slice(index + marker.length);
+    }
+  }
+  return [];
 }
 
 function normalizeFolderParts(folderParts) {
@@ -50,6 +63,7 @@ function getSetDisplayName(setItem) {
 
 export default function TakeExamSection({ branch = "Civil Engineering", isActive = false }) {
   const [setsByType, setSetsByType] = useState({ mcq: [], subjective: [] });
+  const [folderEntriesByType, setFolderEntriesByType] = useState({ mcq: [], subjective: [] });
   const [loadingByType, setLoadingByType] = useState({ mcq: false, subjective: false });
   const [typeLoaded, setTypeLoaded] = useState({ mcq: false, subjective: false });
   const [folderPathByType, setFolderPathByType] = useState({ mcq: [], subjective: [] });
@@ -67,12 +81,33 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
 
     setLoadingByType((prev) => ({ ...prev, [type]: true }));
     try {
-      const data = await listExamSets(branch, type);
+      const contentType = type === "mcq" ? "take_exam_mcq" : "take_exam_subjective";
+      const [data, folderRes] = await Promise.all([
+        listExamSets(branch, type, true),
+        API.get("storage/files/list/", {
+          params: {
+            content_type: contentType,
+            branch,
+            include_dirs: true,
+            refresh: true,
+          },
+        }),
+      ]);
       const normalized = (data || []).map((setItem) => ({
         ...setItem,
         folder_parts: normalizeFolderParts(setItem.folder_parts),
       }));
       setSetsByType((prev) => ({ ...prev, [type]: normalized }));
+
+      const folders = (folderRes?.data || [])
+        .filter((entry) => !!entry?.is_dir)
+        .map((entry) => ({
+          ...entry,
+          folder_parts: getRelativeExamParts(entry.path || "", type),
+        }))
+        .filter((entry) => entry.folder_parts.length > 0);
+      setFolderEntriesByType((prev) => ({ ...prev, [type]: folders }));
+
       setTypeLoaded((prev) => ({ ...prev, [type]: true }));
       setFolderPathByType((prev) => ({ ...prev, [type]: [] }));
     } catch (_error) {
@@ -85,6 +120,7 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
   useEffect(() => {
     if (!isActive) return;
     setSetsByType({ mcq: [], subjective: [] });
+    setFolderEntriesByType({ mcq: [], subjective: [] });
     setLoadingByType({ mcq: false, subjective: false });
     setTypeLoaded({ mcq: false, subjective: false });
     setFolderPathByType({ mcq: [], subjective: [] });
@@ -232,6 +268,10 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
     if (!selectedExamType) return [];
     return setsByType[selectedExamType] || [];
   }, [selectedExamType, setsByType]);
+  const folderEntriesForCurrentType = useMemo(() => {
+    if (!selectedExamType) return [];
+    return folderEntriesByType[selectedExamType] || [];
+  }, [selectedExamType, folderEntriesByType]);
 
   const currentLoading = selectedExamType ? loadingByType[selectedExamType] : false;
   const currentFolderParts = selectedExamType ? folderPathByType[selectedExamType] || [] : [];
@@ -243,6 +283,29 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
 
     const folderMap = new Map();
     const directSets = [];
+
+    folderEntriesForCurrentType.forEach((folderEntry) => {
+      const folderParts = normalizeFolderParts(folderEntry.folder_parts);
+      if (!startsWithParts(folderParts, currentFolderParts)) {
+        return;
+      }
+      const remainder = folderParts.slice(currentFolderParts.length);
+      if (remainder.length === 0) {
+        return;
+      }
+      const folderName = remainder[0];
+      const key = [...currentFolderParts, folderName].join("/");
+      if (!folderMap.has(key)) {
+        folderMap.set(key, {
+          key,
+          name: folderName,
+          parts: [...currentFolderParts, folderName],
+          count: 0,
+        });
+      }
+      const current = folderMap.get(key);
+      current.count += 1;
+    });
 
     allSetsForCurrentType.forEach((setItem) => {
       const folderParts = normalizeFolderParts(setItem.folder_parts);
@@ -274,7 +337,7 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
     directSets.sort((a, b) => getSetDisplayName(a).localeCompare(getSetDisplayName(b)));
 
     return { folders, sets: directSets };
-  }, [allSetsForCurrentType, currentFolderParts, selectedExamType]);
+  }, [allSetsForCurrentType, currentFolderParts, folderEntriesForCurrentType, selectedExamType]);
 
   const openFolder = (parts) => {
     if (!selectedExamType) return;
