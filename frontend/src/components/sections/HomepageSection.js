@@ -80,6 +80,51 @@ const INSTITUTIONS_COVERED = [
 const NOTICE_PAGE_SIZE = 5;
 const NOTICE_NEW_BADGE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const NEPAL_TIMEZONE = "Asia/Kathmandu";
+const WEATHER_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
+const GEOLOCATION_MAX_AGE_MS = 5 * 60 * 1000;
+const MYPATRO_SCRIPT_URL = "https://mypatro.com/resources/nepali_date/nepali_date.js";
+const NEPALI_DIGIT_TO_ARABIC = Object.freeze({
+  "०": "0",
+  "१": "1",
+  "२": "2",
+  "३": "3",
+  "४": "4",
+  "५": "5",
+  "६": "6",
+  "७": "7",
+  "८": "8",
+  "९": "9",
+});
+const WEATHER_CODE_LABELS = Object.freeze({
+  0: "Clear sky",
+  1: "Mainly clear",
+  2: "Partly cloudy",
+  3: "Overcast",
+  45: "Foggy",
+  48: "Rime fog",
+  51: "Light drizzle",
+  53: "Drizzle",
+  55: "Dense drizzle",
+  56: "Freezing drizzle",
+  57: "Dense freezing drizzle",
+  61: "Light rain",
+  63: "Rainy",
+  65: "Heavy rain",
+  66: "Freezing rain",
+  67: "Heavy freezing rain",
+  71: "Light snow",
+  73: "Snowy",
+  75: "Heavy snow",
+  77: "Snow grains",
+  80: "Rain showers",
+  81: "Moderate showers",
+  82: "Heavy showers",
+  85: "Snow showers",
+  86: "Heavy snow showers",
+  95: "Thunderstorm",
+  96: "Thunder with hail",
+  99: "Severe thunder with hail",
+});
 
 function slugify(value = "") {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-");
@@ -126,6 +171,75 @@ function formatTime(date) {
   });
 }
 
+function formatNepaliDateFallback(date) {
+  try {
+    const formatter = new Intl.DateTimeFormat("ne-NP-u-ca-bikram-sambat", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      timeZone: NEPAL_TIMEZONE,
+    });
+    const parts = formatter.formatToParts(date);
+    const getPart = (type) => parts.find((part) => part.type === type)?.value;
+    const weekday = getPart("weekday");
+    const month = getPart("month");
+    const day = getPart("day");
+    const year = getPart("year");
+    const normalizedYear = Number(
+      String(year || "")
+        .split("")
+        .map((char) => NEPALI_DIGIT_TO_ARABIC[char] || char)
+        .join("")
+    );
+
+    if (weekday && month && day && year && Number.isFinite(normalizedYear) && normalizedYear >= 2070) {
+      return `${weekday}, ${month} ${day} , ${year}`;
+    }
+    return "";
+  } catch (_error) {
+    return "";
+  }
+}
+
+function normalizeMypatroDate(raw = "") {
+  const source = String(raw || "").trim();
+  if (!source) return "";
+  const pattern = /^([^,]+),\s*([०१२३४५६७८९]+)\s+(.+?)\s+([०१२३४५६७८९]+)$/;
+  const match = source.match(pattern);
+  if (!match) return source;
+  const [, weekday, day, month, year] = match;
+  return `${weekday.trim()}, ${month.trim()} ${day.trim()} , ${year.trim()}`;
+}
+
+async function reverseGeocode(latitude, longitude) {
+  try {
+    const geocodeUrl = new URL("https://geocoding-api.open-meteo.com/v1/reverse");
+    geocodeUrl.searchParams.set("latitude", String(latitude));
+    geocodeUrl.searchParams.set("longitude", String(longitude));
+    geocodeUrl.searchParams.set("language", "en");
+    geocodeUrl.searchParams.set("count", "1");
+    geocodeUrl.searchParams.set("format", "json");
+
+    const response = await fetch(geocodeUrl.toString());
+    if (!response.ok) return "";
+    const payload = await response.json();
+    const place = payload?.results?.[0];
+    if (!place) return "";
+    const city = String(place?.name || "").trim();
+    const region = String(place?.admin1 || "").trim();
+    const country = String(place?.country || "").trim();
+    const full = [city, region, country].filter(Boolean).join(", ");
+    return full || "";
+  } catch (_error) {
+    return "";
+  }
+}
+
+function describeWeatherCode(code) {
+  return WEATHER_CODE_LABELS[code] || "Weather update unavailable";
+}
+
 function formatFileSize(bytes) {
   if (!bytes) return "0 B";
   const sizes = ["B", "KB", "MB", "GB"];
@@ -151,6 +265,18 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
   const [loading, setLoading] = useState(false);
   const [noticePage, setNoticePage] = useState(1);
   const [syncedClockHeight, setSyncedClockHeight] = useState(null);
+  const [locationData, setLocationData] = useState({
+    loading: true,
+    label: "Detecting location...",
+    latitude: null,
+    longitude: null,
+  });
+  const [weather, setWeather] = useState({
+    loading: true,
+    temperatureC: null,
+    description: "",
+  });
+  const [nepaliDateText, setNepaliDateText] = useState("");
 
   const closePreview = () => {
     setPreview((current) => {
@@ -165,6 +291,173 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
     const timer = setInterval(() => setClock(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!isActive || typeof document === "undefined") return undefined;
+    let isCancelled = false;
+    const scriptId = "bridge4er-mypatro-date-script";
+    const targetId = "mypatro_nepali_date";
+
+    const syncDateFromDom = () => {
+      const node = document.getElementById(targetId);
+      const normalized = normalizeMypatroDate(node?.textContent || "");
+      if (!isCancelled && normalized) {
+        setNepaliDateText(normalized);
+      }
+    };
+
+    window._mypatroDateFormat = 1;
+    window._mypatroResponseType = "html";
+
+    let script = document.getElementById(scriptId);
+    const handleScriptLoad = () => {
+      window.setTimeout(syncDateFromDom, 0);
+    };
+
+    if (!script) {
+      script = document.createElement("script");
+      script.id = scriptId;
+      script.src = MYPATRO_SCRIPT_URL;
+      script.async = true;
+      script.addEventListener("load", handleScriptLoad);
+      document.body.appendChild(script);
+    } else {
+      handleScriptLoad();
+    }
+
+    let observer = null;
+    const target = document.getElementById(targetId);
+    if (typeof MutationObserver !== "undefined" && target) {
+      observer = new MutationObserver(() => syncDateFromDom());
+      observer.observe(target, { childList: true, subtree: true, characterData: true });
+    }
+
+    const poller = window.setInterval(syncDateFromDom, 1500);
+    return () => {
+      isCancelled = true;
+      window.clearInterval(poller);
+      if (observer) {
+        observer.disconnect();
+      }
+      if (script) {
+        script.removeEventListener("load", handleScriptLoad);
+      }
+    };
+  }, [isActive]);
+
+  useEffect(() => {
+    if (!isActive) return undefined;
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setLocationData({
+        loading: false,
+        label: "Location unavailable",
+        latitude: null,
+        longitude: null,
+      });
+      return undefined;
+    }
+
+    let isCancelled = false;
+    const setErrorState = () => {
+      if (isCancelled) return;
+      setLocationData({
+        loading: false,
+        label: "Location unavailable",
+        latitude: null,
+        longitude: null,
+      });
+    };
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const latitude = Number(position?.coords?.latitude);
+        const longitude = Number(position?.coords?.longitude);
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+          setErrorState();
+          return;
+        }
+
+        const fallback = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+        const resolvedLabel = (await reverseGeocode(latitude, longitude)) || fallback;
+        if (isCancelled) return;
+        setLocationData({
+          loading: false,
+          label: resolvedLabel,
+          latitude,
+          longitude,
+        });
+      },
+      () => {
+        setErrorState();
+      },
+      {
+        enableHighAccuracy: false,
+        timeout: 15000,
+        maximumAge: GEOLOCATION_MAX_AGE_MS,
+      }
+    );
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [isActive]);
+
+  useEffect(() => {
+    if (!isActive) return undefined;
+    const latitude = Number(locationData.latitude);
+    const longitude = Number(locationData.longitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      if (!locationData.loading) {
+        setWeather({
+          loading: false,
+          temperatureC: null,
+          description: "Weather unavailable",
+        });
+      }
+      return undefined;
+    }
+
+    let isCancelled = false;
+    const loadWeather = async () => {
+      try {
+        const weatherUrl = new URL("https://api.open-meteo.com/v1/forecast");
+        weatherUrl.searchParams.set("latitude", String(latitude));
+        weatherUrl.searchParams.set("longitude", String(longitude));
+        weatherUrl.searchParams.set("current", "temperature_2m,weather_code");
+        weatherUrl.searchParams.set("timezone", "auto");
+
+        const response = await fetch(weatherUrl.toString());
+        if (!response.ok) {
+          throw new Error("Weather API request failed");
+        }
+
+        const payload = await response.json();
+        const temperature = Number(payload?.current?.temperature_2m);
+        const weatherCode = Number(payload?.current?.weather_code);
+
+        if (isCancelled) return;
+        setWeather({
+          loading: false,
+          temperatureC: Number.isFinite(temperature) ? Math.round(temperature) : null,
+          description: Number.isFinite(weatherCode) ? describeWeatherCode(weatherCode) : "Weather update unavailable",
+        });
+      } catch (_error) {
+        if (isCancelled) return;
+        setWeather((current) => ({
+          loading: false,
+          temperatureC: current.temperatureC,
+          description: current.description || "Weather update unavailable",
+        }));
+      }
+    };
+
+    loadWeather();
+    const timer = window.setInterval(loadWeather, WEATHER_REFRESH_INTERVAL_MS);
+    return () => {
+      isCancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [isActive, locationData.latitude, locationData.longitude, locationData.loading]);
 
   useEffect(() => {
     return () => {
@@ -276,6 +569,18 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
 
   const motivationalQuote = String(metrics?.motivational_quote || "").trim();
   const motivationalImageUrl = String(metrics?.motivational_image_url || "").trim();
+  const hasLocationCoordinates =
+    Number.isFinite(Number(locationData.latitude)) && Number.isFinite(Number(locationData.longitude));
+  const locationLabel = locationData.loading ? "Detecting location..." : locationData.label || "Location unavailable";
+  const weatherSummary =
+    locationData.loading || (weather.loading && weather.temperatureC === null)
+      ? "Loading weather..."
+      : !hasLocationCoordinates
+      ? "Weather unavailable"
+      : weather.temperatureC === null
+      ? weather.description || "Weather update unavailable"
+      : `${weather.temperatureC} \u00B0C, ${weather.description || "Weather update unavailable"}`;
+  const nepaliDateDisplay = nepaliDateText || formatNepaliDateFallback(clock) || "नेपाली मिति लोड हुँदैछ...";
 
   const shouldShowNewBadge = (file) => {
     const modifiedAt = new Date(file?.modified || "").getTime();
@@ -424,11 +729,19 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
             style={syncedClockHeight ? { minHeight: `${syncedClockHeight}px` } : undefined}
           >
             <div className="clock-title-row">
-              <h3>Today</h3>
-              <span className="clock-location">Location: Kathmandu, Nepal</span>
+              <div className="clock-now-row">
+                <span className="clock-now-label">TODAY :</span>
+                <strong className="clock-time">{formatTime(clock)}</strong>
+              </div>
+              <div className="clock-location-stack">
+                <span className="clock-location">Location: {locationLabel}</span>
+                <span className="clock-weather">{weatherSummary}</span>
+              </div>
             </div>
-            <p>{formatDate(clock)}</p>
-            <strong>{formatTime(clock)}</strong>
+            <p className="clock-date-gregorian">{formatDate(clock)}</p>
+            <p id="mypatro_nepali_date" className="clock-date-nepali">
+              {nepaliDateDisplay}
+            </p>
           </div>
 
           <div className="home-info-card noticeboard">
