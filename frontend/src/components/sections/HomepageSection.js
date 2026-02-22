@@ -66,13 +66,13 @@ const METRIC_CONFIG = [
 
 const INSTITUTIONS_COVERED = [
   "संघिय लोकसेवा आयोग",
-  "प्रदेश  लोकसेवा आयोग",
-  "Nepal Engineering Council (NEC) License Exam",
   "IOE M.Sc. Entrance Exam",
-  "नेपाल बिद्युत प्राधिकरण (NEA)",
-  "नेपाल दुरसंचार प्राधिकरण (NTC)",
+  "प्रदेश  लोकसेवा आयोग",
   "नेपाल नागरिक उड्डयन प्राधिकरण (CAAN)",
+  "नेपाल बिद्युत प्राधिकरण (NEA)",
   "काठमाडौँ उपत्यका खानेपानी लिमिटेड (KUKL)",
+  "नेपाल दुरसंचार प्राधिकरण (NTC)",
+  "Nepal Engineering Council (NEC) License Exam",
   "नेपाली सेना",
   "+ थप अन्य संस्थानहरु",
 ];

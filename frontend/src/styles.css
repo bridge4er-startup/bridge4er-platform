@@ -7673,18 +7673,32 @@ body[data-branch-theme="computer-engineering"] {
 }
 
 .homepage-section .metric-spotlight-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
   gap: 0.55rem;
 }
 
 .homepage-section .metric-spotlight-item {
   padding: 0.62rem 0.68rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-width: 0;
 }
 
 .homepage-section .metric-spotlight-label {
   font-size: 0.64rem;
   line-height: 1.2;
   letter-spacing: 0.01em;
+}
+
+.homepage-section .metric-spotlight-item strong {
+  display: block;
+  max-width: 100%;
+  margin-top: 0.26rem;
+  font-size: clamp(1.25rem, 2.2vw, 2.15rem);
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .homepage-section .metric-spotlight-label i {
@@ -7803,7 +7817,7 @@ body[data-branch-theme="computer-engineering"] {
   }
 
   .homepage-section .metric-spotlight-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   }
 
   .homepage-section .field-feature-grid {
@@ -7812,6 +7826,10 @@ body[data-branch-theme="computer-engineering"] {
 
   .homepage-section .metric-spotlight-item {
     padding: 0.54rem 0.6rem;
+  }
+
+  .homepage-section .metric-spotlight-item strong {
+    font-size: clamp(1.08rem, 5.4vw, 1.72rem);
   }
 
   .homepage-section .metric-spotlight-label {
