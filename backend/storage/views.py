@@ -22,7 +22,7 @@ from storage.dropbox_service import (
     get_shareable_link,
     get_file_metadata,
 )
-from storage.models import FileMetadata, PlatformMetrics
+from storage.models import FileMetadata, FolderMetadata, PlatformMetrics
 
 CONTENT_TYPE_FOLDERS = {
     "notice": "Notice",
@@ -65,7 +65,8 @@ FILE_LIST_CACHE_STALE_TTL_SECONDS = _as_positive_int(
 
 
 def _is_safe_path(path):
-    return isinstance(path, str) and path.lower().startswith(ALLOWED_ROOT)
+    normalized = _normalize_dropbox_path(path)
+    return bool(normalized) and normalized.lower().startswith(ALLOWED_ROOT)
 
 
 def _normalize_branch(branch):
@@ -78,6 +79,47 @@ def _resolve_content_path(content_type, branch):
     if not folder:
         return None
     return f"/bridge4er/{_normalize_branch(branch)}/{folder}"
+
+
+def _normalize_dropbox_path(path):
+    if not isinstance(path, str):
+        return ""
+    value = path.strip()
+    if not value:
+        return ""
+    parts = [segment for segment in value.split("/") if segment]
+    if not parts:
+        return "/"
+    return "/" + "/".join(parts)
+
+
+def _path_parts(path):
+    return [segment for segment in _normalize_dropbox_path(path).split("/") if segment]
+
+
+def _content_root_parts(content_type, branch):
+    root = _resolve_content_path(content_type, branch) or ""
+    return _path_parts(root)
+
+
+def _relative_parts_from_content_root(path, content_type, branch):
+    parts = _path_parts(path)
+    root_parts = _content_root_parts(content_type, branch)
+    if len(parts) >= len(root_parts) and [p.lower() for p in parts[: len(root_parts)]] == [p.lower() for p in root_parts]:
+        return parts[len(root_parts) :]
+    return []
+
+
+def _parent_dropbox_path(path):
+    parts = _path_parts(path)
+    if len(parts) <= 1:
+        return ""
+    return "/" + "/".join(parts[:-1])
+
+
+def _folder_depth(path, content_type, branch):
+    relative_parts = _relative_parts_from_content_root(path, content_type, branch)
+    return max(0, len(relative_parts))
 
 
 def _list_cache_token_key(content_type, branch):
@@ -138,7 +180,7 @@ def _is_exam_set_path(path):
 
 
 def _extract_branch_from_path(path):
-    parts = [segment for segment in (path or "").split("/") if segment]
+    parts = _path_parts(path)
     if len(parts) >= 2 and parts[0].lower() == "bridge4er":
         return _normalize_branch(parts[1])
     return "Civil Engineering"
@@ -151,7 +193,8 @@ def _as_bool(value, default=False):
 
 
 def _infer_content_type_from_path(path):
-    lowered = str(path or "").lower()
+    lowered = _normalize_dropbox_path(path).lower()
+    lowered_with_trailing = lowered if lowered.endswith("/") else f"{lowered}/"
     markers = {
         "notice": "/notice/",
         "syllabus": "/syllabus/",
@@ -162,7 +205,7 @@ def _infer_content_type_from_path(path):
         "take_exam_subjective": "/take exam/subjective exam/",
     }
     for content_type, marker in markers.items():
-        if marker in lowered:
+        if marker in lowered_with_trailing:
             return content_type
     return "notice"
 
@@ -177,14 +220,17 @@ def _invalidate_list_cache_for_path(path):
 
 
 def _ensure_metadata_entry(path, content_type=None, branch=None, size=None):
-    if not _is_safe_path(path):
+    normalized_path = _normalize_dropbox_path(path)
+    if not _is_safe_path(normalized_path):
         return None
+    resolved_content_type = content_type or _infer_content_type_from_path(normalized_path)
+    resolved_branch = branch or _extract_branch_from_path(normalized_path)
     metadata_obj, _ = FileMetadata.objects.get_or_create(
-        dropbox_path=path,
+        dropbox_path=normalized_path,
         defaults={
-            "name": str(path).split("/")[-1] or "file",
-            "content_type": content_type or _infer_content_type_from_path(path),
-            "branch": branch or _extract_branch_from_path(path),
+            "name": str(normalized_path).split("/")[-1] or "file",
+            "content_type": resolved_content_type,
+            "branch": resolved_branch,
             "file_size": int(size or 0),
             "is_visible": True,
         },
@@ -192,52 +238,219 @@ def _ensure_metadata_entry(path, content_type=None, branch=None, size=None):
     return metadata_obj
 
 
+def _ensure_folder_metadata_entry(path, content_type=None, branch=None):
+    normalized_path = _normalize_dropbox_path(path)
+    if not _is_safe_path(normalized_path):
+        return None
+    resolved_content_type = content_type or _infer_content_type_from_path(normalized_path)
+    resolved_branch = branch or _extract_branch_from_path(normalized_path)
+    folder_obj, _ = FolderMetadata.objects.get_or_create(
+        dropbox_path=normalized_path,
+        defaults={
+            "name": str(normalized_path).split("/")[-1] or "folder",
+            "content_type": resolved_content_type,
+            "branch": resolved_branch,
+            "parent_path": _parent_dropbox_path(normalized_path),
+            "depth": _folder_depth(normalized_path, resolved_content_type, resolved_branch),
+            "sort_order": 0,
+            "is_visible": True,
+        },
+    )
+    return folder_obj
+
+
 def _sync_metadata_from_listing(files, content_type, branch):
+    resolved_content_type = content_type or ""
+    resolved_branch = _normalize_branch(branch)
+    root_path = _normalize_dropbox_path(_resolve_content_path(resolved_content_type, resolved_branch) or "")
     for item in files:
+        item_path = _normalize_dropbox_path(item.get("path"))
+        if not item_path:
+            continue
+
         if item.get("is_dir"):
+            _ensure_folder_metadata_entry(
+                path=item_path,
+                content_type=resolved_content_type,
+                branch=resolved_branch,
+            )
+            FolderMetadata.objects.filter(dropbox_path=item_path).update(
+                name=item.get("name") or (item_path.split("/")[-1] or "folder"),
+                content_type=resolved_content_type,
+                branch=resolved_branch,
+                parent_path=_parent_dropbox_path(item_path),
+                depth=_folder_depth(item_path, resolved_content_type, resolved_branch),
+            )
             continue
-        file_path = item.get("path")
-        if not file_path:
-            continue
+
         _ensure_metadata_entry(
-            path=file_path,
-            content_type=content_type,
-            branch=branch,
+            path=item_path,
+            content_type=resolved_content_type,
+            branch=resolved_branch,
             size=item.get("size"),
         )
-        FileMetadata.objects.filter(dropbox_path=file_path).update(
-            name=item.get("name") or (file_path.split("/")[-1] or "file"),
-            content_type=content_type,
-            branch=branch,
+        FileMetadata.objects.filter(dropbox_path=item_path).update(
+            name=item.get("name") or (item_path.split("/")[-1] or "file"),
+            content_type=resolved_content_type,
+            branch=resolved_branch,
             file_size=int(item.get("size") or 0),
         )
 
+        parent_path = _parent_dropbox_path(item_path)
+        while parent_path and root_path and (
+            parent_path == root_path or parent_path.startswith(f"{root_path}/")
+        ):
+            _ensure_folder_metadata_entry(
+                path=parent_path,
+                content_type=resolved_content_type,
+                branch=resolved_branch,
+            )
+            FolderMetadata.objects.filter(dropbox_path=parent_path).update(
+                name=parent_path.split("/")[-1] or "folder",
+                content_type=resolved_content_type,
+                branch=resolved_branch,
+                parent_path=_parent_dropbox_path(parent_path),
+                depth=_folder_depth(parent_path, resolved_content_type, resolved_branch),
+            )
+            if parent_path == root_path:
+                break
+            parent_path = _parent_dropbox_path(parent_path)
+
 
 def _visibility_map_for_paths(paths):
-    if not paths:
+    normalized_paths = []
+    for path in paths:
+        normalized = _normalize_dropbox_path(path)
+        if normalized:
+            normalized_paths.append(normalized)
+    if not normalized_paths:
         return {}
-    rows = FileMetadata.objects.filter(dropbox_path__in=paths).values("dropbox_path", "is_visible")
+    rows = FileMetadata.objects.filter(dropbox_path__in=normalized_paths).values("dropbox_path", "is_visible")
     return {row["dropbox_path"]: bool(row["is_visible"]) for row in rows}
 
 
-def _filter_files_by_visibility(files, include_hidden=False):
-    paths = [item.get("path") for item in files if item.get("path")]
+def _folder_visibility_map_for_paths(paths):
+    normalized_paths = []
+    for path in paths:
+        normalized = _normalize_dropbox_path(path)
+        if normalized:
+            normalized_paths.append(normalized)
+    if not normalized_paths:
+        return {}
+    rows = FolderMetadata.objects.filter(dropbox_path__in=normalized_paths).values("dropbox_path", "is_visible")
+    return {row["dropbox_path"]: bool(row["is_visible"]) for row in rows}
+
+
+def _hidden_folder_prefixes(content_type, branch):
+    rows = FolderMetadata.objects.filter(
+        content_type=content_type,
+        branch=_normalize_branch(branch),
+        is_visible=False,
+    ).values_list("dropbox_path", flat=True)
+    prefixes = []
+    for path in rows:
+        normalized = _normalize_dropbox_path(path)
+        if normalized:
+            prefixes.append(normalized.lower())
+    return prefixes
+
+
+def _is_under_hidden_folder(path, hidden_prefixes):
+    normalized_path = _normalize_dropbox_path(path).lower()
+    if not normalized_path:
+        return False
+    for prefix in hidden_prefixes:
+        if normalized_path == prefix or normalized_path.startswith(f"{prefix}/"):
+            return True
+    return False
+
+
+def _relative_folder_chain(path, content_type, branch, include_self):
+    relative_parts = _relative_parts_from_content_root(path, content_type, branch)
+    if not relative_parts:
+        return []
+    root = _normalize_dropbox_path(_resolve_content_path(content_type, branch) or "")
+    running = root.rstrip("/")
+    chain = []
+    for segment in relative_parts:
+        running = f"{running}/{segment}" if running else f"/{segment}"
+        chain.append(running)
+    if include_self:
+        return chain
+    return chain[:-1]
+
+
+def _sort_files_by_admin_order(files, content_type, branch):
+    if not files:
+        return []
+
+    resolved_content_type = content_type or ""
+    resolved_branch = _normalize_branch(branch)
+    folder_rows = FolderMetadata.objects.filter(
+        content_type=resolved_content_type,
+        branch=resolved_branch,
+    ).values("dropbox_path", "sort_order")
+    folder_order_map = {
+        _normalize_dropbox_path(row["dropbox_path"]): int(row.get("sort_order") or 0)
+        for row in folder_rows
+    }
+
+    def _sort_key(item):
+        path = _normalize_dropbox_path(item.get("path"))
+        is_dir = bool(item.get("is_dir"))
+        chain = _relative_folder_chain(path, resolved_content_type, resolved_branch, include_self=is_dir)
+        chain_key = []
+        for chain_path in chain:
+            name = chain_path.split("/")[-1].lower()
+            chain_key.append((folder_order_map.get(chain_path, 0), name))
+        self_order = folder_order_map.get(path, 0) if is_dir else 0
+        name_value = item.get("name") or (path.split("/")[-1] if path else "")
+        name_key = str(name_value).lower()
+        return (chain_key, 0 if is_dir else 1, self_order, name_key)
+
+    return sorted(files, key=_sort_key)
+
+
+def _filter_files_by_visibility(files, content_type, branch, include_hidden=False):
+    paths = [_normalize_dropbox_path(item.get("path")) for item in files if item.get("path")]
     visibility = _visibility_map_for_paths(paths)
+    folder_visibility = _folder_visibility_map_for_paths(paths)
+    hidden_folder_prefixes = _hidden_folder_prefixes(content_type=content_type, branch=branch)
     result = []
     for item in files:
-        path = item.get("path")
-        is_visible = True if item.get("is_dir") else visibility.get(path, True)
-        enriched = {**item, "is_visible": is_visible}
+        path = _normalize_dropbox_path(item.get("path"))
+        if not path:
+            continue
+        if item.get("is_dir"):
+            item_visible = folder_visibility.get(path, True)
+        else:
+            item_visible = visibility.get(path, True)
+        is_visible = item_visible and not _is_under_hidden_folder(path, hidden_folder_prefixes)
+        enriched = {**item, "path": path, "is_visible": is_visible}
         if include_hidden or is_visible:
             result.append(enriched)
     return result
 
 
 def _is_visible_path(path):
-    row = FileMetadata.objects.filter(dropbox_path=path).values("is_visible").first()
-    if row is None:
+    normalized_path = _normalize_dropbox_path(path)
+    if not normalized_path:
         return True
-    return bool(row["is_visible"])
+    branch = _extract_branch_from_path(normalized_path)
+    content_type = _infer_content_type_from_path(normalized_path)
+
+    folder_row = FolderMetadata.objects.filter(dropbox_path=normalized_path).values("is_visible").first()
+    if folder_row is not None and not bool(folder_row["is_visible"]):
+        return False
+
+    hidden_prefixes = _hidden_folder_prefixes(content_type=content_type, branch=branch)
+    if _is_under_hidden_folder(normalized_path, hidden_prefixes):
+        return False
+
+    file_row = FileMetadata.objects.filter(dropbox_path=normalized_path).values("is_visible").first()
+    if file_row is None:
+        return True
+    return bool(file_row["is_visible"])
 
 
 def _sync_exam_sets_for_branch(branch):
@@ -325,7 +538,13 @@ class ListFilesView(APIView):
                         raise
                     files = stale_files
 
-            visible_files = _filter_files_by_visibility(files, include_hidden=include_hidden)
+            ordered_files = _sort_files_by_admin_order(files, content_type=content_type, branch=branch)
+            visible_files = _filter_files_by_visibility(
+                ordered_files,
+                content_type=content_type,
+                branch=branch,
+                include_hidden=include_hidden,
+            )
             return Response(visible_files)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -356,7 +575,13 @@ class SearchFilesView(APIView):
 
             results = search_files(path, query)
             _sync_metadata_from_listing(results, content_type=content_type, branch=branch)
-            visible_results = _filter_files_by_visibility(results, include_hidden=include_hidden)
+            ordered_results = _sort_files_by_admin_order(results, content_type=content_type, branch=branch)
+            visible_results = _filter_files_by_visibility(
+                ordered_results,
+                content_type=content_type,
+                branch=branch,
+                include_hidden=include_hidden,
+            )
             return Response(visible_results)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -457,15 +682,16 @@ class UploadFileView(APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            path = f"{folder}/{file.name}"
+            path = _normalize_dropbox_path(f"{folder}/{file.name}")
             metadata = upload_file(path, file)
+            metadata_size = int((metadata or {}).get("size") or 0)
 
             # Save metadata to database
             defaults = {
                 'name': file.name,
                 'content_type': content_type,
                 'branch': branch,
-                'file_size': metadata['size'],
+                'file_size': metadata_size,
             }
             if requested_visibility is not None:
                 defaults["is_visible"] = _as_bool(requested_visibility, True)
@@ -473,6 +699,11 @@ class UploadFileView(APIView):
             file_meta, _ = FileMetadata.objects.update_or_create(
                 dropbox_path=path,
                 defaults=defaults
+            )
+            _ensure_folder_metadata_entry(
+                path=folder,
+                content_type=content_type,
+                branch=branch,
             )
             _invalidate_list_cache(content_type=content_type, branch=branch)
 
@@ -500,45 +731,80 @@ class FileVisibilityView(APIView):
         path = request.data.get("path")
         if not path:
             return Response({"error": "Path required"}, status=status.HTTP_400_BAD_REQUEST)
-        if not _is_safe_path(path):
+        normalized_path = _normalize_dropbox_path(path)
+        if not _is_safe_path(normalized_path):
             return Response({"error": "Invalid path"}, status=status.HTTP_400_BAD_REQUEST)
 
         if "is_visible" not in request.data:
             return Response({"error": "is_visible is required"}, status=status.HTTP_400_BAD_REQUEST)
 
+        is_dir = _as_bool(request.data.get("is_dir"), False)
         is_visible = _as_bool(request.data.get("is_visible"), True)
-        branch = _extract_branch_from_path(path)
-        content_type = _infer_content_type_from_path(path)
+        branch = _extract_branch_from_path(normalized_path)
+        content_type = _infer_content_type_from_path(normalized_path)
 
-        meta = _ensure_metadata_entry(path=path, content_type=content_type, branch=branch)
-        if meta is None:
-            return Response({"error": "Unable to manage file metadata"}, status=status.HTTP_400_BAD_REQUEST)
+        if is_dir:
+            folder_meta = _ensure_folder_metadata_entry(
+                path=normalized_path,
+                content_type=content_type,
+                branch=branch,
+            )
+            if folder_meta is None:
+                return Response({"error": "Unable to manage folder metadata"}, status=status.HTTP_400_BAD_REQUEST)
 
-        file_size = meta.file_size
-        try:
-            remote = get_file_metadata(path)
-            if remote and remote.get("size") is not None:
-                file_size = int(remote.get("size") or 0)
-        except Exception:
-            # Keep metadata update non-blocking even if live metadata lookup fails.
-            pass
+            folder_meta.name = str(normalized_path).split("/")[-1] or folder_meta.name
+            folder_meta.content_type = content_type
+            folder_meta.branch = branch
+            folder_meta.parent_path = _parent_dropbox_path(normalized_path)
+            folder_meta.depth = _folder_depth(normalized_path, content_type, branch)
+            folder_meta.is_visible = is_visible
+            folder_meta.save(
+                update_fields=[
+                    "name",
+                    "content_type",
+                    "branch",
+                    "parent_path",
+                    "depth",
+                    "is_visible",
+                    "modified_at",
+                ]
+            )
+        else:
+            meta = _ensure_metadata_entry(path=normalized_path, content_type=content_type, branch=branch)
+            if meta is None:
+                return Response({"error": "Unable to manage file metadata"}, status=status.HTTP_400_BAD_REQUEST)
 
-        meta.name = str(path).split("/")[-1] or meta.name
-        meta.content_type = content_type
-        meta.branch = branch
-        meta.file_size = file_size
-        meta.is_visible = is_visible
-        meta.save(update_fields=["name", "content_type", "branch", "file_size", "is_visible", "modified_at"])
+            file_size = meta.file_size
+            try:
+                remote = get_file_metadata(normalized_path)
+                if remote and remote.get("size") is not None:
+                    file_size = int(remote.get("size") or 0)
+            except Exception:
+                # Keep metadata update non-blocking even if live metadata lookup fails.
+                pass
+
+            meta.name = str(normalized_path).split("/")[-1] or meta.name
+            meta.content_type = content_type
+            meta.branch = branch
+            meta.file_size = file_size
+            meta.is_visible = is_visible
+            meta.save(update_fields=["name", "content_type", "branch", "file_size", "is_visible", "modified_at"])
         _invalidate_list_cache(content_type=content_type, branch=branch)
 
         payload = {
             "message": "Visibility updated",
-            "path": path,
+            "path": normalized_path,
+            "is_dir": is_dir,
             "is_visible": is_visible,
         }
 
-        if _is_exam_set_path(path):
-            updated_count = ExamSet.objects.filter(source_file_path=path).update(is_active=is_visible)
+        if _is_exam_set_path(normalized_path):
+            if is_dir:
+                updated_count = ExamSet.objects.filter(
+                    source_file_path__startswith=f"{normalized_path}/"
+                ).update(is_active=is_visible)
+            else:
+                updated_count = ExamSet.objects.filter(source_file_path=normalized_path).update(is_active=is_visible)
             payload["exam_sets_updated"] = updated_count
             if is_visible and updated_count == 0:
                 try:
@@ -560,12 +826,18 @@ class DeleteFileView(APIView):
             return Response({"error": "Path required"}, status=status.HTTP_400_BAD_REQUEST)
         
         try:
-            delete_file(path)
-            FileMetadata.objects.filter(dropbox_path=path).delete()
-            _invalidate_list_cache_for_path(path)
+            normalized_path = _normalize_dropbox_path(path)
+            delete_file(normalized_path)
+            FileMetadata.objects.filter(
+                Q(dropbox_path=normalized_path) | Q(dropbox_path__startswith=f"{normalized_path}/")
+            ).delete()
+            FolderMetadata.objects.filter(
+                Q(dropbox_path=normalized_path) | Q(dropbox_path__startswith=f"{normalized_path}/")
+            ).delete()
+            _invalidate_list_cache_for_path(normalized_path)
             payload = {"message": "File deleted successfully"}
-            if _is_exam_set_path(path):
-                payload["exam_sets_sync"] = _sync_exam_sets_for_branch(_extract_branch_from_path(path))
+            if _is_exam_set_path(normalized_path):
+                payload["exam_sets_sync"] = _sync_exam_sets_for_branch(_extract_branch_from_path(normalized_path))
             return Response(payload)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)

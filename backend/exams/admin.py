@@ -2,6 +2,7 @@ from django.contrib import admin
 from django.utils import timezone
 from django.utils.html import format_html
 from .import_utils import DJANGO_IMPORT_EXPORT_AVAILABLE
+from .path_utils import parse_exam_source_path, parse_subject_key
 from .models import (
     Chapter,
     ExamAttempt,
@@ -24,9 +25,20 @@ else:
 
 @admin.register(Subject)
 class SubjectAdmin(admin.ModelAdmin):
-    list_display = ("name", "branch", "created_at")
+    list_display = ("id", "display_name", "institution_folder", "branch", "created_at")
     list_filter = ("branch",)
     search_fields = ("name", "branch")
+    ordering = ("branch", "name")
+
+    @admin.display(description="Subject")
+    def display_name(self, obj):
+        parsed = parse_subject_key(getattr(obj, "name", ""))
+        return parsed.get("subject_name") or getattr(obj, "name", "")
+
+    @admin.display(description="Institution Folder")
+    def institution_folder(self, obj):
+        parsed = parse_subject_key(getattr(obj, "name", ""))
+        return parsed.get("institution_display") or "General"
 
 
 @admin.register(Chapter)
@@ -52,10 +64,51 @@ class ExamQuestionInline(admin.TabularInline):
 
 @admin.register(ExamSet)
 class ExamSetAdmin(admin.ModelAdmin):
-    list_display = ("id", "name", "branch", "exam_type", "is_free", "fee", "duration_seconds", "is_active")
-    list_filter = ("branch", "exam_type", "is_free", "is_active")
-    search_fields = ("name", "branch")
+    list_display = (
+        "id",
+        "source_file_name",
+        "source_institution",
+        "source_folder_path",
+        "branch",
+        "exam_type",
+        "is_free",
+        "fee",
+        "duration_seconds",
+        "is_active",
+    )
+    list_filter = ("branch", "exam_type", "is_free", "is_active", "managed_by_sync")
+    search_fields = ("name", "branch", "source_file_path")
+    ordering = ("branch", "exam_type", "name", "id")
     inlines = [ExamQuestionInline]
+
+    def _source_meta(self, obj):
+        source_path = str(getattr(obj, "source_file_path", "") or "").strip()
+        if not source_path.lower().startswith("/bridge4er/"):
+            return {
+                "institution": "General",
+                "folder_path": "",
+                "source_name": obj.name,
+            }
+        return parse_exam_source_path(
+            source_file_path=source_path,
+            branch=getattr(obj, "branch", ""),
+            exam_type=getattr(obj, "exam_type", ""),
+        )
+
+    @admin.display(description="Exam Set")
+    def source_file_name(self, obj):
+        meta = self._source_meta(obj)
+        return meta.get("source_name") or obj.name
+
+    @admin.display(description="Institution Folder")
+    def source_institution(self, obj):
+        meta = self._source_meta(obj)
+        return meta.get("institution") or "General"
+
+    @admin.display(description="Folder Path")
+    def source_folder_path(self, obj):
+        meta = self._source_meta(obj)
+        return meta.get("folder_path") or "General"
 
 
 @admin.register(ExamQuestion)
