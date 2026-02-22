@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import API from "../../services/api";
+import API, { cachedGet } from "../../services/api";
 import toast from "react-hot-toast";
 import FilePreviewModal from "../common/FilePreviewModal";
 import TimedLoadingState from "../common/TimedLoadingState";
@@ -68,10 +68,11 @@ export default function OldQuestionsSection({ branch = "Civil Engineering", isAc
   const loadFiles = async () => {
     setLoading(true);
     try {
-      const res = await API.get("storage/files/list/", {
+      const res = await cachedGet("storage/files/list/", {
         params: {
           content_type: "old_question",
           branch: branch,
+          refresh: true,
         },
       });
       setFiles(res.data || []);
@@ -156,15 +157,6 @@ export default function OldQuestionsSection({ branch = "Civil Engineering", isAc
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
-  const formatDate = (isoString) => {
-    const date = new Date(isoString);
-    return date.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  };
-
   const totalPages = Math.max(1, Math.ceil(filteredFiles.length / FILES_PAGE_SIZE));
 
   useEffect(() => {
@@ -220,7 +212,7 @@ export default function OldQuestionsSection({ branch = "Civil Engineering", isAc
                   <div className="file-details">
                     <h4>{file.name}</h4>
                     <p className="file-meta">
-                      Size: {formatFileSize(file.size)} | Date: {formatDate(file.modified)}
+                      Size: {formatFileSize(file.size)}
                     </p>
                   </div>
                 </div>

@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import API from "../../services/api";
+import API, { cachedGet } from "../../services/api";
 import toast from "react-hot-toast";
 import { useBranch } from "../../context/BranchContext";
 import FilePreviewModal from "../common/FilePreviewModal";
@@ -86,18 +86,6 @@ const MYPATRO_SCRIPT_URL = "https://mypatro.com/resources/nepali_date/nepali_dat
 const NEPALI_DATE_CACHE_KEY = "bridge4er:homepage:nepali-date:v1";
 const NEPALI_DATE_POLL_INTERVAL_MS = 1200;
 const NEPALI_DATE_MAX_WAIT_MS = 12000;
-const NEPALI_DIGIT_TO_ARABIC = Object.freeze({
-  "०": "0",
-  "१": "1",
-  "२": "2",
-  "३": "3",
-  "४": "4",
-  "५": "5",
-  "६": "6",
-  "७": "7",
-  "८": "8",
-  "९": "9",
-});
 const WEATHER_CODE_LABELS = Object.freeze({
   0: "Clear sky",
   1: "Mainly clear",
@@ -189,17 +177,24 @@ function formatNepaliDateFallback(date) {
     const month = getPart("month");
     const day = getPart("day");
     const year = getPart("year");
-    const normalizedYear = Number(
-      String(year || "")
-        .split("")
-        .map((char) => NEPALI_DIGIT_TO_ARABIC[char] || char)
-        .join("")
-    );
-
-    if (weekday && month && day && year && Number.isFinite(normalizedYear) && normalizedYear >= 2070) {
+    if (weekday && month && day && year) {
       return `${weekday}, ${month} ${day} , ${year}`;
     }
     return "";
+  } catch (_error) {
+    return "";
+  }
+}
+
+function formatNepaliLocaleGregorianFallback(date) {
+  try {
+    return date.toLocaleDateString("ne-NP", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      timeZone: NEPAL_TIMEZONE,
+    });
   } catch (_error) {
     return "";
   }
@@ -590,11 +585,12 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
       try {
         setLoading(true);
         const [metricsRes, filesRes] = await Promise.allSettled([
-          API.get("storage/homepage/stats/"),
-          API.get("storage/files/list/", {
+          cachedGet("storage/homepage/stats/"),
+          cachedGet("storage/files/list/", {
             params: {
               content_type: "notice",
               branch,
+              refresh: true,
             },
           }),
         ]);
@@ -654,7 +650,11 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
       : weather.temperatureC === null
       ? weather.description || "Weather update unavailable"
       : `${weather.temperatureC} \u00B0C, ${weather.description || "Weather update unavailable"}`;
-  const nepaliDateDisplay = nepaliDateText || formatNepaliDateFallback(clock) || "नेपाली मिति लोड हुँदैछ...";
+  const nepaliDateDisplay =
+    nepaliDateText ||
+    formatNepaliDateFallback(clock) ||
+    formatNepaliLocaleGregorianFallback(clock) ||
+    formatDate(clock);
 
   const shouldShowNewBadge = (file) => {
     const modifiedAt = new Date(file?.modified || "").getTime();
@@ -851,9 +851,7 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
                             {shouldShowNewBadge(file) ? <span className="notice-new-badge">New</span> : null}
                             {file.name}
                           </h4>
-                          <p>
-                            {formatFileSize(file.size)} | {new Date(file.modified).toLocaleString()}
-                          </p>
+                          <p>{formatFileSize(file.size)}</p>
                         </div>
                       </div>
                       <div className="file-actions">

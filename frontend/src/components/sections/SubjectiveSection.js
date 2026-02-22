@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import API from "../../services/api";
+import API, { cachedGet } from "../../services/api";
 import toast from "react-hot-toast";
 import { getInstitutionIcon, getSubjectIcon } from "../../utils/subjectIcons";
 import FilePreviewModal from "../common/FilePreviewModal";
@@ -93,7 +93,7 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
     const loadFiles = async () => {
       setLoading(true);
       try {
-        const res = await API.get("storage/files/list/", {
+        const res = await cachedGet("storage/files/list/", {
           params: {
             content_type: "subjective",
             branch,

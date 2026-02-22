@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import API from "../../services/api";
+import API, { cachedGet } from "../../services/api";
 import toast from "react-hot-toast";
 import { getInstitutionIcon, getSubjectIcon } from "../../utils/subjectIcons";
 
@@ -67,10 +67,10 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
     setLoading(true);
     try {
       const [subjectsRes, objectiveFoldersRes] = await Promise.all([
-        API.get("exams/subjects/", {
+        cachedGet("exams/subjects/", {
           params: { branch, refresh: true },
         }),
-        API.get("storage/files/list/", {
+        cachedGet("storage/files/list/", {
           params: {
             content_type: "objective_mcq",
             branch,
@@ -128,7 +128,7 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
     resetQuestionSession();
     setLoading(true);
     try {
-      const res = await API.get(`exams/subjects/${encodeURIComponent(subjectName)}/chapters/`, {
+      const res = await cachedGet(`exams/subjects/${encodeURIComponent(subjectName)}/chapters/`, {
         params: { branch, refresh: true },
       });
       setChapters(res.data || []);
@@ -144,7 +144,7 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
   const loadQuestionPage = async (subjectName, chapterName, nextPage, nextPageSize = pageSize) => {
     setLoading(true);
     try {
-      const res = await API.get(
+      const res = await cachedGet(
         `exams/subjects/${encodeURIComponent(subjectName)}/chapters/${encodeURIComponent(chapterName)}/questions/`,
         {
           params: {

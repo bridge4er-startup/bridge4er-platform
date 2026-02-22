@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { listExamSets } from "../../services/examService";
-import API from "../../services/api";
+import API, { cachedGet } from "../../services/api";
 import { initiateEsewaPayment, initiateKhaltiPayment } from "../../services/paymentService";
 import toast from "react-hot-toast";
 import TimedLoadingState from "../common/TimedLoadingState";
@@ -84,7 +84,7 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
       const contentType = type === "mcq" ? "take_exam_mcq" : "take_exam_subjective";
       const [data, folderRes] = await Promise.all([
         listExamSets(branch, type, true),
-        API.get("storage/files/list/", {
+        cachedGet("storage/files/list/", {
           params: {
             content_type: contentType,
             branch,

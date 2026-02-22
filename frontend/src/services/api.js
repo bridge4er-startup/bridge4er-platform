@@ -28,10 +28,65 @@ const API_HEARTBEAT_INTERVAL_MS = parsePositiveInt(
   60000
 );
 const API_WARM_CACHE_MS = parsePositiveInt(process.env.REACT_APP_API_WARM_CACHE_MS, 120000, 30000);
+const API_GET_CACHE_TTL_MS = parsePositiveInt(
+  process.env.REACT_APP_API_GET_CACHE_TTL_MS,
+  5 * 60 * 1000,
+  10000
+);
 
 const isBrowser = typeof window !== "undefined";
+const getResponseCache = new Map();
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const normalizeSearchParams = (params = {}) => {
+  const search = new URLSearchParams();
+  Object.keys(params || {})
+    .sort()
+    .forEach((key) => {
+      const value = params[key];
+      if (value === undefined || value === null) return;
+      if (Array.isArray(value)) {
+        value.forEach((item) => search.append(key, String(item)));
+        return;
+      }
+      search.append(key, String(value));
+    });
+  return search.toString();
+};
+
+const buildGetCacheKey = (url, params) => {
+  const query = normalizeSearchParams(params || {});
+  return query ? `${String(url || "")}?${query}` : String(url || "");
+};
+
+const readCachedGetResponse = (cacheKey) => {
+  const row = getResponseCache.get(cacheKey);
+  if (!row) return null;
+  if (Date.now() >= row.expiresAt) {
+    getResponseCache.delete(cacheKey);
+    return null;
+  }
+  return row.response;
+};
+
+const writeCachedGetResponse = (cacheKey, response, ttlMs) => {
+  const safeTtl = Math.max(1000, Number(ttlMs) || API_GET_CACHE_TTL_MS);
+  getResponseCache.set(cacheKey, {
+    expiresAt: Date.now() + safeTtl,
+    response: {
+      data: response?.data,
+      status: response?.status ?? 200,
+      statusText: response?.statusText || "OK",
+      headers: response?.headers || {},
+      config: response?.config || {},
+    },
+  });
+};
+
+export const clearGetResponseCache = () => {
+  getResponseCache.clear();
+};
 
 const resolveBackendOrigin = () => {
   try {
@@ -58,6 +113,7 @@ let backendWarmUntil = 0;
 let backendWarmupPromise = null;
 
 export const storeTokens = ({ access, refresh }) => {
+  clearGetResponseCache();
   if (access) {
     localStorage.setItem(ACCESS_TOKEN_KEY, access);
   }
@@ -67,6 +123,7 @@ export const storeTokens = ({ access, refresh }) => {
 };
 
 export const clearTokens = () => {
+  clearGetResponseCache();
   localStorage.removeItem(ACCESS_TOKEN_KEY);
   localStorage.removeItem(REFRESH_TOKEN_KEY);
 };
@@ -153,6 +210,43 @@ export const startBackendHeartbeat = () => {
   };
 };
 
+export const cachedGet = async (url, options = {}) => {
+  const { params = {}, ttlMs = API_GET_CACHE_TTL_MS, forceRefresh = false, ...requestConfig } = options || {};
+  const cacheKey = buildGetCacheKey(url, params);
+  if (!forceRefresh) {
+    const cached = readCachedGetResponse(cacheKey);
+    if (cached) {
+      return {
+        ...cached,
+        config: {
+          ...(cached.config || {}),
+          ...(requestConfig || {}),
+          method: "get",
+          url,
+          params,
+        },
+      };
+    }
+  }
+
+  const response = await API.get(url, {
+    ...requestConfig,
+    params,
+  });
+  if ((ttlMs || 0) > 0) {
+    writeCachedGetResponse(cacheKey, response, ttlMs);
+  }
+  return response;
+};
+
+export const prefetchGet = async (url, options = {}) => {
+  try {
+    await cachedGet(url, options);
+  } catch (_error) {
+    // Prefetch failures should never block regular app use.
+  }
+};
+
 API.interceptors.request.use((config) => {
   const token = localStorage.getItem(ACCESS_TOKEN_KEY);
   if (token) {
@@ -170,7 +264,13 @@ const resolvePendingRequests = (token) => {
 };
 
 API.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const method = String(response?.config?.method || "").toLowerCase();
+    if (method && !isIdempotentMethod(method)) {
+      clearGetResponseCache();
+    }
+    return response;
+  },
   async (error) => {
     const originalRequest = error.config || {};
     const status = error.response?.status;

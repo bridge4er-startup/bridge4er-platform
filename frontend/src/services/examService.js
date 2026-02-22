@@ -1,7 +1,7 @@
-import API from "./api";
+import API, { cachedGet } from "./api";
 
 export const listExamSets = async (branch, examType, refresh = false) => {
-  const res = await API.get("exams/sets/", {
+  const res = await cachedGet("exams/sets/", {
     params: { branch, exam_type: examType, refresh: !!refresh },
   });
   return res.data;

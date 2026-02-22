@@ -2,7 +2,12 @@ from django.contrib import admin
 from django.utils import timezone
 from django.utils.html import format_html
 from .import_utils import DJANGO_IMPORT_EXPORT_AVAILABLE
-from .path_utils import parse_exam_source_path, parse_subject_key
+from .path_utils import (
+    GENERAL_INSTITUTION,
+    SUBJECT_KEY_SEPARATOR,
+    parse_exam_source_path,
+    parse_subject_key,
+)
 from .models import (
     Chapter,
     ExamAttempt,
@@ -23,10 +28,37 @@ else:
     ImportExportModelAdmin = admin.ModelAdmin
 
 
+class InstitutionFolderFilter(admin.SimpleListFilter):
+    title = "Institution Folder"
+    parameter_name = "institution_folder"
+
+    def lookups(self, request, model_admin):
+        choices = {}
+        for subject_name in Subject.objects.values_list("name", flat=True):
+            parsed = parse_subject_key(subject_name)
+            institution_key = parsed.get("institution_key") or GENERAL_INSTITUTION
+            institution_display = parsed.get("institution_display") or GENERAL_INSTITUTION
+            choices[str(institution_key)] = str(institution_display)
+        return sorted(choices.items(), key=lambda item: item[1].lower())
+
+    def queryset(self, request, queryset):
+        selected = str(self.value() or "").strip()
+        if not selected:
+            return queryset
+
+        subject_name_field = "name" if queryset.model is Subject else "subject__name"
+        separator_lookup = {f"{subject_name_field}__contains": SUBJECT_KEY_SEPARATOR}
+        if selected == GENERAL_INSTITUTION:
+            return queryset.exclude(**separator_lookup)
+
+        prefix_lookup = {f"{subject_name_field}__startswith": f"{selected}{SUBJECT_KEY_SEPARATOR}"}
+        return queryset.filter(**prefix_lookup)
+
+
 @admin.register(Subject)
 class SubjectAdmin(admin.ModelAdmin):
     list_display = ("id", "display_name", "institution_folder", "branch", "created_at")
-    list_filter = ("branch",)
+    list_filter = ("branch", InstitutionFolderFilter)
     search_fields = ("name", "branch")
     ordering = ("branch", "name")
 
@@ -44,7 +76,7 @@ class SubjectAdmin(admin.ModelAdmin):
 @admin.register(Chapter)
 class ChapterAdmin(admin.ModelAdmin):
     list_display = ("name", "subject", "order")
-    list_filter = ("subject__branch",)
+    list_filter = ("subject__branch", InstitutionFolderFilter, "subject")
     search_fields = ("name", "subject__name")
 
 

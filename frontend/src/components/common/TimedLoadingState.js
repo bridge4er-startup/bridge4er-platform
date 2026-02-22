@@ -16,9 +16,6 @@ export default function TimedLoadingState({ baseMessage = "Loading..." }) {
     <div className="loading timed-loading">
       <div className="timed-loading-spinner-row">
         <div className="spinner"></div>
-        {elapsedSeconds >= 10 ? (
-          <span className="timed-loading-side-note">drink water, deep breathe</span>
-        ) : null}
       </div>
       <p>{baseMessage}</p>
       {elapsedSeconds >= 5 ? (

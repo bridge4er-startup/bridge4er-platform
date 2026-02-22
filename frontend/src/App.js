@@ -11,6 +11,8 @@ import PaymentResultPage from "./pages/PaymentResultPage";
 import { Toaster } from "react-hot-toast";
 import { useAuth } from "./context/AuthContext";
 import { startBackendHeartbeat } from "./services/api";
+import { useBranch } from "./context/BranchContext";
+import { warmInitialStudentContent } from "./services/bootstrapService";
 
 function ProtectedRoute({ children, adminOnly = false }) {
   const { loading, isAuthenticated, isAdmin } = useAuth();
@@ -27,10 +29,18 @@ function ProtectedRoute({ children, adminOnly = false }) {
 }
 
 function App() {
+  const { branch } = useBranch();
+  const { isAuthenticated, loading } = useAuth();
+
   useEffect(() => {
     const stopHeartbeat = startBackendHeartbeat();
     return () => stopHeartbeat();
   }, []);
+
+  useEffect(() => {
+    if (loading) return;
+    warmInitialStudentContent(branch, isAuthenticated).catch(() => {});
+  }, [branch, isAuthenticated, loading]);
 
   return (
     <div className="App">
