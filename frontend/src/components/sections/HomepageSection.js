@@ -83,6 +83,9 @@ const NEPAL_TIMEZONE = "Asia/Kathmandu";
 const WEATHER_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 const GEOLOCATION_MAX_AGE_MS = 5 * 60 * 1000;
 const MYPATRO_SCRIPT_URL = "https://mypatro.com/resources/nepali_date/nepali_date.js";
+const NEPALI_DATE_CACHE_KEY = "bridge4er:homepage:nepali-date:v1";
+const NEPALI_DATE_POLL_INTERVAL_MS = 1200;
+const NEPALI_DATE_MAX_WAIT_MS = 12000;
 const NEPALI_DIGIT_TO_ARABIC = Object.freeze({
   "०": "0",
   "१": "1",
@@ -212,6 +215,52 @@ function normalizeMypatroDate(raw = "") {
   return `${weekday.trim()}, ${month.trim()} ${day.trim()} , ${year.trim()}`;
 }
 
+function getNepalDayCacheKey(date = new Date()) {
+  const formatter = new Intl.DateTimeFormat("en-GB", {
+    timeZone: NEPAL_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts = formatter.formatToParts(date);
+  const getPart = (type) => parts.find((part) => part.type === type)?.value || "";
+  const year = getPart("year");
+  const month = getPart("month");
+  const day = getPart("day");
+  return `${year}-${month}-${day}`;
+}
+
+function readCachedNepaliDate(dayKey) {
+  if (typeof window === "undefined") return "";
+  try {
+    const raw = window.localStorage.getItem(NEPALI_DATE_CACHE_KEY);
+    if (!raw) return "";
+    const parsed = JSON.parse(raw);
+    if (String(parsed?.dayKey || "") !== String(dayKey || "")) return "";
+    return normalizeMypatroDate(parsed?.value || "");
+  } catch (_error) {
+    return "";
+  }
+}
+
+function persistCachedNepaliDate(dayKey, value) {
+  if (typeof window === "undefined") return;
+  const normalized = normalizeMypatroDate(value);
+  if (!normalized) return;
+  try {
+    window.localStorage.setItem(
+      NEPALI_DATE_CACHE_KEY,
+      JSON.stringify({
+        dayKey,
+        value: normalized,
+        updatedAt: Date.now(),
+      })
+    );
+  } catch (_error) {
+    // Ignore storage write failures.
+  }
+}
+
 async function reverseGeocode(latitude, longitude) {
   try {
     const geocodeUrl = new URL("https://geocoding-api.open-meteo.com/v1/reverse");
@@ -293,16 +342,43 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
   }, []);
 
   useEffect(() => {
-    if (!isActive || typeof document === "undefined") return undefined;
+    if (!isActive || typeof document === "undefined" || typeof window === "undefined") return undefined;
     let isCancelled = false;
+    const dayKey = getNepalDayCacheKey(new Date());
+    const cachedValue = readCachedNepaliDate(dayKey);
+    if (cachedValue) {
+      setNepaliDateText(cachedValue);
+      return undefined;
+    }
+
     const scriptId = "bridge4er-mypatro-date-script";
     const targetId = "mypatro_nepali_date";
+    let poller = null;
+    let timeout = null;
+    let observer = null;
+
+    const stopWatching = () => {
+      if (poller) {
+        window.clearInterval(poller);
+        poller = null;
+      }
+      if (timeout) {
+        window.clearTimeout(timeout);
+        timeout = null;
+      }
+      if (observer) {
+        observer.disconnect();
+        observer = null;
+      }
+    };
 
     const syncDateFromDom = () => {
       const node = document.getElementById(targetId);
       const normalized = normalizeMypatroDate(node?.textContent || "");
       if (!isCancelled && normalized) {
         setNepaliDateText(normalized);
+        persistCachedNepaliDate(dayKey, normalized);
+        stopWatching();
       }
     };
 
@@ -325,20 +401,18 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
       handleScriptLoad();
     }
 
-    let observer = null;
     const target = document.getElementById(targetId);
     if (typeof MutationObserver !== "undefined" && target) {
       observer = new MutationObserver(() => syncDateFromDom());
       observer.observe(target, { childList: true, subtree: true, characterData: true });
     }
 
-    const poller = window.setInterval(syncDateFromDom, 1500);
+    poller = window.setInterval(syncDateFromDom, NEPALI_DATE_POLL_INTERVAL_MS);
+    timeout = window.setTimeout(stopWatching, NEPALI_DATE_MAX_WAIT_MS);
+
     return () => {
       isCancelled = true;
-      window.clearInterval(poller);
-      if (observer) {
-        observer.disconnect();
-      }
+      stopWatching();
       if (script) {
         script.removeEventListener("load", handleScriptLoad);
       }
