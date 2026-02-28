@@ -585,7 +585,9 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
       try {
         setLoading(true);
         const [metricsRes, filesRes] = await Promise.allSettled([
-          cachedGet("storage/homepage/stats/"),
+          cachedGet("storage/homepage/stats/", {
+            params: { branch },
+          }),
           cachedGet("storage/files/list/", {
             params: {
               content_type: "notice",

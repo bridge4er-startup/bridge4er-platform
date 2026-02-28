@@ -491,9 +491,21 @@ def _effective_metrics_row():
     return PlatformMetrics.objects.create()
 
 
-def _computed_platform_metrics():
+def _computed_platform_metrics(branch=None):
     User = get_user_model()
-    library_material_count = FileMetadata.objects.filter(content_type="subjective", is_visible=True).filter(
+    user_qs = User.objects.filter(is_staff=False)
+    mcq_qs = MCQQuestion.objects.all()
+    file_qs = FileMetadata.objects.filter(content_type="subjective", is_visible=True)
+    exam_set_qs = ExamSet.objects.filter(is_active=True)
+
+    resolved_branch = _normalize_branch(branch) if branch else None
+    if resolved_branch:
+        user_qs = user_qs.filter(field_of_study__iexact=resolved_branch)
+        mcq_qs = mcq_qs.filter(chapter__subject__branch=resolved_branch)
+        file_qs = file_qs.filter(branch=resolved_branch)
+        exam_set_qs = exam_set_qs.filter(branch=resolved_branch)
+
+    library_material_count = file_qs.filter(
         Q(name__iendswith=".pdf")
         | Q(name__iendswith=".png")
         | Q(name__iendswith=".jpg")
@@ -502,10 +514,10 @@ def _computed_platform_metrics():
         | Q(name__iendswith=".webp")
     ).count()
     return {
-        "enrolled_students": User.objects.filter(is_staff=False).count(),
-        "objective_mcqs_available": MCQQuestion.objects.count(),
+        "enrolled_students": user_qs.count(),
+        "objective_mcqs_available": mcq_qs.count(),
         "resource_files_available": library_material_count,
-        "exam_sets_available": ExamSet.objects.filter(is_active=True).count(),
+        "exam_sets_available": exam_set_qs.count(),
     }
 
 class DropboxListView(APIView):
@@ -872,17 +884,25 @@ class HomePageMetricsView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
+        branch_param = str(request.GET.get("branch", "") or "").strip()
+        resolved_branch = _normalize_branch(branch_param) if branch_param else None
         row = _effective_metrics_row()
-        computed = _computed_platform_metrics()
+        computed = _computed_platform_metrics(branch=resolved_branch)
+        use_global_overrides = not bool(resolved_branch)
         data = {
-            "enrolled_students": row.enrolled_students if row.enrolled_students is not None else computed["enrolled_students"],
+            "branch": resolved_branch or "all",
+            "enrolled_students": row.enrolled_students
+            if use_global_overrides and row.enrolled_students is not None
+            else computed["enrolled_students"],
             "objective_mcqs_available": row.objective_mcqs_available
-            if row.objective_mcqs_available is not None
+            if use_global_overrides and row.objective_mcqs_available is not None
             else computed["objective_mcqs_available"],
             "resource_files_available": row.resource_files_available
-            if row.resource_files_available is not None
+            if use_global_overrides and row.resource_files_available is not None
             else computed["resource_files_available"],
-            "exam_sets_available": row.exam_sets_available if row.exam_sets_available is not None else computed["exam_sets_available"],
+            "exam_sets_available": row.exam_sets_available
+            if use_global_overrides and row.exam_sets_available is not None
+            else computed["exam_sets_available"],
             "motivational_quote": row.motivational_quote or "",
             "motivational_image_url": row.motivational_image_url or "",
             "updated_at": row.updated_at,

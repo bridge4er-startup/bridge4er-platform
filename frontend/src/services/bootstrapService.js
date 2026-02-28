@@ -12,7 +12,10 @@ export async function warmInitialStudentContent(branch, isAuthenticated) {
 
   const warmupPromise = (async () => {
     await Promise.allSettled([
-      prefetchGet("storage/homepage/stats/", { ttlMs: BOOTSTRAP_CACHE_TTL_MS }),
+      prefetchGet("storage/homepage/stats/", {
+        params: { branch: normalizedBranch },
+        ttlMs: BOOTSTRAP_CACHE_TTL_MS,
+      }),
       prefetchGet("storage/files/list/", {
         params: { content_type: "notice", branch: normalizedBranch },
         ttlMs: BOOTSTRAP_CACHE_TTL_MS,

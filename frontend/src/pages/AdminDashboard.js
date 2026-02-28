@@ -720,7 +720,9 @@ export default function AdminDashboard() {
 
   const loadHomepageMetrics = async () => {
     try {
-      const res = await API.get("storage/homepage/stats/");
+      const res = await API.get("storage/homepage/stats/", {
+        params: { branch },
+      });
       setHomepageMetrics({
         enrolled_students: String(res.data?.enrolled_students ?? ""),
         objective_mcqs_available: String(res.data?.objective_mcqs_available ?? ""),
@@ -737,7 +739,9 @@ export default function AdminDashboard() {
   const saveHomepageMetrics = async () => {
     try {
       setSavingHomepageMetrics(true);
-      await API.post("storage/homepage/stats/", homepageMetrics);
+      await API.post("storage/homepage/stats/", homepageMetrics, {
+        params: { branch },
+      });
       toast.success("Homepage metrics updated.");
       await loadHomepageMetrics();
     } catch (error) {
