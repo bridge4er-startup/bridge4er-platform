@@ -72,7 +72,6 @@ export default function SyllabusSection({ branch = "Civil Engineering", isActive
         params: {
           content_type: "syllabus",
           branch: branch,
-          refresh: true,
         },
       });
       setFiles(res.data || []);

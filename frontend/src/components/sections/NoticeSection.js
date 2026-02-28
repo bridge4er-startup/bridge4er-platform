@@ -58,7 +58,6 @@ export default function NoticeSection({ branch = "Civil Engineering", isActive =
         params: {
           content_type: "notice",
           branch: branch,
-          refresh: true,
         },
       });
       setFiles(res.data || []);

@@ -7,7 +7,7 @@ export const fileService = {
     branch = "Civil Engineering",
     includeHidden = false,
     includeDirs = false,
-    refresh = true
+    refresh = false
   ) => {
     try {
       const response = await API.get("storage/files/list/", {

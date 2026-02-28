@@ -62,6 +62,11 @@ FILE_LIST_CACHE_STALE_TTL_SECONDS = _as_positive_int(
     1800,
     minimum=FILE_LIST_CACHE_TTL_SECONDS,
 )
+FILE_LIST_METADATA_SYNC_COOLDOWN_SECONDS = _as_positive_int(
+    getattr(settings, "DROPBOX_LIST_METADATA_SYNC_COOLDOWN_SECONDS", 900),
+    900,
+    minimum=30,
+)
 
 
 def _is_safe_path(path):
@@ -150,6 +155,21 @@ def _invalidate_list_cache(content_type, branch):
         return
     token_key = _list_cache_token_key(content_type, _normalize_branch(branch))
     cache.set(token_key, str(time.time_ns()), timeout=None)
+
+
+def _metadata_sync_cache_key(content_type, branch):
+    normalized_branch = _normalize_branch(branch).lower()
+    return f"{FILE_LIST_CACHE_KEY_PREFIX}:metadata-sync:{content_type}:{normalized_branch}"
+
+
+def _should_sync_metadata(content_type, branch, force=False):
+    if force:
+        return True
+    sync_key = _metadata_sync_cache_key(content_type, branch)
+    if cache.get(sync_key):
+        return False
+    cache.set(sync_key, "1", timeout=FILE_LIST_METADATA_SYNC_COOLDOWN_SECONDS)
+    return True
 
 
 def _can_access_content_type(user, content_type):
@@ -509,11 +529,13 @@ class ListFilesView(APIView):
         """Get files by content type and branch"""
         content_type = request.GET.get("content_type")  # notice, syllabus, old_question, subjective
         branch = _normalize_branch(request.GET.get("branch", "Civil Engineering"))
+        is_staff = bool(request.user and request.user.is_authenticated and request.user.is_staff)
         include_hidden = _as_bool(request.GET.get("include_hidden"), False)
         include_dirs = _as_bool(request.GET.get("include_dirs"), False)
         refresh = _as_bool(request.GET.get("refresh"), False)
-        if not (request.user and request.user.is_authenticated and request.user.is_staff):
+        if not is_staff:
             include_hidden = False
+            refresh = False
 
         try:
             if not _can_access_content_type(request.user, content_type):
@@ -529,7 +551,8 @@ class ListFilesView(APIView):
             if files is None:
                 try:
                     files = list_folder_with_metadata(path, include_dirs=include_dirs, recursive=True)
-                    _sync_metadata_from_listing(files, content_type=content_type, branch=branch)
+                    if is_staff and _should_sync_metadata(content_type=content_type, branch=branch, force=refresh):
+                        _sync_metadata_from_listing(files, content_type=content_type, branch=branch)
                     cache.set(cache_key, files, timeout=FILE_LIST_CACHE_TTL_SECONDS)
                     cache.set(stale_key, files, timeout=FILE_LIST_CACHE_STALE_TTL_SECONDS)
                 except Exception:
@@ -558,8 +581,9 @@ class SearchFilesView(APIView):
         query = request.GET.get("q")
         branch = _normalize_branch(request.GET.get("branch", "Civil Engineering"))
         content_type = request.GET.get("content_type")
+        is_staff = bool(request.user and request.user.is_authenticated and request.user.is_staff)
         include_hidden = _as_bool(request.GET.get("include_hidden"), False)
-        if not (request.user and request.user.is_authenticated and request.user.is_staff):
+        if not is_staff:
             include_hidden = False
 
         if not query:
@@ -574,7 +598,8 @@ class SearchFilesView(APIView):
                 return Response({"error": "Invalid content type"}, status=status.HTTP_400_BAD_REQUEST)
 
             results = search_files(path, query)
-            _sync_metadata_from_listing(results, content_type=content_type, branch=branch)
+            if is_staff and _should_sync_metadata(content_type=content_type, branch=branch, force=False):
+                _sync_metadata_from_listing(results, content_type=content_type, branch=branch)
             ordered_results = _sort_files_by_admin_order(results, content_type=content_type, branch=branch)
             visible_results = _filter_files_by_visibility(
                 ordered_results,

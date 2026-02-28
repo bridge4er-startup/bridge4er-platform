@@ -66,39 +66,14 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
   const loadSubjects = async () => {
     setLoading(true);
     try {
-      const [subjectsRes, objectiveFoldersRes] = await Promise.all([
-        cachedGet("exams/subjects/", {
-          params: { branch, refresh: true },
-        }),
-        cachedGet("storage/files/list/", {
-          params: {
-            content_type: "objective_mcq",
-            branch,
-            include_dirs: true,
-            refresh: true,
-          },
-        }),
-      ]);
+      const subjectsRes = await cachedGet("exams/subjects/", {
+        params: { branch },
+      });
 
       const normalizedSubjects = (subjectsRes.data || []).map(normalizeSubjectRecord);
       setSubjects(normalizedSubjects);
 
       const institutions = new Set(normalizedSubjects.map((item) => item.institution || "General"));
-      const rootPrefix = `/bridge4er/${branch}/Objective MCQs/`.toLowerCase();
-      (objectiveFoldersRes.data || []).forEach((entry) => {
-        if (!entry?.is_dir) return;
-        const path = String(entry.path || "");
-        const lowerPath = path.toLowerCase();
-        const index = lowerPath.indexOf(rootPrefix);
-        if (index < 0) return;
-        const relative = path.slice(index + rootPrefix.length).split("/").filter(Boolean);
-        if (relative.length === 0) return;
-        if (String(relative[0]).toLowerCase() === "subjects") {
-          institutions.add("General");
-        } else {
-          institutions.add(relative[0]);
-        }
-      });
       setInstitutionFolders([...institutions].sort((a, b) => a.localeCompare(b)));
     } catch (error) {
       toast.error("Failed to load subjects");
@@ -129,7 +104,7 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
     setLoading(true);
     try {
       const res = await cachedGet(`exams/subjects/${encodeURIComponent(subjectName)}/chapters/`, {
-        params: { branch, refresh: true },
+        params: { branch },
       });
       setChapters(res.data || []);
       setView("chapters");
@@ -151,7 +126,6 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
             branch,
             page: nextPage,
             page_size: Math.max(5, nextPageSize),
-            refresh: true,
           },
         }
       );

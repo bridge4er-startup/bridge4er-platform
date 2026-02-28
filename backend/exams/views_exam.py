@@ -138,6 +138,23 @@ def _as_bool(value, default=False):
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _is_staff_user(user):
+    return bool(user and user.is_authenticated and user.is_staff)
+
+
+def _maybe_sync_exam_sets_on_read(branch, user, force_refresh=False):
+    allowed_force_refresh = bool(force_refresh and _is_staff_user(user))
+    if not allowed_force_refresh and ExamSet.objects.filter(branch=branch, is_active=True).exists():
+        return {"status": "skipped", "reason": "local_data"}
+    return auto_sync_dropbox_for_branch(
+        branch=branch,
+        sync_objective=False,
+        sync_exam_sets=True,
+        replace_existing=True,
+        cooldown_seconds=5 if allowed_force_refresh else AUTO_SYNC_COOLDOWN_SECONDS,
+    )
+
+
 def _ensure_demo_exam_sets(branch: str, exam_type: str | None = None):
     def _create_mcq_sets():
         if ExamSet.objects.filter(branch=branch, exam_type="mcq").exists():
@@ -465,13 +482,7 @@ class ExamSetListView(APIView):
         if exam_type and exam_type not in {"mcq", "subjective"}:
             return Response({"error": "Invalid exam_type"}, status=status.HTTP_400_BAD_REQUEST)
 
-        auto_sync_dropbox_for_branch(
-            branch=branch,
-            sync_objective=False,
-            sync_exam_sets=True,
-            replace_existing=True,
-            cooldown_seconds=5 if force_refresh else AUTO_SYNC_COOLDOWN_SECONDS,
-        )
+        _maybe_sync_exam_sets_on_read(branch=branch, user=request.user, force_refresh=force_refresh)
         _maybe_seed_demo_exam_sets(branch, exam_type)
 
         queryset = ExamSet.objects.filter(branch=branch, is_active=True)

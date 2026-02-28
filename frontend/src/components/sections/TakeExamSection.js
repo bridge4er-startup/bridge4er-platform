@@ -83,13 +83,12 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
     try {
       const contentType = type === "mcq" ? "take_exam_mcq" : "take_exam_subjective";
       const [data, folderRes] = await Promise.all([
-        listExamSets(branch, type, true),
+        listExamSets(branch, type),
         cachedGet("storage/files/list/", {
           params: {
             content_type: contentType,
             branch,
             include_dirs: true,
-            refresh: true,
           },
         }),
       ]);

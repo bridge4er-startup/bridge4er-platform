@@ -200,6 +200,23 @@ def _as_bool(value, default=False):
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _is_staff_user(user):
+    return bool(user and user.is_authenticated and user.is_staff)
+
+
+def _maybe_sync_objective_on_read(branch, user, force_refresh=False):
+    allowed_force_refresh = bool(force_refresh and _is_staff_user(user))
+    if not allowed_force_refresh and Subject.objects.filter(branch=branch).exists():
+        return {"status": "skipped", "reason": "local_data"}
+    return auto_sync_dropbox_for_branch(
+        branch=branch,
+        sync_objective=True,
+        sync_exam_sets=False,
+        replace_existing=True,
+        cooldown_seconds=5 if allowed_force_refresh else AUTO_SYNC_COOLDOWN_SECONDS,
+    )
+
+
 def _is_not_found_error(exc):
     lowered = str(exc).lower()
     return "not_found" in lowered or "path_lookup/not_found" in lowered
@@ -242,13 +259,7 @@ class SubjectListView(APIView):
     def get(self, request):
         branch = request.GET.get("branch", "Civil Engineering")
         force_refresh = _as_bool(request.GET.get("refresh"), False)
-        auto_sync_dropbox_for_branch(
-            branch=branch,
-            sync_objective=True,
-            sync_exam_sets=False,
-            replace_existing=True,
-            cooldown_seconds=5 if force_refresh else AUTO_SYNC_COOLDOWN_SECONDS,
-        )
+        _maybe_sync_objective_on_read(branch=branch, user=request.user, force_refresh=force_refresh)
         records = []
         for subject in Subject.objects.filter(branch=branch).values("id", "name"):
             meta = parse_subject_key(subject.get("name", ""))
@@ -271,13 +282,7 @@ class ChapterListView(APIView):
     def get(self, request, subject):
         branch = request.GET.get("branch", "Civil Engineering")
         force_refresh = _as_bool(request.GET.get("refresh"), False)
-        auto_sync_dropbox_for_branch(
-            branch=branch,
-            sync_objective=True,
-            sync_exam_sets=False,
-            replace_existing=True,
-            cooldown_seconds=5 if force_refresh else AUTO_SYNC_COOLDOWN_SECONDS,
-        )
+        _maybe_sync_objective_on_read(branch=branch, user=request.user, force_refresh=force_refresh)
         try:
             subject_obj = Subject.objects.get(name=subject, branch=branch)
             chapters = Chapter.objects.filter(subject=subject_obj).values("id", "name", "small_note")
@@ -292,13 +297,7 @@ class QuestionListView(APIView):
     def get(self, request, subject, chapter):
         branch = request.GET.get("branch", "Civil Engineering")
         force_refresh = _as_bool(request.GET.get("refresh"), False)
-        auto_sync_dropbox_for_branch(
-            branch=branch,
-            sync_objective=True,
-            sync_exam_sets=False,
-            replace_existing=True,
-            cooldown_seconds=5 if force_refresh else AUTO_SYNC_COOLDOWN_SECONDS,
-        )
+        _maybe_sync_objective_on_read(branch=branch, user=request.user, force_refresh=force_refresh)
 
         try:
             page = max(1, int(request.GET.get("page", 1)))
