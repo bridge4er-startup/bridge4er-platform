@@ -1,6 +1,7 @@
 import hashlib
 import mimetypes
 import time
+from pathlib import Path
 
 from django.conf import settings
 from rest_framework.views import APIView
@@ -12,7 +13,9 @@ from django.core.cache import cache
 from django.http import HttpResponse
 from django.db.models import Q
 
+from exams.import_utils import SUPPORTED_IMPORT_EXTENSIONS, parse_rows_from_path
 from exams.models import ExamSet, MCQQuestion
+from exams.question_normalizers import normalize_mcq_payload
 from storage.dropbox_service import (
     download_file,
     upload_file,
@@ -66,6 +69,17 @@ FILE_LIST_METADATA_SYNC_COOLDOWN_SECONDS = _as_positive_int(
     getattr(settings, "DROPBOX_LIST_METADATA_SYNC_COOLDOWN_SECONDS", 900),
     900,
     minimum=30,
+)
+OBJECTIVE_COUNT_CACHE_KEY_PREFIX = "storage:objective-count:v1"
+OBJECTIVE_COUNT_CACHE_TTL_SECONDS = _as_positive_int(
+    getattr(settings, "DROPBOX_OBJECTIVE_COUNT_CACHE_TTL_SECONDS", 1800),
+    1800,
+    minimum=60,
+)
+OBJECTIVE_COUNT_CACHE_STALE_TTL_SECONDS = _as_positive_int(
+    getattr(settings, "DROPBOX_OBJECTIVE_COUNT_CACHE_STALE_TTL_SECONDS", 7200),
+    7200,
+    minimum=OBJECTIVE_COUNT_CACHE_TTL_SECONDS,
 )
 
 
@@ -513,12 +527,75 @@ def _computed_platform_metrics(branch=None):
         | Q(name__iendswith=".gif")
         | Q(name__iendswith=".webp")
     ).count()
+    db_objective_count = mcq_qs.count()
+    objective_count = (
+        _cached_objective_question_count_from_source(resolved_branch, db_fallback=db_objective_count)
+        if resolved_branch
+        else db_objective_count
+    )
     return {
         "enrolled_students": user_qs.count(),
-        "objective_mcqs_available": mcq_qs.count(),
+        "objective_mcqs_available": objective_count,
         "resource_files_available": library_material_count,
         "exam_sets_available": exam_set_qs.count(),
     }
+
+
+def _is_supported_objective_file(path):
+    suffix = Path(str(path or "")).suffix.lower()
+    return suffix in SUPPORTED_IMPORT_EXTENSIONS
+
+
+def _is_valid_normalized_mcq(row):
+    return bool(row.get("question_text")) and row.get("correct_option") in {"a", "b", "c", "d"}
+
+
+def _objective_count_cache_keys(branch):
+    normalized_branch = _normalize_branch(branch).lower()
+    token = _list_cache_token("objective_mcq", normalized_branch)
+    seed = f"{normalized_branch}|{token}"
+    digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()
+    payload_key = f"{OBJECTIVE_COUNT_CACHE_KEY_PREFIX}:payload:{digest}"
+    stale_key = f"{payload_key}:stale"
+    return payload_key, stale_key
+
+
+def _count_objective_question_rows_from_source(branch):
+    root_path = _resolve_content_path("objective_mcq", branch)
+    entries = list_folder_with_metadata(root_path, include_dirs=False, recursive=True)
+    total = 0
+    for entry in entries:
+        file_path = str(entry.get("path") or "").strip()
+        if not file_path or entry.get("is_dir") or not _is_supported_objective_file(file_path):
+            continue
+        rows = parse_rows_from_path(file_path)
+        normalized = [normalize_mcq_payload(raw) for raw in rows]
+        total += sum(1 for row in normalized if _is_valid_normalized_mcq(row))
+    return total
+
+
+def _cached_objective_question_count_from_source(branch, db_fallback=0):
+    cache_key, stale_key = _objective_count_cache_keys(branch)
+    cached = cache.get(cache_key)
+    if cached is not None:
+        try:
+            return int(cached)
+        except (TypeError, ValueError):
+            pass
+
+    try:
+        counted = _count_objective_question_rows_from_source(branch)
+        cache.set(cache_key, counted, timeout=OBJECTIVE_COUNT_CACHE_TTL_SECONDS)
+        cache.set(stale_key, counted, timeout=OBJECTIVE_COUNT_CACHE_STALE_TTL_SECONDS)
+        return counted
+    except Exception:
+        stale = cache.get(stale_key)
+        if stale is not None:
+            try:
+                return int(stale)
+            except (TypeError, ValueError):
+                pass
+        return int(db_fallback or 0)
 
 class DropboxListView(APIView):
     permission_classes = [AllowAny]
