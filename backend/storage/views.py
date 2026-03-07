@@ -25,7 +25,7 @@ from storage.dropbox_service import (
     get_shareable_link,
     get_file_metadata,
 )
-from storage.models import FileMetadata, FolderMetadata, PlatformMetrics
+from storage.models import FileMetadata, FileSyncLog, FolderMetadata, PlatformMetrics
 
 CONTENT_TYPE_FOLDERS = {
     "notice": "Notice",
@@ -36,6 +36,13 @@ CONTENT_TYPE_FOLDERS = {
     "take_exam_mcq": "Take Exam/Multiple Choice Exam",
     "take_exam_subjective": "Take Exam/Subjective Exam",
 }
+CONTENT_TYPES_WITH_DIRECTORY_TREE = {
+    "subjective",
+    "objective_mcq",
+    "take_exam_mcq",
+    "take_exam_subjective",
+}
+SYNCABLE_CONTENT_TYPES = tuple(CONTENT_TYPE_FOLDERS.keys())
 
 PUBLIC_CONTENT_TYPES = {
     "notice",
@@ -162,6 +169,12 @@ def _list_cache_keys(content_type, branch, include_dirs):
     payload_key = f"{FILE_LIST_CACHE_KEY_PREFIX}:payload:{digest}"
     stale_key = f"{payload_key}:stale"
     return payload_key, stale_key
+
+
+def _store_list_cache_payload(content_type, branch, include_dirs, files):
+    cache_key, stale_key = _list_cache_keys(content_type, branch, include_dirs)
+    cache.set(cache_key, files, timeout=FILE_LIST_CACHE_TTL_SECONDS)
+    cache.set(stale_key, files, timeout=FILE_LIST_CACHE_STALE_TTL_SECONDS)
 
 
 def _invalidate_list_cache(content_type, branch):
@@ -349,6 +362,64 @@ def _sync_metadata_from_listing(files, content_type, branch):
             if parent_path == root_path:
                 break
             parent_path = _parent_dropbox_path(parent_path)
+
+
+def _metadata_listing_fallback(content_type, branch, include_dirs):
+    resolved_content_type = str(content_type or "").strip()
+    resolved_branch = _normalize_branch(branch)
+    root_path = _normalize_dropbox_path(_resolve_content_path(resolved_content_type, resolved_branch) or "")
+    if not resolved_content_type or not root_path:
+        return []
+
+    def _is_under_root(path):
+        normalized = _normalize_dropbox_path(path)
+        return bool(normalized) and (normalized == root_path or normalized.startswith(f"{root_path}/"))
+
+    entries = []
+    file_rows = FileMetadata.objects.filter(
+        content_type=resolved_content_type,
+        branch=resolved_branch,
+    ).values("name", "dropbox_path", "file_size", "modified_at")
+    for row in file_rows:
+        path = _normalize_dropbox_path(row.get("dropbox_path"))
+        if not _is_under_root(path):
+            continue
+        entries.append(
+            {
+                "name": row.get("name") or (path.split("/")[-1] or "file"),
+                "path": path,
+                "size": int(row.get("file_size") or 0),
+                "modified": row.get("modified_at").isoformat() if row.get("modified_at") else "",
+                "is_dir": False,
+            }
+        )
+
+    if include_dirs:
+        folder_rows = FolderMetadata.objects.filter(
+            content_type=resolved_content_type,
+            branch=resolved_branch,
+        ).values("name", "dropbox_path", "modified_at")
+        for row in folder_rows:
+            path = _normalize_dropbox_path(row.get("dropbox_path"))
+            if not _is_under_root(path):
+                continue
+            entries.append(
+                {
+                    "name": row.get("name") or (path.split("/")[-1] or "folder"),
+                    "path": path,
+                    "modified": row.get("modified_at").isoformat() if row.get("modified_at") else "",
+                    "is_dir": True,
+                }
+            )
+
+    entries.sort(
+        key=lambda item: (
+            str(item.get("modified") or ""),
+            str(item.get("name") or "").lower(),
+        ),
+        reverse=True,
+    )
+    return entries
 
 
 def _visibility_map_for_paths(paths):
@@ -597,6 +668,112 @@ def _cached_objective_question_count_from_source(branch, db_fallback=0):
                 pass
         return int(db_fallback or 0)
 
+
+def _is_dropbox_not_found_error(exc):
+    lowered = str(exc).lower()
+    return "path_lookup/not_found" in lowered or "not_found" in lowered
+
+
+def _content_types_from_request(value):
+    if value is None:
+        return list(SYNCABLE_CONTENT_TYPES)
+
+    if isinstance(value, str):
+        candidates = [item.strip() for item in value.split(",")]
+    elif isinstance(value, (list, tuple, set)):
+        candidates = [str(item).strip() for item in value]
+    else:
+        return []
+
+    resolved = []
+    for item in candidates:
+        if not item or item not in CONTENT_TYPE_FOLDERS:
+            continue
+        if item not in resolved:
+            resolved.append(item)
+    return resolved
+
+
+def _sync_dropbox_content_type(content_type, branch, warm_cache=True):
+    resolved_content_type = str(content_type or "").strip()
+    resolved_branch = _normalize_branch(branch)
+    path = _resolve_content_path(resolved_content_type, resolved_branch)
+    if not path:
+        raise ValueError(f"Invalid content type: {resolved_content_type}")
+
+    include_dirs = resolved_content_type in CONTENT_TYPES_WITH_DIRECTORY_TREE
+    try:
+        files_with_dirs = list_folder_with_metadata(path, include_dirs=True, recursive=True)
+    except Exception as exc:
+        if _is_dropbox_not_found_error(exc):
+            files_with_dirs = []
+        else:
+            raise
+
+    _sync_metadata_from_listing(files_with_dirs, content_type=resolved_content_type, branch=resolved_branch)
+    _invalidate_list_cache(content_type=resolved_content_type, branch=resolved_branch)
+
+    files_only = [row for row in files_with_dirs if not row.get("is_dir")]
+    if warm_cache:
+        _store_list_cache_payload(
+            content_type=resolved_content_type,
+            branch=resolved_branch,
+            include_dirs=False,
+            files=files_only,
+        )
+        if include_dirs:
+            _store_list_cache_payload(
+                content_type=resolved_content_type,
+                branch=resolved_branch,
+                include_dirs=True,
+                files=files_with_dirs,
+            )
+
+    return {
+        "content_type": resolved_content_type,
+        "path": path,
+        "file_count": len(files_only),
+        "folder_count": sum(1 for row in files_with_dirs if row.get("is_dir")),
+        "cached": bool(warm_cache),
+        "include_dirs": include_dirs,
+    }
+
+
+def sync_dropbox_content_for_branch(branch, content_types=None, warm_cache=True):
+    resolved_branch = _normalize_branch(branch)
+    targets = _content_types_from_request(content_types)
+    if not targets:
+        raise ValueError("No valid content types supplied for sync.")
+
+    payload = {
+        "branch": resolved_branch,
+        "content_types": targets,
+        "synced": [],
+        "errors": [],
+    }
+
+    for content_type in targets:
+        try:
+            payload["synced"].append(
+                _sync_dropbox_content_type(
+                    content_type=content_type,
+                    branch=resolved_branch,
+                    warm_cache=warm_cache,
+                )
+            )
+        except Exception as exc:
+            payload["errors"].append(
+                {
+                    "content_type": content_type,
+                    "error": str(exc),
+                }
+            )
+
+    sync_log, _ = FileSyncLog.objects.get_or_create(branch=resolved_branch)
+    sync_log.sync_count = int(sync_log.sync_count or 0) + 1
+    sync_log.save(update_fields=["sync_count", "last_synced"])
+    return payload
+
 class DropboxListView(APIView):
     permission_classes = [AllowAny]
 
@@ -634,21 +811,49 @@ class ListFilesView(APIView):
             if not path:
                 return Response({"error": "Invalid content type"}, status=status.HTTP_400_BAD_REQUEST)
 
-            cache_key, stale_key = _list_cache_keys(content_type, branch, include_dirs)
-            files = None if refresh else cache.get(cache_key)
+            list_cache_key, stale_key = _list_cache_keys(content_type, branch, include_dirs)
+            files = None if refresh else cache.get(list_cache_key)
 
             if files is None:
                 try:
                     files = list_folder_with_metadata(path, include_dirs=include_dirs, recursive=True)
                     if is_staff and _should_sync_metadata(content_type=content_type, branch=branch, force=refresh):
                         _sync_metadata_from_listing(files, content_type=content_type, branch=branch)
-                    cache.set(cache_key, files, timeout=FILE_LIST_CACHE_TTL_SECONDS)
-                    cache.set(stale_key, files, timeout=FILE_LIST_CACHE_STALE_TTL_SECONDS)
-                except Exception:
-                    stale_files = cache.get(stale_key)
-                    if stale_files is None:
-                        raise
-                    files = stale_files
+                    _store_list_cache_payload(
+                        content_type=content_type,
+                        branch=branch,
+                        include_dirs=include_dirs,
+                        files=files,
+                    )
+                except Exception as exc:
+                    if _is_dropbox_not_found_error(exc):
+                        files = []
+                        _store_list_cache_payload(
+                            content_type=content_type,
+                            branch=branch,
+                            include_dirs=include_dirs,
+                            files=files,
+                        )
+                    else:
+                        stale_files = cache.get(stale_key)
+                        if stale_files is not None:
+                            files = stale_files
+                        else:
+                            metadata_files = _metadata_listing_fallback(
+                                content_type=content_type,
+                                branch=branch,
+                                include_dirs=include_dirs,
+                            )
+                            if metadata_files:
+                                files = metadata_files
+                                _store_list_cache_payload(
+                                    content_type=content_type,
+                                    branch=branch,
+                                    include_dirs=include_dirs,
+                                    files=files,
+                                )
+                            else:
+                                raise
 
             ordered_files = _sort_files_by_admin_order(files, content_type=content_type, branch=branch)
             visible_files = _filter_files_by_visibility(
@@ -660,6 +865,29 @@ class ListFilesView(APIView):
             return Response(visible_files)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class SyncDropboxContentView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def post(self, request):
+        branch = _normalize_branch(request.data.get("branch", "Civil Engineering"))
+        content_types = request.data.get("content_types")
+        warm_cache = _as_bool(request.data.get("warm_cache"), True)
+
+        try:
+            payload = sync_dropbox_content_for_branch(
+                branch=branch,
+                content_types=content_types,
+                warm_cache=warm_cache,
+            )
+            if payload["errors"] and not payload["synced"]:
+                return Response(payload, status=status.HTTP_400_BAD_REQUEST)
+            return Response(payload, status=status.HTTP_200_OK)
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class SearchFilesView(APIView):

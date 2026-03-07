@@ -55,6 +55,24 @@ class SyncDropboxQuestionBankView(APIView):
             except Exception as exc:
                 payload["errors"].append({"scope": "exam_sets", "error": str(exc)})
 
+        # Keep storage listings in sync with Dropbox updates triggered by this endpoint.
+        storage_content_types = []
+        if sync_objective:
+            storage_content_types.append("objective_mcq")
+        if sync_exam_sets:
+            storage_content_types.extend(["take_exam_mcq", "take_exam_subjective"])
+        if storage_content_types:
+            try:
+                from storage.views import sync_dropbox_content_for_branch
+
+                payload["storage"] = sync_dropbox_content_for_branch(
+                    branch=branch,
+                    content_types=storage_content_types,
+                    warm_cache=True,
+                )
+            except Exception as exc:
+                payload["errors"].append({"scope": "storage", "error": str(exc)})
+
         if payload["errors"] and "objective" not in payload and "exam_sets" not in payload:
             return Response(payload, status=status.HTTP_400_BAD_REQUEST)
         return Response(payload, status=status.HTTP_200_OK)

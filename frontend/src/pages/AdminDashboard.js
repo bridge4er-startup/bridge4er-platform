@@ -16,6 +16,15 @@ const BRANCH_OPTIONS = [
   "Electronics Engineering",
   "Computer Engineering",
 ];
+const MANAGED_CONTENT_TYPES = [
+  "notice",
+  "syllabus",
+  "old_question",
+  "subjective",
+  "objective_mcq",
+  "take_exam_mcq",
+  "take_exam_subjective",
+];
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState("upload-files"); // upload-files, manage-files, manage-mcqs, bulk-upload-mcqs, review-subjective
@@ -63,6 +72,7 @@ export default function AdminDashboard() {
   const [manageContentType, setManageContentType] = useState("notice");
   const [managedFiles, setManagedFiles] = useState([]);
   const [loadingManagedFiles, setLoadingManagedFiles] = useState(false);
+  const [syncingManagedContent, setSyncingManagedContent] = useState(false);
   const [savingManagedFilePath, setSavingManagedFilePath] = useState("");
   const [manageObjectiveSubject, setManageObjectiveSubject] = useState("");
   const [manageObjectiveChapterId, setManageObjectiveChapterId] = useState("");
@@ -437,6 +447,34 @@ export default function AdminDashboard() {
       toast.error("Failed to load files");
     } finally {
       setLoadingManagedFiles(false);
+    }
+  };
+
+  const handleSyncManagedContent = async (syncAll = false) => {
+    setSyncingManagedContent(true);
+    try {
+      const targetTypes = syncAll ? MANAGED_CONTENT_TYPES : [manageContentType];
+      const result = await fileService.syncContent(branch, targetTypes, true);
+      const syncedRows = Array.isArray(result?.synced) ? result.synced : [];
+      const errors = Array.isArray(result?.errors) ? result.errors : [];
+
+      if (syncedRows.length > 0) {
+        const summary = syncedRows
+          .map((row) => `${row.content_type}: ${row.file_count} files`)
+          .join(" | ");
+        toast.success(`Dropbox sync complete. ${summary}`);
+      }
+      if (errors.length > 0) {
+        const details = errors.map((row) => `${row.content_type}: ${row.error}`).join(" | ");
+        toast.error(`Some content types failed to sync. ${details}`);
+      }
+
+      await handleLoadManagedFiles();
+    } catch (error) {
+      const message = error?.response?.data?.error || "Failed to sync Dropbox content";
+      toast.error(message);
+    } finally {
+      setSyncingManagedContent(false);
     }
   };
 
@@ -1688,13 +1726,29 @@ export default function AdminDashboard() {
               </select>
             </div>
 
-            <button
-              onClick={handleLoadManagedFiles}
-              className="btn btn-primary"
-              style={{ marginBottom: "1rem" }}
-            >
-              {manageContentType === "objective_mcq" ? "Load Files and Folders" : "Load Files"}
-            </button>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.6rem", marginBottom: "1rem" }}>
+              <button
+                onClick={handleLoadManagedFiles}
+                className="btn btn-primary"
+                disabled={syncingManagedContent}
+              >
+                {manageContentType === "objective_mcq" ? "Load Files and Folders" : "Load Files"}
+              </button>
+              <button
+                onClick={() => handleSyncManagedContent(false)}
+                className="btn btn-secondary"
+                disabled={syncingManagedContent}
+              >
+                {syncingManagedContent ? "Syncing..." : "Sync Selected Type"}
+              </button>
+              <button
+                onClick={() => handleSyncManagedContent(true)}
+                className="btn btn-secondary"
+                disabled={syncingManagedContent}
+              >
+                {syncingManagedContent ? "Syncing..." : "Sync All Content Types"}
+              </button>
+            </div>
 
             {loadingManagedFiles ? (
               <p>Loading files...</p>

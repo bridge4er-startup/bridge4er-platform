@@ -30,7 +30,12 @@ const API_HEARTBEAT_INTERVAL_MS = parsePositiveInt(
 const API_WARM_CACHE_MS = parsePositiveInt(process.env.REACT_APP_API_WARM_CACHE_MS, 120000, 30000);
 const API_GET_CACHE_TTL_MS = parsePositiveInt(
   process.env.REACT_APP_API_GET_CACHE_TTL_MS,
-  12 * 60 * 60 * 1000,
+  5 * 60 * 1000,
+  1000
+);
+const API_GET_CACHE_STALE_TTL_MS = parsePositiveInt(
+  process.env.REACT_APP_API_GET_CACHE_STALE_TTL_MS,
+  60 * 60 * 1000,
   1000
 );
 
@@ -65,16 +70,28 @@ const readCachedGetResponse = (cacheKey) => {
   const row = getResponseCache.get(cacheKey);
   if (!row) return null;
   if (Date.now() >= row.expiresAt) {
+    return null;
+  }
+  return row.response;
+};
+
+const readStaleGetResponse = (cacheKey) => {
+  const row = getResponseCache.get(cacheKey);
+  if (!row) return null;
+  if (Date.now() >= row.staleUntil) {
     getResponseCache.delete(cacheKey);
     return null;
   }
   return row.response;
 };
 
-const writeCachedGetResponse = (cacheKey, response, ttlMs) => {
+const writeCachedGetResponse = (cacheKey, response, ttlMs, staleTtlMs) => {
   const safeTtl = Math.max(1000, Number(ttlMs) || API_GET_CACHE_TTL_MS);
+  const safeStaleTtl = Math.max(1000, Number(staleTtlMs) || API_GET_CACHE_STALE_TTL_MS);
+  const expiresAt = Date.now() + safeTtl;
   getResponseCache.set(cacheKey, {
-    expiresAt: Date.now() + safeTtl,
+    expiresAt,
+    staleUntil: expiresAt + safeStaleTtl,
     response: {
       data: response?.data,
       status: response?.status ?? 200,
@@ -213,21 +230,30 @@ export const startBackendHeartbeat = () => {
 };
 
 export const cachedGet = async (url, options = {}) => {
-  const { params = {}, ttlMs = API_GET_CACHE_TTL_MS, forceRefresh = false, ...requestConfig } = options || {};
+  const {
+    params = {},
+    ttlMs = API_GET_CACHE_TTL_MS,
+    staleTtlMs = API_GET_CACHE_STALE_TTL_MS,
+    forceRefresh = false,
+    allowStaleOnError = true,
+    ...requestConfig
+  } = options || {};
   const cacheKey = buildGetCacheKey(url, params);
+  const applyRequestConfig = (response) => ({
+    ...(response || {}),
+    config: {
+      ...((response || {}).config || {}),
+      ...(requestConfig || {}),
+      method: "get",
+      url,
+      params,
+    },
+  });
+
   if (!forceRefresh) {
     const cached = readCachedGetResponse(cacheKey);
     if (cached) {
-      return {
-        ...cached,
-        config: {
-          ...(cached.config || {}),
-          ...(requestConfig || {}),
-          method: "get",
-          url,
-          params,
-        },
-      };
+      return applyRequestConfig(cached);
     }
     const inFlight = inFlightGetRequests.get(cacheKey);
     if (inFlight) {
@@ -235,15 +261,22 @@ export const cachedGet = async (url, options = {}) => {
     }
   }
 
+  const staleFallback = allowStaleOnError ? readStaleGetResponse(cacheKey) : null;
   const requestPromise = API.get(url, {
     ...requestConfig,
     params,
   })
     .then((response) => {
       if ((ttlMs || 0) > 0) {
-        writeCachedGetResponse(cacheKey, response, ttlMs);
+        writeCachedGetResponse(cacheKey, response, ttlMs, staleTtlMs);
       }
       return response;
+    })
+    .catch((error) => {
+      if (staleFallback && isTransientBackendError(error)) {
+        return applyRequestConfig(staleFallback);
+      }
+      throw error;
     })
     .finally(() => {
       inFlightGetRequests.delete(cacheKey);

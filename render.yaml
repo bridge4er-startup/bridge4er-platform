@@ -68,6 +68,6 @@ services:
       - key: DROPBOX_AUTO_SYNC_COOLDOWN_SECONDS
         value: "600"
       - key: DROPBOX_LIST_CACHE_TTL_SECONDS
-        value: "300"
+        value: "3600"
       - key: DROPBOX_LIST_CACHE_STALE_TTL_SECONDS
-        value: "1800"
+        value: "86400"

@@ -1,8 +1,9 @@
 from django.test import TestCase
 
-from storage.models import FolderMetadata
+from storage.models import FileMetadata, FolderMetadata
 from storage.views import (
     _filter_files_by_visibility,
+    _metadata_listing_fallback,
     _sort_files_by_admin_order,
     _sync_metadata_from_listing,
 )
@@ -110,3 +111,39 @@ class FolderMetadataSyncTests(TestCase):
         ordered = _sort_files_by_admin_order(entries, content_type=content_type, branch=branch)
         self.assertEqual(ordered[0]["path"], second_path)
         self.assertEqual(ordered[1]["path"], first_path)
+
+    def test_metadata_listing_fallback_uses_saved_file_and_folder_rows(self):
+        branch = "Civil Engineering"
+        content_type = "subjective"
+        root = "/bridge4er/Civil Engineering/Subjective"
+        folder_path = f"{root}/Institute A"
+        file_path = f"{folder_path}/Hydraulics.pdf"
+
+        FolderMetadata.objects.create(
+            name="Institute A",
+            dropbox_path=folder_path,
+            content_type=content_type,
+            branch=branch,
+            parent_path=root,
+            depth=1,
+            sort_order=1,
+            is_visible=True,
+        )
+        FileMetadata.objects.create(
+            name="Hydraulics.pdf",
+            dropbox_path=file_path,
+            content_type=content_type,
+            branch=branch,
+            file_size=256,
+            is_visible=True,
+        )
+
+        with_dirs = _metadata_listing_fallback(content_type=content_type, branch=branch, include_dirs=True)
+        without_dirs = _metadata_listing_fallback(content_type=content_type, branch=branch, include_dirs=False)
+
+        self.assertEqual(len(with_dirs), 2)
+        self.assertEqual(sum(1 for row in with_dirs if row.get("is_dir")), 1)
+        self.assertEqual(sum(1 for row in with_dirs if not row.get("is_dir")), 1)
+        self.assertEqual(len(without_dirs), 1)
+        self.assertFalse(without_dirs[0]["is_dir"])
+        self.assertEqual(without_dirs[0]["path"], file_path)

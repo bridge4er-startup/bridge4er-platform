@@ -114,4 +114,22 @@ export const fileService = {
       throw error;
     }
   },
+
+  // Sync Dropbox metadata/list caches for selected content types (admin only)
+  syncContent: async (branch = "Civil Engineering", contentTypes = [], warmCache = true) => {
+    try {
+      const payload = {
+        branch,
+        warm_cache: !!warmCache,
+      };
+      if (Array.isArray(contentTypes) && contentTypes.length > 0) {
+        payload.content_types = contentTypes;
+      }
+      const response = await API.post("storage/files/sync/", payload);
+      return response.data;
+    } catch (error) {
+      console.error("Error syncing Dropbox content:", error);
+      throw error;
+    }
+  },
 };

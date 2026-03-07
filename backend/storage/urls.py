@@ -2,6 +2,7 @@ from django.urls import path
 from .views import (
     DropboxListView,
     ListFilesView,
+    SyncDropboxContentView,
     SearchFilesView,
     DownloadFileView,
     PreviewFileView,
@@ -16,6 +17,7 @@ urlpatterns = [
     path('homepage/stats/', HomePageMetricsView.as_view()),
     path('files/', DropboxListView.as_view()),
     path('files/list/', ListFilesView.as_view()),
+    path('files/sync/', SyncDropboxContentView.as_view()),
     path('files/search/', SearchFilesView.as_view()),
     path('files/download/', DownloadFileView.as_view()),
     path('files/preview/', PreviewFileView.as_view()),
