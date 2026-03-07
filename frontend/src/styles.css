@@ -6806,6 +6806,47 @@ body[data-branch-theme="computer-engineering"] {
   box-shadow: 0 16px 34px rgba(15, 23, 42, 0.18);
 }
 
+.auth-page.auth-clean-hero {
+  align-items: stretch;
+  padding: 1rem;
+}
+
+.auth-page.auth-clean-hero .auth-panel {
+  width: min(1120px, 100%);
+  min-height: min(92vh, 760px);
+}
+
+.auth-page.auth-clean-hero .auth-hero {
+  min-height: 100%;
+  background-size: cover;
+  background-position: center center;
+}
+
+.auth-page.auth-clean-hero .auth-hero::before {
+  display: none;
+}
+
+@media (max-width: 960px) {
+  .auth-page.auth-clean-hero {
+    padding: 0.75rem;
+  }
+
+  .auth-page.auth-clean-hero .auth-panel {
+    min-height: 0;
+  }
+
+  .auth-page.auth-clean-hero .auth-hero {
+    min-height: 38vh;
+    background-position: center top;
+  }
+}
+
+@media (max-width: 640px) {
+  .auth-page.auth-clean-hero .auth-hero {
+    min-height: 32vh;
+  }
+}
+
 .platform-data-card {
   border: 0 !important;
   box-shadow: 0 18px 32px rgba(15, 23, 42, 0.08);

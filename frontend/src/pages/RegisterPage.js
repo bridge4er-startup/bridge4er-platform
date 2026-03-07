@@ -88,12 +88,9 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="auth-page register-theme">
+    <div className="auth-page register-theme auth-clean-hero">
       <div className="auth-panel">
-        <div className="auth-hero">
-          <h1>Enroll in Bridge4ER</h1>
-          <p>Create your student account to unlock syllabus, library, and exam hall.</p>
-        </div>
+        <div className="auth-hero" aria-hidden="true" />
         <form className="auth-form" onSubmit={onSubmit}>
           <h2>Student Registration</h2>
 

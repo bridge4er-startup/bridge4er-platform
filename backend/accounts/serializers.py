@@ -73,15 +73,18 @@ class LoginSerializer(serializers.Serializer):
         mobile_candidate = "".join(ch for ch in identifier if ch.isdigit())
 
         user = User.objects.filter(
-            Q(username__iexact=identifier) | Q(mobile_number=identifier) | Q(mobile_number=mobile_candidate)
+            Q(username__iexact=identifier)
+            | Q(email__iexact=identifier)
+            | Q(mobile_number=identifier)
+            | Q(mobile_number=mobile_candidate)
         ).first()
 
         if not user:
-            raise serializers.ValidationError("Invalid username/mobile or password.")
+            raise serializers.ValidationError("Invalid username/mobile/email or password.")
 
         authenticated = authenticate(username=user.username, password=password)
         if not authenticated:
-            raise serializers.ValidationError("Invalid username/mobile or password.")
+            raise serializers.ValidationError("Invalid username/mobile/email or password.")
         if not bool(getattr(authenticated, "is_email_verified", True)):
             raise serializers.ValidationError("Please verify your email before logging in.")
 

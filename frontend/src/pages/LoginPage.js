@@ -24,7 +24,7 @@ export default function LoginPage() {
   const onSubmit = async (event) => {
     event.preventDefault();
     if (!identifier.trim() || !password.trim()) {
-      toast.error("Enter username/mobile and password.");
+      toast.error("Enter username, mobile, or email and password.");
       return;
     }
 
@@ -46,7 +46,7 @@ export default function LoginPage() {
   const resendVerification = async () => {
     const value = String(identifier || "").trim();
     if (!value) {
-      toast.error("Enter your username or email first.");
+      toast.error("Enter your username, mobile, or email first.");
       return;
     }
     try {
@@ -62,21 +62,18 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="auth-page">
+    <div className="auth-page auth-clean-hero">
       <div className="auth-panel">
-        <div className="auth-hero">
-          <h1>Bridge4ER</h1>
-          <p>Engineering resources, library access, and exam hall in one place.</p>
-        </div>
+        <div className="auth-hero" aria-hidden="true" />
         <form className="auth-form" onSubmit={onSubmit}>
           <h2>Student Login</h2>
-          <label htmlFor="identifier">Username or Mobile Number</label>
+          <label htmlFor="identifier">Username, Mobile Number, or Email</label>
           <input
             id="identifier"
             type="text"
             value={identifier}
             onChange={(e) => setIdentifier(e.target.value)}
-            placeholder="Enter username or mobile"
+            placeholder="Enter username, mobile, or email"
           />
 
           <label htmlFor="password">Password</label>

@@ -33,6 +33,22 @@ services:
         value: https://bridge4er-platform.vercel.app
       - key: BACKEND_PUBLIC_URL
         value: https://bridge4er-api.onrender.com
+      - key: DEFAULT_FROM_EMAIL
+        value: bridge4er@gmail.com
+      - key: EMAIL_BACKEND
+        value: django.core.mail.backends.smtp.EmailBackend
+      - key: EMAIL_HOST
+        value: smtp.gmail.com
+      - key: EMAIL_PORT
+        value: "587"
+      - key: EMAIL_USE_TLS
+        value: "1"
+      - key: EMAIL_HOST_USER
+        value: bridge4er@gmail.com
+      - key: EMAIL_HOST_PASSWORD
+        sync: false
+      - key: EMAIL_TIMEOUT_SECONDS
+        value: "8"
       - key: ALLOW_INSECURE_PAYMENT_VERIFICATION
         value: "0"
       - key: ESEWA_ENV

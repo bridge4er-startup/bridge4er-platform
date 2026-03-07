@@ -3,7 +3,7 @@ from urllib.parse import quote
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.core.mail import send_mail
+from django.core.mail import get_connection, send_mail
 from django.db import transaction
 from django.db.models import Avg
 from django.utils import timezone
@@ -45,7 +45,27 @@ def _verification_link(token):
     return f"{backend_base}/api/accounts/auth/email/verify/?token={quote(token)}"
 
 
+def _validate_email_delivery_settings():
+    backend_name = str(getattr(settings, "EMAIL_BACKEND", "") or "")
+    is_console_backend = "console.EmailBackend" in backend_name
+    is_smtp_backend = "smtp.EmailBackend" in backend_name
+
+    if is_console_backend and not bool(getattr(settings, "DEBUG", False)):
+        raise RuntimeError("EMAIL_BACKEND is set to console. Configure SMTP backend for production email delivery.")
+
+    if is_smtp_backend:
+        missing = [
+            key
+            for key in ("EMAIL_HOST", "EMAIL_HOST_USER", "EMAIL_HOST_PASSWORD")
+            if not str(getattr(settings, key, "") or "").strip()
+        ]
+        if missing:
+            raise RuntimeError(f"Missing SMTP email setting(s): {', '.join(missing)}")
+
+
 def _send_verification_email(user):
+    _validate_email_delivery_settings()
+    timeout_seconds = max(1, int(getattr(settings, "EMAIL_TIMEOUT_SECONDS", 10) or 10))
     token = _generate_email_verification_token()
     user.email_verification_token = token
     user.email_verification_sent_at = timezone.now()
@@ -53,6 +73,7 @@ def _send_verification_email(user):
     user.save(update_fields=["email_verification_token", "email_verification_sent_at", "is_email_verified"])
 
     verify_url = _verification_link(token)
+    connection = get_connection(fail_silently=False, timeout=timeout_seconds)
     send_mail(
         subject="Bridge4ER Email Verification",
         message=(
@@ -63,6 +84,7 @@ def _send_verification_email(user):
         ),
         from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "bridge4er@gmail.com"),
         recipient_list=[user.email],
+        connection=connection,
         fail_silently=False,
     )
 

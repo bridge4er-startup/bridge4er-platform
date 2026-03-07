@@ -6,27 +6,63 @@ bridge4er/  //This is the dropbox main folder name//
     │ ├── Syllabus/ 
     │ ├── Old Questions/ 
     │ ├── Objective MCQs/ 
-    │ │      └── Subjects/ 
-    │ │          └── Concrete Technology/ 
+    │ │      └── Public Service Commission (PSC)/ 
+    │ │          	└── Concrete Technology/ 
     │ │                     └── Chapter 1.json 
     │ │                     └── Chapter 2.xlsx
-    │ │          └── Structure/ 
+    │ │            └── Structure/ 
     │ │                     └── Chapter 1.json 
+    │ │      └── Nepal Engineering Council (NEC)/ 
+    │ │            └── Water Resource Engineering/ 
+    │ │                     └── Chapter 1.json 
+    │ │                     └── Chapter 2.xlsx
+    │ │            └── Structural Engineering/ 
+    │ │                     └── Chapter 1.json 
+    │ │      └── IOE MSC Entrance/ 
+    │ │      └── Nepal Telecommunications (NTC)/ 
+    │ │      └── PSC Civil Sub-Engineer/ 
+    │ │      └── Nepal Electricity Authority (NEA)/ 
+    │ │      └── Nepal Telecommunications (NTC)/ 
+    │ │      └── Kathmandu Upatyaka Khanepani Limited (KUKL)
+    │ │      └── CAAN/
     │ ├── Subjective/ 
-    │ │         └── Structure/ 
+    │ │      └── Public Service Commission (PSC)/ 
+    │ │             └── Structure/ 
     │ │                     └── Chapter 1.pdf 
     │ │                     └── Chapter 2.pdf 
-    │ │         └── Geotech/ 
+    │ │             └── Geotech/ 
+    │ │                     └── Chapter 1.pdf 
+    │ │                     └── Chapter 2.pdf 
+    │ │      └── Nepal Telecommunications (NTC)/ 
+    │ │      └── Nepal Electricity Authority (NEA)/ 
+    │ │      └── CAAN/
+    │ │      └── Building and Architecture/
+    │ │             └── Present Architecture/ 
+    │ │                     └── Chapter 1.pdf 
+    │ │                     └── Chapter 2.pdf 
+    │ │             └── History of Architecture/ 
     │ │                     └── Chapter 1.pdf 
     │ │                     └── Chapter 2.pdf 
     │ ├── Take Exam/ 
-    │           └── Multiple Choice Exam/ 
+    │       └── Multiple Choice Exam/
+    │           	   └── Public Service Commission (PSC)/  
+    │                      └── Chapter 1.json 
+    │                      └── Chapter 2.xlsx
+    │            	   └── Nepal Engineering Council (NEC)/ 
+    │                       └── Chapter 1.json 
     │                       └── MCQ SET 1.csv
     │                       └── PSC MCQ SET 2.json 
-    │           └── Subjective Exam/ 
+    │      		   └── IOE MSC Entrance/ 
+    │       		   └── Nepal Telecommunications (NTC)/ 
+    │                 └── Civil Sub-Engineer/ 
+    │                 └── Nepal Electricity Authority (NEA)/ 
+    │                 └── Nepal Telecommunications (NTC)/ 
+    │                 └── Kathmandu Upatyaka Khanepani Limited (KUKL)
+    │                 └── Nepal Army/
+    │       └── Subjective Exam/ 
     │                       └── PSC EXAM SET 1.json 
     │                       └── NEA EXAM SET 1.xlsx
-    │                       └── NEA EXAM SET 1.csv
+    │                       └── NEC EXAM SET 2.csv
     ├── Mechanical Engineering/ 
     ├── Electrical Engineering/ 
     ├── Electronics Engineering/ 

@@ -255,12 +255,20 @@ ESEWA_SECRET_KEY = os.getenv("ESEWA_SECRET_KEY", "")
 KHALTI_ENV = os.getenv("KHALTI_ENV", "sandbox").strip().lower()
 KHALTI_SECRET_KEY = os.getenv("KHALTI_SECRET_KEY", "")
 
-# Optional email settings for subjective submission alerts
+# Email settings for verification and notifications
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "bridge4er@gmail.com")
 ADMIN_ALERT_EMAIL = os.getenv("ADMIN_ALERT_EMAIL", "")
-EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
-EMAIL_HOST = os.getenv("EMAIL_HOST", "")
-EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
+EMAIL_HOST_PASSWORD = (
+    os.getenv("EMAIL_HOST_PASSWORD", "").strip()
+    or os.getenv("GMAIL_APP_PASSWORD", "").strip()
+    or os.getenv("GOOGLE_APP_PASSWORD", "").strip()
+)
+EMAIL_BACKEND = os.getenv(
+    "EMAIL_BACKEND",
+    "django.core.mail.backends.console.EmailBackend" if DEBUG else "django.core.mail.backends.smtp.EmailBackend",
+)
+EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com").strip()
+EMAIL_PORT = env_int("EMAIL_PORT", 587, minimum=1)
 EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", True)
-EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "bridge4er@gmail.com")
-EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", DEFAULT_FROM_EMAIL).strip()
+EMAIL_TIMEOUT_SECONDS = env_int("EMAIL_TIMEOUT_SECONDS", 8, minimum=1)

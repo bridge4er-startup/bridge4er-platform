@@ -1,8 +1,31 @@
-import API from "./api";
+import API, { warmupBackendConnection } from "./api";
+
+const parsePositiveInt = (value, fallback, minValue = 5000) => {
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isNaN(parsed)) {
+    return fallback;
+  }
+  return Math.max(minValue, parsed);
+};
+
+const AUTH_REQUEST_TIMEOUT_MS = parsePositiveInt(process.env.REACT_APP_AUTH_REQUEST_TIMEOUT_MS, 120000, 10000);
+
+const ensureBackendReady = async () => {
+  try {
+    await warmupBackendConnection();
+  } catch (_error) {
+    // Continue with the request even if warmup fails.
+  }
+};
+
+const postAuth = async (path, payload) => {
+  await ensureBackendReady();
+  const res = await API.post(path, payload, { timeout: AUTH_REQUEST_TIMEOUT_MS });
+  return res.data;
+};
 
 export const registerStudent = async (payload) => {
-  const res = await API.post("accounts/auth/register/", payload);
-  return res.data;
+  return postAuth("accounts/auth/register/", payload);
 };
 
 export const verifyStudentEmail = async (token) => {
@@ -13,18 +36,16 @@ export const verifyStudentEmail = async (token) => {
 };
 
 export const resendStudentVerification = async (identifier) => {
-  const res = await API.post("accounts/auth/email/resend-verification/", {
+  return postAuth("accounts/auth/email/resend-verification/", {
     identifier,
   });
-  return res.data;
 };
 
 export const loginStudent = async (identifier, password) => {
-  const res = await API.post("accounts/auth/login/", {
+  return postAuth("accounts/auth/login/", {
     identifier,
     password,
   });
-  return res.data;
 };
 
 export const getMyProfile = async () => {
