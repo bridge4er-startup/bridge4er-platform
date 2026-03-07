@@ -3,7 +3,7 @@ from django.contrib.auth import get_user_model
 from django.db.models import Q
 from rest_framework import serializers
 
-from .models import FIELD_OF_STUDY_CHOICES, MobileOTP
+from .models import FIELD_OF_STUDY_CHOICES
 
 User = get_user_model()
 
@@ -24,17 +24,6 @@ class UserSerializer(serializers.ModelSerializer):
         ]
 
 
-class OTPRequestSerializer(serializers.Serializer):
-    mobile_number = serializers.CharField(max_length=20)
-    purpose = serializers.ChoiceField(choices=["register", "login"], default="register")
-
-    def validate_mobile_number(self, value):
-        cleaned = "".join(ch for ch in value if ch.isdigit())
-        if len(cleaned) < 7 or len(cleaned) > 15:
-            raise serializers.ValidationError("Enter a valid mobile number.")
-        return cleaned
-
-
 class RegisterSerializer(serializers.Serializer):
     full_name = serializers.CharField(max_length=200)
     mobile_number = serializers.CharField(max_length=20)
@@ -42,7 +31,6 @@ class RegisterSerializer(serializers.Serializer):
     email = serializers.EmailField()
     field_of_study = serializers.ChoiceField(choices=[choice[0] for choice in FIELD_OF_STUDY_CHOICES])
     password = serializers.CharField(min_length=6, write_only=True)
-    otp_code = serializers.CharField(max_length=6)
 
     def validate_mobile_number(self, value):
         cleaned = "".join(ch for ch in value if ch.isdigit())

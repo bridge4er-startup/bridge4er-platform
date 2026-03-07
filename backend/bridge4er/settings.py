@@ -222,7 +222,6 @@ SECURE_REFERRER_POLICY = os.getenv("SECURE_REFERRER_POLICY", "same-origin")
 X_FRAME_OPTIONS = os.getenv("X_FRAME_OPTIONS", "DENY")
 
 # App behavior toggles
-SHOW_OTP_IN_RESPONSE = env_bool("SHOW_OTP_IN_RESPONSE", DEBUG)
 ALLOW_INSECURE_PAYMENT_VERIFICATION = env_bool("ALLOW_INSECURE_PAYMENT_VERIFICATION", DEBUG)
 ENABLE_DEMO_EXAM_SETS = env_bool("ENABLE_DEMO_EXAM_SETS", DEBUG)
 DROPBOX_AUTO_SYNC_COOLDOWN_SECONDS = env_int("DROPBOX_AUTO_SYNC_COOLDOWN_SECONDS", 600, minimum=60)
@@ -247,14 +246,6 @@ DROPBOX_OBJECTIVE_COUNT_CACHE_STALE_TTL_SECONDS = env_int(
 FRONTEND_PUBLIC_URL = os.getenv("FRONTEND_PUBLIC_URL", "http://localhost:3000").rstrip("/")
 BACKEND_PUBLIC_URL = os.getenv("BACKEND_PUBLIC_URL", "http://127.0.0.1:8000").rstrip("/")
 PAYMENT_RESULT_PATH = os.getenv("PAYMENT_RESULT_PATH", "/payment/result")
-
-# OTP provider configuration
-OTP_PROVIDER = os.getenv("OTP_PROVIDER", "local").strip().lower()
-OTP_DEFAULT_COUNTRY_CODE = os.getenv("OTP_DEFAULT_COUNTRY_CODE", "+977").strip() or "+977"
-TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
-TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
-TWILIO_VERIFY_SERVICE_SID = os.getenv("TWILIO_VERIFY_SERVICE_SID", "")
-TWILIO_VERIFY_CHANNEL = os.getenv("TWILIO_VERIFY_CHANNEL", "sms").strip().lower()
 
 # Payment gateway configuration
 ESEWA_ENV = os.getenv("ESEWA_ENV", "sandbox").strip().lower()

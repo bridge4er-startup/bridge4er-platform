@@ -11,6 +11,8 @@ function normalizeSubjectRecord(subject) {
       display_name: subject,
       institution: "General",
       institution_key: "General",
+      display_order: 0,
+      institution_order: 0,
     };
   }
 
@@ -21,6 +23,8 @@ function normalizeSubjectRecord(subject) {
     display_name: subject?.display_name || name,
     institution: subject?.institution || "General",
     institution_key: subject?.institution_key || subject?.institution || "General",
+    display_order: Number(subject?.display_order || 0),
+    institution_order: Number(subject?.institution_order || 0),
   };
 }
 
@@ -73,8 +77,15 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
       const normalizedSubjects = (subjectsRes.data || []).map(normalizeSubjectRecord);
       setSubjects(normalizedSubjects);
 
-      const institutions = new Set(normalizedSubjects.map((item) => item.institution || "General"));
-      setInstitutionFolders([...institutions].sort((a, b) => a.localeCompare(b)));
+      const institutions = [];
+      const seen = new Set();
+      normalizedSubjects.forEach((item) => {
+        const institutionName = item.institution || "General";
+        if (seen.has(institutionName)) return;
+        seen.add(institutionName);
+        institutions.push(institutionName);
+      });
+      setInstitutionFolders(institutions);
     } catch (error) {
       toast.error("Failed to load subjects");
       console.error(error);
@@ -214,9 +225,9 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
   };
 
   const institutionNames = institutionFolders;
-  const visibleSubjects = subjects
-    .filter((subject) => (subject.institution || "General") === selectedInstitution)
-    .sort((a, b) => (a.display_name || "").localeCompare(b.display_name || ""));
+  const visibleSubjects = subjects.filter(
+    (subject) => (subject.institution || "General") === selectedInstitution
+  );
 
   return (
     <section id="objective-mcqs" className={`section ${isActive ? "active" : ""}`}>

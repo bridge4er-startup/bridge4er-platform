@@ -227,8 +227,7 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
       directFiles.push(file);
     });
 
-    const folders = [...folderMap.values()].sort((a, b) => a.name.localeCompare(b.name));
-    directFiles.sort((a, b) => String(a.__filename || "").localeCompare(String(b.__filename || "")));
+    const folders = [...folderMap.values()];
 
     return {
       folders,

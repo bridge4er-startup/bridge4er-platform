@@ -1,13 +1,5 @@
 import API from "./api";
 
-export const requestOtp = async (mobileNumber, purpose = "register") => {
-  const res = await API.post("accounts/auth/request-otp/", {
-    mobile_number: mobileNumber,
-    purpose,
-  });
-  return res.data;
-};
-
 export const registerStudent = async (payload) => {
   const res = await API.post("accounts/auth/register/", payload);
   return res.data;

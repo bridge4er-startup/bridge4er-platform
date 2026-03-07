@@ -1,12 +1,54 @@
+from django import forms
 from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin
+from django.contrib.auth.forms import UserChangeForm
 from django.utils.crypto import get_random_string
 
-from .models import MobileOTP, User
+from .models import User
+
+
+class CustomUserChangeForm(UserChangeForm):
+    new_password = forms.CharField(
+        required=False,
+        label="Set New Password",
+        widget=forms.PasswordInput(render_value=True),
+        help_text="Leave blank to keep current password.",
+    )
+    confirm_new_password = forms.CharField(
+        required=False,
+        label="Confirm New Password",
+        widget=forms.PasswordInput(render_value=True),
+    )
+
+    class Meta(UserChangeForm.Meta):
+        model = User
+        fields = "__all__"
+
+    def clean(self):
+        cleaned_data = super().clean()
+        password_value = cleaned_data.get("new_password") or ""
+        confirm_value = cleaned_data.get("confirm_new_password") or ""
+        if password_value or confirm_value:
+            if password_value != confirm_value:
+                raise forms.ValidationError("New password and confirmation must match.")
+            if len(password_value) < 6:
+                raise forms.ValidationError("New password must be at least 6 characters long.")
+        return cleaned_data
+
+    def save(self, commit=True):
+        user = super().save(commit=False)
+        new_password = (self.cleaned_data.get("new_password") or "").strip()
+        if new_password:
+            user.set_password(new_password)
+        if commit:
+            user.save()
+            self.save_m2m()
+        return user
 
 
 @admin.register(User)
 class CustomUserAdmin(UserAdmin):
+    form = CustomUserChangeForm
     fieldsets = UserAdmin.fieldsets + (
         (
             "Bridge4ER Profile",
@@ -19,6 +61,10 @@ class CustomUserAdmin(UserAdmin):
                     "is_student",
                 )
             },
+        ),
+        (
+            "Password Reset",
+            {"fields": ("new_password", "confirm_new_password")},
         ),
     )
     add_fieldsets = UserAdmin.add_fieldsets + (
@@ -57,10 +103,3 @@ class CustomUserAdmin(UserAdmin):
             "Temporary passwords generated. Share securely with users:\n" + " | ".join(generated),
             level=messages.INFO,
         )
-
-
-@admin.register(MobileOTP)
-class MobileOTPAdmin(admin.ModelAdmin):
-    list_display = ("mobile_number", "purpose", "otp_code", "is_used", "created_at", "expires_at")
-    list_filter = ("purpose", "is_used")
-    search_fields = ("mobile_number",)

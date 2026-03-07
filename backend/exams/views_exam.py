@@ -488,7 +488,7 @@ class ExamSetListView(APIView):
         queryset = ExamSet.objects.filter(branch=branch, is_active=True)
         if exam_type:
             queryset = queryset.filter(exam_type=exam_type)
-        queryset = queryset.order_by("name", "id")
+        queryset = queryset.order_by("display_order", "name", "id")
 
         serializer = ExamSetSerializer(queryset, many=True, context={"request": request})
         return Response(serializer.data)
@@ -520,6 +520,10 @@ class CreateExamSetView(APIView):
             fee = Decimal(str(request.data.get("fee", request.data.get("price", fee_default))))
         except Exception:
             fee = Decimal(str(fee_default))
+        try:
+            display_order = int(request.data.get("display_order", 0))
+        except (TypeError, ValueError):
+            display_order = 0
 
         exam_set = ExamSet.objects.create(
             name=(request.data.get("name", default_payload["name"]) or "").strip() or default_payload["name"],
@@ -532,6 +536,7 @@ class CreateExamSetView(APIView):
             duration_seconds=int(request.data.get("duration_seconds", default_payload["duration_seconds"])),
             grace_seconds=int(request.data.get("grace_seconds", default_payload["grace_seconds"])),
             negative_marking=Decimal(str(request.data.get("negative_marking", default_payload["negative_marking"]))),
+            display_order=display_order,
             is_active=True,
             managed_by_sync=False,
         )
@@ -663,6 +668,7 @@ class ExamSetDetailAdminView(APIView):
             "negative_marking",
             "is_active",
             "branch",
+            "display_order",
         }
         updates = {}
         for field in editable_fields:
@@ -679,6 +685,8 @@ class ExamSetDetailAdminView(APIView):
             updates["negative_marking"] = Decimal(str(updates["negative_marking"]))
         if "fee" in updates:
             updates["fee"] = Decimal(str(updates["fee"]))
+        if "display_order" in updates:
+            updates["display_order"] = int(updates["display_order"])
         if updates.get("is_free") is True:
             updates["fee"] = Decimal("0")
 

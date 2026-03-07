@@ -5,10 +5,12 @@ from django.utils import timezone
 class Subject(models.Model):
     name = models.CharField(max_length=200)
     branch = models.CharField(max_length=200)
+    display_order = models.IntegerField(default=0, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         unique_together = ('name', 'branch')
+        ordering = ['display_order', 'name', 'id']
 
     def __str__(self):
         return f"{self.branch} - {self.name}"
@@ -64,12 +66,13 @@ class ExamSet(models.Model):
     is_active = models.BooleanField(default=True)
     managed_by_sync = models.BooleanField(default=True)
     source_file_path = models.CharField(max_length=1000, blank=True, default="", db_index=True)
+    display_order = models.IntegerField(default=0, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         unique_together = ('name', 'branch', 'exam_type')
-        ordering = ['-created_at']
+        ordering = ['display_order', 'name', 'id']
 
     def __str__(self):
         return f"{self.branch} | {self.get_exam_type_display()} | {self.name}"
@@ -219,3 +222,35 @@ class ProblemReport(models.Model):
         self.admin_note = str(admin_note or "").strip()
         self.solved_at = timezone.now()
         self.save(update_fields=["status", "admin_note", "solved_at", "updated_at"])
+
+
+class InstitutionFolder(models.Model):
+    SCOPE_OBJECTIVE = "objective"
+    SCOPE_EXAM_MCQ = "take_exam_mcq"
+    SCOPE_EXAM_SUBJECTIVE = "take_exam_subjective"
+
+    SCOPE_CHOICES = [
+        (SCOPE_OBJECTIVE, "Objective MCQ"),
+        (SCOPE_EXAM_MCQ, "Take Exam - MCQ"),
+        (SCOPE_EXAM_SUBJECTIVE, "Take Exam - Subjective"),
+    ]
+
+    branch = models.CharField(max_length=200)
+    scope = models.CharField(max_length=40, choices=SCOPE_CHOICES, db_index=True)
+    folder_key = models.CharField(max_length=255, db_index=True)
+    display_name = models.CharField(max_length=255, blank=True, default="")
+    display_order = models.IntegerField(default=0, db_index=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("branch", "scope", "folder_key")
+        ordering = ["scope", "branch", "display_order", "folder_key", "id"]
+
+    def __str__(self):
+        return f"{self.branch} | {self.scope} | {self.folder_key}"
+
+    @property
+    def effective_name(self):
+        return str(self.display_name or self.folder_key)

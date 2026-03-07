@@ -6,7 +6,7 @@ import { useBranch } from "../context/BranchContext";
 
 export default function RegisterPage() {
   const navigate = useNavigate();
-  const { register, requestOtp } = useAuth();
+  const { register } = useAuth();
   const { branches, setBranchFromProfile } = useBranch();
 
   const [form, setForm] = useState({
@@ -16,32 +16,11 @@ export default function RegisterPage() {
     email: "",
     field_of_study: branches[0],
     password: "",
-    otp_code: "",
   });
-  const [otpInfo, setOtpInfo] = useState("");
-  const [sendingOtp, setSendingOtp] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const setField = (key, value) => {
     setForm((prev) => ({ ...prev, [key]: value }));
-  };
-
-  const sendOtp = async () => {
-    if (!form.mobile_number.trim()) {
-      toast.error("Enter mobile number first.");
-      return;
-    }
-    try {
-      setSendingOtp(true);
-      await requestOtp(form.mobile_number);
-      setOtpInfo(`OTP sent to ${form.mobile_number}.`);
-      toast.success("OTP sent.");
-    } catch (error) {
-      const message = error?.response?.data?.error || "Failed to send OTP.";
-      toast.error(message);
-    } finally {
-      setSendingOtp(false);
-    }
   };
 
   const onSubmit = async (event) => {
@@ -84,25 +63,11 @@ export default function RegisterPage() {
           />
 
           <label htmlFor="mobile_number">Mobile Number</label>
-          <div className="otp-row">
-            <input
-              id="mobile_number"
-              value={form.mobile_number}
-              onChange={(e) => setField("mobile_number", e.target.value)}
-              placeholder="Mobile number"
-            />
-            <button type="button" className="btn btn-secondary" onClick={sendOtp} disabled={sendingOtp}>
-              {sendingOtp ? "Sending..." : "Send OTP"}
-            </button>
-          </div>
-          {otpInfo ? <div className="otp-info">{otpInfo}</div> : null}
-
-          <label htmlFor="otp_code">OTP Code</label>
           <input
-            id="otp_code"
-            value={form.otp_code}
-            onChange={(e) => setField("otp_code", e.target.value)}
-            placeholder="Enter OTP"
+            id="mobile_number"
+            value={form.mobile_number}
+            onChange={(e) => setField("mobile_number", e.target.value)}
+            placeholder="Mobile number"
           />
 
           <label htmlFor="username">Username</label>

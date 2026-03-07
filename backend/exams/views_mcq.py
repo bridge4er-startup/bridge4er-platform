@@ -5,6 +5,7 @@ from pathlib import Path
 
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Max
 from rest_framework import status
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
@@ -16,8 +17,8 @@ from .import_utils import (
     parse_rows_from_uploaded_file,
 )
 from .dropbox_sync import auto_sync_dropbox_for_branch
-from .models import Chapter, MCQQuestion, QuestionAttempt, Subject
-from .path_utils import objective_subject_roots, parse_subject_key
+from .models import Chapter, InstitutionFolder, MCQQuestion, QuestionAttempt, Subject
+from .path_utils import GENERAL_INSTITUTION, objective_subject_roots, parse_subject_key
 from .question_normalizers import normalize_mcq_payload
 from .resources import MCQQuestionResource
 from .serializers import MCQQuestionPublicSerializer, MCQQuestionSerializer
@@ -253,6 +254,21 @@ def _list_matching_chapter_paths(branch, subject_name, chapter_name):
     return sorted(matches)
 
 
+def _ensure_institution_folder(branch, scope, folder_key, display_name=""):
+    clean_key = str(folder_key or "").strip() or GENERAL_INSTITUTION
+    defaults = {"display_name": str(display_name or "").strip()[:255] or clean_key}
+    folder, created = InstitutionFolder.objects.get_or_create(
+        branch=branch,
+        scope=scope,
+        folder_key=clean_key,
+        defaults=defaults,
+    )
+    if not created and defaults["display_name"] and not folder.display_name:
+        folder.display_name = defaults["display_name"]
+        folder.save(update_fields=["display_name", "updated_at"])
+    return folder
+
+
 class SubjectListView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -260,19 +276,52 @@ class SubjectListView(APIView):
         branch = request.GET.get("branch", "Civil Engineering")
         force_refresh = _as_bool(request.GET.get("refresh"), False)
         _maybe_sync_objective_on_read(branch=branch, user=request.user, force_refresh=force_refresh)
+        folder_rows = (
+            InstitutionFolder.objects.filter(
+                branch=branch,
+                scope=InstitutionFolder.SCOPE_OBJECTIVE,
+                is_active=True,
+            )
+            .order_by("display_order", "folder_key", "id")
+            .values("folder_key", "display_name", "display_order")
+        )
+        folder_map = {
+            str(row.get("folder_key") or "").strip().lower(): row
+            for row in folder_rows
+            if str(row.get("folder_key") or "").strip()
+        }
+
         records = []
-        for subject in Subject.objects.filter(branch=branch).values("id", "name"):
+        subjects = Subject.objects.filter(branch=branch).order_by("display_order", "name", "id")
+        for subject in subjects.values("id", "name", "display_order"):
             meta = parse_subject_key(subject.get("name", ""))
+            institution_key = str(meta.get("institution_key") or GENERAL_INSTITUTION).strip() or GENERAL_INSTITUTION
+            folder_row = folder_map.get(institution_key.lower())
+            institution_display = meta.get("institution_display") or GENERAL_INSTITUTION
+            institution_order = 0
+            if folder_row:
+                institution_display = str(folder_row.get("display_name") or folder_row.get("folder_key") or institution_display)
+                institution_order = int(folder_row.get("display_order") or 0)
             records.append(
                 {
                     "id": subject.get("id"),
                     "name": subject.get("name"),
                     "display_name": meta.get("subject_name") or subject.get("name"),
-                    "institution": meta.get("institution_display"),
-                    "institution_key": meta.get("institution_key"),
+                    "display_order": int(subject.get("display_order") or 0),
+                    "institution": institution_display,
+                    "institution_key": institution_key,
+                    "institution_order": institution_order,
                 }
             )
-        records.sort(key=lambda item: ((item.get("institution") or "").lower(), (item.get("display_name") or "").lower()))
+        records.sort(
+            key=lambda item: (
+                int(item.get("institution_order") or 0),
+                (item.get("institution") or "").lower(),
+                int(item.get("display_order") or 0),
+                (item.get("display_name") or "").lower(),
+                int(item.get("id") or 0),
+            )
+        )
         return Response(records)
 
 
@@ -285,7 +334,11 @@ class ChapterListView(APIView):
         _maybe_sync_objective_on_read(branch=branch, user=request.user, force_refresh=force_refresh)
         try:
             subject_obj = Subject.objects.get(name=subject, branch=branch)
-            chapters = Chapter.objects.filter(subject=subject_obj).values("id", "name", "small_note")
+            chapters = (
+                Chapter.objects.filter(subject=subject_obj)
+                .order_by("order", "name", "id")
+                .values("id", "name", "small_note", "order")
+            )
             return Response(list(chapters))
         except Subject.DoesNotExist:
             return Response({"error": "Subject not found"}, status=status.HTTP_404_NOT_FOUND)
@@ -472,12 +525,39 @@ class CreateSubjectView(APIView):
     def post(self, request):
         branch = request.data.get("branch", "Civil Engineering")
         name = request.data.get("name")
+        raw_display_order = request.data.get("display_order")
         if not name:
             return Response({"error": "name required"}, status=status.HTTP_400_BAD_REQUEST)
 
-        subject, _ = Subject.objects.get_or_create(name=name, branch=branch)
+        parsed = parse_subject_key(name)
+        institution_key = parsed.get("institution_key") or GENERAL_INSTITUTION
+        institution_display = parsed.get("institution_display") or GENERAL_INSTITUTION
+        _ensure_institution_folder(
+            branch=branch,
+            scope=InstitutionFolder.SCOPE_OBJECTIVE,
+            folder_key=institution_key,
+            display_name=institution_display,
+        )
+
+        defaults = {}
+        if raw_display_order is not None:
+            try:
+                defaults["display_order"] = int(raw_display_order)
+            except (TypeError, ValueError):
+                return Response({"error": "display_order must be an integer"}, status=status.HTTP_400_BAD_REQUEST)
+
+        subject, created = Subject.objects.get_or_create(name=name, branch=branch, defaults=defaults)
+        if not created and raw_display_order is not None and subject.display_order != defaults["display_order"]:
+            subject.display_order = defaults["display_order"]
+            subject.save(update_fields=["display_order"])
+
         return Response(
-            {"id": subject.id, "name": subject.name, "branch": subject.branch},
+            {
+                "id": subject.id,
+                "name": subject.name,
+                "branch": subject.branch,
+                "display_order": subject.display_order,
+            },
             status=status.HTTP_201_CREATED,
         )
 
@@ -488,7 +568,7 @@ class CreateChapterView(APIView):
     def post(self, request):
         subject_id = request.data.get("subject_id")
         name = request.data.get("name")
-        order = request.data.get("order", 0)
+        order = request.data.get("order")
         small_note = str(request.data.get("small_note") or "").strip()
 
         if not subject_id or not name:
@@ -499,16 +579,25 @@ class CreateChapterView(APIView):
 
         try:
             subject = Subject.objects.get(id=subject_id)
+            if order in (None, ""):
+                order_value = int((Chapter.objects.filter(subject=subject).aggregate(max_order=Max("order")).get("max_order") or 0) + 1)
+            else:
+                try:
+                    order_value = int(order)
+                except (TypeError, ValueError):
+                    return Response({"error": "order must be an integer"}, status=status.HTTP_400_BAD_REQUEST)
+
             chapter = Chapter.objects.create(
                 subject=subject,
                 name=name,
-                order=order,
+                order=order_value,
                 small_note=small_note[:255],
             )
             return Response(
                 {
                     "id": chapter.id,
                     "name": chapter.name,
+                    "order": chapter.order,
                     "small_note": chapter.small_note,
                 },
                 status=status.HTTP_201_CREATED,
@@ -526,15 +615,38 @@ class UpdateChapterView(APIView):
         except Chapter.DoesNotExist:
             return Response({"error": "Chapter not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        if "small_note" not in request.data:
-            return Response({"error": "small_note is required"}, status=status.HTTP_400_BAD_REQUEST)
+        update_fields = []
 
-        chapter.small_note = str(request.data.get("small_note") or "").strip()[:255]
-        chapter.save(update_fields=["small_note"])
+        if "name" in request.data:
+            new_name = str(request.data.get("name") or "").strip()
+            if not new_name:
+                return Response({"error": "name cannot be empty"}, status=status.HTTP_400_BAD_REQUEST)
+            chapter.name = new_name
+            update_fields.append("name")
+
+        if "order" in request.data:
+            try:
+                chapter.order = int(request.data.get("order"))
+            except (TypeError, ValueError):
+                return Response({"error": "order must be an integer"}, status=status.HTTP_400_BAD_REQUEST)
+            update_fields.append("order")
+
+        if "small_note" in request.data:
+            chapter.small_note = str(request.data.get("small_note") or "").strip()[:255]
+            update_fields.append("small_note")
+
+        if not update_fields:
+            return Response(
+                {"error": "At least one of name, order, or small_note is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        chapter.save(update_fields=sorted(set(update_fields)))
         return Response(
             {
                 "id": chapter.id,
                 "name": chapter.name,
+                "order": chapter.order,
                 "small_note": chapter.small_note,
             },
             status=status.HTTP_200_OK,

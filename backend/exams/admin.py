@@ -14,6 +14,7 @@ from .models import (
     ExamPurchase,
     ExamQuestion,
     ExamSet,
+    InstitutionFolder,
     MCQQuestion,
     ProblemReport,
     QuestionAttempt,
@@ -57,10 +58,11 @@ class InstitutionFolderFilter(admin.SimpleListFilter):
 
 @admin.register(Subject)
 class SubjectAdmin(admin.ModelAdmin):
-    list_display = ("id", "display_name", "institution_folder", "branch", "created_at")
+    list_display = ("id", "name", "display_name", "institution_folder", "branch", "display_order", "created_at")
     list_filter = ("branch", InstitutionFolderFilter)
     search_fields = ("name", "branch")
-    ordering = ("branch", "name")
+    ordering = ("branch", "display_order", "name", "id")
+    list_editable = ("name", "display_order")
 
     @admin.display(description="Subject")
     def display_name(self, obj):
@@ -75,9 +77,11 @@ class SubjectAdmin(admin.ModelAdmin):
 
 @admin.register(Chapter)
 class ChapterAdmin(admin.ModelAdmin):
-    list_display = ("name", "subject", "order")
+    list_display = ("id", "name", "subject", "order", "small_note")
     list_filter = ("subject__branch", InstitutionFolderFilter, "subject")
     search_fields = ("name", "subject__name")
+    ordering = ("subject__branch", "subject__display_order", "subject__name", "order", "name", "id")
+    list_editable = ("name", "order", "small_note")
 
 
 @admin.register(MCQQuestion)
@@ -98,11 +102,13 @@ class ExamQuestionInline(admin.TabularInline):
 class ExamSetAdmin(admin.ModelAdmin):
     list_display = (
         "id",
+        "name",
         "source_file_name",
         "source_institution",
         "source_folder_path",
         "branch",
         "exam_type",
+        "display_order",
         "is_free",
         "fee",
         "duration_seconds",
@@ -110,7 +116,8 @@ class ExamSetAdmin(admin.ModelAdmin):
     )
     list_filter = ("branch", "exam_type", "is_free", "is_active", "managed_by_sync")
     search_fields = ("name", "branch", "source_file_path")
-    ordering = ("branch", "exam_type", "name", "id")
+    ordering = ("branch", "exam_type", "display_order", "name", "id")
+    list_editable = ("name", "display_order", "is_active")
     inlines = [ExamQuestionInline]
 
     def _source_meta(self, obj):
@@ -150,6 +157,15 @@ class ExamQuestionAdmin(ImportExportModelAdmin):
     search_fields = ("question_header", "question_text", "exam_set__name")
     if DJANGO_IMPORT_EXPORT_AVAILABLE and ExamQuestionResource is not None:
         resource_class = ExamQuestionResource
+
+
+@admin.register(InstitutionFolder)
+class InstitutionFolderAdmin(admin.ModelAdmin):
+    list_display = ("id", "branch", "scope", "folder_key", "display_name", "display_order", "is_active")
+    list_filter = ("scope", "branch", "is_active")
+    search_fields = ("branch", "folder_key", "display_name")
+    ordering = ("scope", "branch", "display_order", "folder_key", "id")
+    list_editable = ("display_name", "display_order", "is_active")
 
 
 @admin.register(ExamPurchase)

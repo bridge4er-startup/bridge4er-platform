@@ -347,8 +347,7 @@ API.interceptors.response.use(
     const isAuthEndpoint =
       originalRequest.url?.includes("accounts/auth/login/") ||
       originalRequest.url?.includes("accounts/auth/register/") ||
-      originalRequest.url?.includes("accounts/auth/token/refresh/") ||
-      originalRequest.url?.includes("accounts/auth/request-otp/");
+      originalRequest.url?.includes("accounts/auth/token/refresh/");
 
     if (status !== 401 || originalRequest._retry || isAuthEndpoint) {
       return Promise.reject(error);

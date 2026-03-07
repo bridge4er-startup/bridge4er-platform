@@ -12,8 +12,8 @@ from storage.dropbox_service import list_folder_with_metadata
 
 from .import_utils import DJANGO_IMPORT_EXPORT_AVAILABLE, SUPPORTED_IMPORT_EXTENSIONS, parse_rows_from_path
 from .exam_file_metadata import build_exam_set_update_payload, extract_exam_rows_and_metadata
-from .models import Chapter, ExamQuestion, ExamSet, MCQQuestion, Subject
-from .path_utils import parse_exam_source_path, parse_objective_file_path
+from .models import Chapter, ExamQuestion, ExamSet, InstitutionFolder, MCQQuestion, Subject
+from .path_utils import GENERAL_INSTITUTION, parse_exam_source_path, parse_objective_file_path
 from .question_normalizers import normalize_exam_question_payload, normalize_mcq_payload
 from .resources import ExamQuestionResource, MCQQuestionResource
 
@@ -21,6 +21,21 @@ if DJANGO_IMPORT_EXPORT_AVAILABLE:
     from tablib import Dataset
 
 _AUTO_SYNC_KEY_PREFIX = "dropbox_sync:last_run"
+
+
+def _ensure_institution_folder(branch: str, scope: str, folder_key: str, display_name: str = ""):
+    clean_key = str(folder_key or "").strip() or GENERAL_INSTITUTION
+    defaults = {"display_name": str(display_name or "").strip()[:255] or clean_key}
+    folder, created = InstitutionFolder.objects.get_or_create(
+        branch=branch,
+        scope=scope,
+        folder_key=clean_key,
+        defaults=defaults,
+    )
+    if not created and defaults["display_name"] and not folder.display_name:
+        folder.display_name = defaults["display_name"]
+        folder.save(update_fields=["display_name", "updated_at"])
+    return folder
 
 
 def _is_supported_file(path: str) -> bool:
@@ -399,7 +414,21 @@ def sync_objective_mcqs_from_dropbox(branch: str, replace_existing: bool = True)
                     "<Institution>/<Subject>/<ChapterFile> or Subjects/<Subject>/<ChapterFile>"
                 )
 
-            subject, subject_created = Subject.objects.get_or_create(name=objective_meta["subject_key"], branch=branch)
+            _ensure_institution_folder(
+                branch=branch,
+                scope=InstitutionFolder.SCOPE_OBJECTIVE,
+                folder_key=objective_meta.get("institution_key") or GENERAL_INSTITUTION,
+                display_name=objective_meta.get("institution_display") or GENERAL_INSTITUTION,
+            )
+
+            next_subject_order = (
+                Subject.objects.filter(branch=branch).aggregate(max_order=Max("display_order")).get("max_order") or 0
+            ) + 1
+            subject, subject_created = Subject.objects.get_or_create(
+                name=objective_meta["subject_key"],
+                branch=branch,
+                defaults={"display_order": int(next_subject_order)},
+            )
             if subject_created:
                 summary["subjects_created"] += 1
 
@@ -442,6 +471,10 @@ def sync_objective_mcqs_from_dropbox(branch: str, replace_existing: bool = True)
 
 def _sync_exam_set_type(branch: str, exam_type: str, root_path: str, replace_existing: bool) -> dict:
     file_paths = _list_supported_files(root_path)
+    next_display_order = (
+        ExamSet.objects.filter(branch=branch, exam_type=exam_type).aggregate(max_order=Max("display_order")).get("max_order")
+        or 0
+    ) + 1
     result = {
         "root_path": root_path,
         "discovered_files": len(file_paths),
@@ -505,8 +538,10 @@ def _sync_exam_set_type(branch: str, exam_type: str, root_path: str, replace_exi
                     name=source_set_name,
                     branch=branch,
                     exam_type=exam_type,
+                    display_order=int(next_display_order),
                 )
                 created = True
+                next_display_order += 1
             if created:
                 result["sets_created"] += 1
 
@@ -544,6 +579,13 @@ def _sync_exam_set_type(branch: str, exam_type: str, root_path: str, replace_exi
             synced_set_ids.add(exam_set.id)
 
             source_meta = parse_exam_source_path(file_path, branch, exam_type)
+            scope = InstitutionFolder.SCOPE_EXAM_SUBJECTIVE if exam_type == "subjective" else InstitutionFolder.SCOPE_EXAM_MCQ
+            _ensure_institution_folder(
+                branch=branch,
+                scope=scope,
+                folder_key=source_meta.get("institution") or GENERAL_INSTITUTION,
+                display_name=source_meta.get("institution") or GENERAL_INSTITUTION,
+            )
             item["exam_set"] = exam_set.name
             item["institution"] = source_meta.get("institution")
             item["folder_path"] = source_meta.get("folder_path")

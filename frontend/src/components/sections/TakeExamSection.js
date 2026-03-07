@@ -61,6 +61,13 @@ function getSetDisplayName(setItem) {
   return setItem?.display_name || setItem?.source_file_name || setItem?.name || "Exam Set";
 }
 
+function byExamSetOrder(a, b) {
+  const aOrder = Number(a?.display_order || 0);
+  const bOrder = Number(b?.display_order || 0);
+  if (aOrder !== bOrder) return aOrder - bOrder;
+  return getSetDisplayName(a).localeCompare(getSetDisplayName(b));
+}
+
 export default function TakeExamSection({ branch = "Civil Engineering", isActive = false }) {
   const [setsByType, setSetsByType] = useState({ mcq: [], subjective: [] });
   const [folderEntriesByType, setFolderEntriesByType] = useState({ mcq: [], subjective: [] });
@@ -95,6 +102,7 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
       const normalized = (data || []).map((setItem) => ({
         ...setItem,
         folder_parts: normalizeFolderParts(setItem.folder_parts),
+        folder_display_parts: normalizeFolderParts(setItem.folder_display_parts || setItem.folder_parts),
       }));
       setSetsByType((prev) => ({ ...prev, [type]: normalized }));
 
@@ -271,9 +279,25 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
     if (!selectedExamType) return [];
     return folderEntriesByType[selectedExamType] || [];
   }, [selectedExamType, folderEntriesByType]);
+  const institutionDisplayByType = useMemo(() => {
+    const output = { mcq: new Map(), subjective: new Map() };
+    ["mcq", "subjective"].forEach((type) => {
+      (setsByType[type] || []).forEach((setItem) => {
+        const raw = normalizeFolderParts(setItem.folder_parts || []);
+        const display = normalizeFolderParts(setItem.folder_display_parts || raw);
+        if (!raw.length || !display.length) return;
+        const key = raw[0];
+        if (!output[type].has(key)) {
+          output[type].set(key, display[0]);
+        }
+      });
+    });
+    return output;
+  }, [setsByType]);
 
   const currentLoading = selectedExamType ? loadingByType[selectedExamType] : false;
   const currentFolderParts = selectedExamType ? folderPathByType[selectedExamType] || [] : [];
+  const institutionDisplayMap = selectedExamType ? institutionDisplayByType[selectedExamType] || new Map() : new Map();
 
   const folderView = useMemo(() => {
     if (!selectedExamType) {
@@ -332,8 +356,8 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
       directSets.push(setItem);
     });
 
-    const folders = [...folderMap.values()].sort((a, b) => a.name.localeCompare(b.name));
-    directSets.sort((a, b) => getSetDisplayName(a).localeCompare(getSetDisplayName(b)));
+    const folders = [...folderMap.values()];
+    directSets.sort(byExamSetOrder);
 
     return { folders, sets: directSets };
   }, [allSetsForCurrentType, currentFolderParts, folderEntriesForCurrentType, selectedExamType]);
@@ -343,7 +367,14 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
     setFolderPathByType((prev) => ({ ...prev, [selectedExamType]: parts }));
   };
 
-  const breadcrumbParts = [EXAM_TYPE_CONTENT[selectedExamType]?.title || "Exam Sets", ...currentFolderParts];
+  const breadcrumbParts = [EXAM_TYPE_CONTENT[selectedExamType]?.title || "Exam Sets"];
+  currentFolderParts.forEach((part, index) => {
+    if (index === 0) {
+      breadcrumbParts.push(institutionDisplayMap.get(part) || part);
+      return;
+    }
+    breadcrumbParts.push(part);
+  });
 
   return (
     <section id="exam-hall" className={`section exam-hall-modern ${isActive ? "active" : ""}`}>
@@ -418,7 +449,9 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
                             : getSubjectIcon(folder.name, "fas fa-folder-open")
                         }
                       ></i>
-                      <h3 className="folder-display-name">{folder.name}</h3>
+                      <h3 className="folder-display-name">
+                        {currentFolderParts.length === 0 ? institutionDisplayMap.get(folder.name) || folder.name : folder.name}
+                      </h3>
                       <p className="chapter-small-note">{folder.count} sets</p>
                       <button className="btn btn-primary mcq-folder-open-btn" onClick={() => openFolder(folder.parts)}>
                         Open Folder

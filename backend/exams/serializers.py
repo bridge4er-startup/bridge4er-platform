@@ -11,6 +11,7 @@ from .models import (
     ExamQuestion,
     SubjectiveSubmission,
     ExamPurchase,
+    InstitutionFolder,
     ProblemReport,
 )
 
@@ -18,7 +19,7 @@ from .models import (
 class SubjectSerializer(serializers.ModelSerializer):
     class Meta:
         model = Subject
-        fields = ['id', 'name', 'branch']
+        fields = ['id', 'name', 'branch', 'display_order']
 
 
 class ChapterSerializer(serializers.ModelSerializer):
@@ -123,8 +124,11 @@ class ExamSetSerializer(serializers.ModelSerializer):
     total_marks = serializers.SerializerMethodField()
     display_name = serializers.SerializerMethodField()
     institution = serializers.SerializerMethodField()
+    institution_key = serializers.SerializerMethodField()
+    institution_order = serializers.SerializerMethodField()
     folder_path = serializers.SerializerMethodField()
     folder_parts = serializers.SerializerMethodField()
+    folder_display_parts = serializers.SerializerMethodField()
     topic_path = serializers.SerializerMethodField()
     source_file_name = serializers.SerializerMethodField()
 
@@ -145,6 +149,33 @@ class ExamSetSerializer(serializers.ModelSerializer):
             exam_type=getattr(obj, "exam_type", ""),
         )
 
+    def _institution_scope(self, obj):
+        if getattr(obj, "exam_type", "") == "subjective":
+            return InstitutionFolder.SCOPE_EXAM_SUBJECTIVE
+        return InstitutionFolder.SCOPE_EXAM_MCQ
+
+    def _institution_row(self, obj):
+        branch = getattr(obj, "branch", "")
+        scope = self._institution_scope(obj)
+        cache_key = f"{branch}::{scope}"
+        if not hasattr(self, "_institution_cache"):
+            self._institution_cache = {}
+        if cache_key not in self._institution_cache:
+            rows = (
+                InstitutionFolder.objects.filter(branch=branch, scope=scope, is_active=True)
+                .values("folder_key", "display_name", "display_order")
+            )
+            normalized = {}
+            for row in rows:
+                folder_key = str(row.get("folder_key") or "").strip()
+                if not folder_key:
+                    continue
+                normalized[folder_key.lower()] = row
+            self._institution_cache[cache_key] = normalized
+
+        institution_key = str(self._source_meta(obj).get("institution") or "General").strip()
+        return self._institution_cache.get(cache_key, {}).get(institution_key.lower())
+
     def get_question_count(self, obj):
         return obj.questions.count()
 
@@ -164,13 +195,36 @@ class ExamSetSerializer(serializers.ModelSerializer):
         return source_name or obj.name
 
     def get_institution(self, obj):
-        return self._source_meta(obj).get("institution")
+        default_value = self._source_meta(obj).get("institution") or "General"
+        row = self._institution_row(obj)
+        if not row:
+            return default_value
+        return str(row.get("display_name") or row.get("folder_key") or default_value)
+
+    def get_institution_key(self, obj):
+        return self._source_meta(obj).get("institution") or "General"
+
+    def get_institution_order(self, obj):
+        row = self._institution_row(obj)
+        if not row:
+            return 0
+        return int(row.get("display_order") or 0)
 
     def get_folder_path(self, obj):
         return self._source_meta(obj).get("folder_path")
 
     def get_folder_parts(self, obj):
         return self._source_meta(obj).get("folder_parts") or []
+
+    def get_folder_display_parts(self, obj):
+        parts = list(self._source_meta(obj).get("folder_parts") or [])
+        if not parts:
+            return parts
+        row = self._institution_row(obj)
+        if not row:
+            return parts
+        parts[0] = str(row.get("display_name") or row.get("folder_key") or parts[0])
+        return parts
 
     def get_topic_path(self, obj):
         return self._source_meta(obj).get("topic_path")
@@ -204,6 +258,10 @@ class ExamSetSerializer(serializers.ModelSerializer):
             'topic_path',
             'source_file_path',
             'source_file_name',
+            'institution_key',
+            'institution_order',
+            'folder_display_parts',
+            'display_order',
             'created_at',
             'updated_at',
         ]

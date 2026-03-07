@@ -35,20 +35,6 @@ services:
         value: https://bridge4er-api.onrender.com
       - key: ALLOW_INSECURE_PAYMENT_VERIFICATION
         value: "0"
-      - key: SHOW_OTP_IN_RESPONSE
-        value: "0"
-      - key: OTP_PROVIDER
-        value: twilio_verify
-      - key: OTP_DEFAULT_COUNTRY_CODE
-        value: "+977"
-      - key: TWILIO_ACCOUNT_SID
-        sync: false
-      - key: TWILIO_AUTH_TOKEN
-        sync: false
-      - key: TWILIO_VERIFY_SERVICE_SID
-        sync: false
-      - key: TWILIO_VERIFY_CHANNEL
-        value: sms
       - key: ESEWA_ENV
         value: sandbox
       - key: ESEWA_PRODUCT_CODE

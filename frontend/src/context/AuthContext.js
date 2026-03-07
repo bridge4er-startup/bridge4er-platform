@@ -3,7 +3,6 @@ import {
   getMyProfile,
   loginStudent,
   registerStudent,
-  requestOtp as requestOtpApi,
 } from "../services/authService";
 import { ACCESS_TOKEN_KEY, REFRESH_TOKEN_KEY, clearTokens, storeTokens } from "../services/api";
 
@@ -32,10 +31,6 @@ export function AuthProvider({ children }) {
     };
     bootstrap();
   }, []);
-
-  const requestOtp = async (mobileNumber) => {
-    return requestOtpApi(mobileNumber, "register");
-  };
 
   const login = async ({ identifier, password }) => {
     const payload = await loginStudent(identifier, password);
@@ -68,7 +63,6 @@ export function AuthProvider({ children }) {
       loading,
       isAuthenticated: !!user,
       isAdmin: !!user?.is_staff,
-      requestOtp,
       login,
       register,
       refreshProfile,
