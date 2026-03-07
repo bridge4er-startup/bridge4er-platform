@@ -30,12 +30,13 @@ const API_HEARTBEAT_INTERVAL_MS = parsePositiveInt(
 const API_WARM_CACHE_MS = parsePositiveInt(process.env.REACT_APP_API_WARM_CACHE_MS, 120000, 30000);
 const API_GET_CACHE_TTL_MS = parsePositiveInt(
   process.env.REACT_APP_API_GET_CACHE_TTL_MS,
-  1000,
+  12 * 60 * 60 * 1000,
   1000
 );
 
 const isBrowser = typeof window !== "undefined";
 const getResponseCache = new Map();
+const inFlightGetRequests = new Map();
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -86,6 +87,7 @@ const writeCachedGetResponse = (cacheKey, response, ttlMs) => {
 
 export const clearGetResponseCache = () => {
   getResponseCache.clear();
+  inFlightGetRequests.clear();
 };
 
 const resolveBackendOrigin = () => {
@@ -227,16 +229,31 @@ export const cachedGet = async (url, options = {}) => {
         },
       };
     }
+    const inFlight = inFlightGetRequests.get(cacheKey);
+    if (inFlight) {
+      return inFlight;
+    }
   }
 
-  const response = await API.get(url, {
+  const requestPromise = API.get(url, {
     ...requestConfig,
     params,
-  });
-  if ((ttlMs || 0) > 0) {
-    writeCachedGetResponse(cacheKey, response, ttlMs);
+  })
+    .then((response) => {
+      if ((ttlMs || 0) > 0) {
+        writeCachedGetResponse(cacheKey, response, ttlMs);
+      }
+      return response;
+    })
+    .finally(() => {
+      inFlightGetRequests.delete(cacheKey);
+    });
+
+  if (!forceRefresh) {
+    inFlightGetRequests.set(cacheKey, requestPromise);
   }
-  return response;
+
+  return requestPromise;
 };
 
 export const prefetchGet = async (url, options = {}) => {
