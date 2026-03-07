@@ -11,7 +11,8 @@ User = get_user_model()
 
 
 class RegisterViewTests(APITestCase):
-    def test_register_still_succeeds_when_email_send_fails(self):
+    @override_settings(REQUIRE_EMAIL_VERIFICATION=True)
+    def test_register_falls_back_to_direct_login_when_email_send_fails(self):
         payload = {
             "full_name": "Test Student",
             "mobile_number": "9812345678",
@@ -25,10 +26,16 @@ class RegisterViewTests(APITestCase):
             response = self.client.post("/api/accounts/auth/register/", payload, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertTrue(response.data.get("verification_required"))
+        self.assertFalse(response.data.get("verification_required"))
         self.assertFalse(response.data.get("verification_email_sent"))
         self.assertIn("smtp timeout", response.data.get("verification_email_error", ""))
         self.assertTrue(User.objects.filter(username="register_email_failure").exists())
+        login_response = self.client.post(
+            "/api/accounts/auth/login/",
+            {"identifier": "register_email_failure", "password": "secret123"},
+            format="json",
+        )
+        self.assertEqual(login_response.status_code, status.HTTP_200_OK)
 
 
 class VerificationEmailTests(APITestCase):
@@ -79,3 +86,26 @@ class LoginViewTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn("tokens", response.data)
+
+    @override_settings(REQUIRE_EMAIL_VERIFICATION=True)
+    def test_login_blocks_unverified_user_when_required(self):
+        User.objects.create_user(
+            username="email_block_user",
+            email="email_block_user@example.com",
+            password="secret123",
+            full_name="Email Block User",
+            mobile_number="9800000022",
+            field_of_study="Civil Engineering",
+            is_student=True,
+            is_email_verified=False,
+            is_mobile_verified=False,
+        )
+
+        response = self.client.post(
+            "/api/accounts/auth/login/",
+            {"identifier": "email_block_user", "password": "secret123"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Please verify your email before logging in.", str(response.data))

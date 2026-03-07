@@ -2,7 +2,6 @@ import React, { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useAuth } from "../context/AuthContext";
-import { resendStudentVerification } from "../services/authService";
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -11,7 +10,6 @@ export default function LoginPage() {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [resendingVerification, setResendingVerification] = useState(false);
 
   const redirectPath = location.state?.from?.pathname || "/";
 
@@ -40,24 +38,6 @@ export default function LoginPage() {
       toast.error(message);
     } finally {
       setSubmitting(false);
-    }
-  };
-
-  const resendVerification = async () => {
-    const value = String(identifier || "").trim();
-    if (!value) {
-      toast.error("Enter your username, mobile, or email first.");
-      return;
-    }
-    try {
-      setResendingVerification(true);
-      const response = await resendStudentVerification(value);
-      toast.success(response?.message || "Verification email sent.");
-    } catch (error) {
-      const message = error?.response?.data?.error || "Failed to resend verification email.";
-      toast.error(message);
-    } finally {
-      setResendingVerification(false);
     }
   };
 
@@ -91,17 +71,6 @@ export default function LoginPage() {
 
           <p className="auth-alt-link">
             No account yet? <Link to="/register">Register now</Link>
-          </p>
-          <p className="auth-alt-link">
-            Email not verified?{" "}
-            <button
-              type="button"
-              className="auth-inline-btn"
-              onClick={resendVerification}
-              disabled={resendingVerification}
-            >
-              {resendingVerification ? "Sending..." : "Resend verification link"}
-            </button>
           </p>
         </form>
       </div>

@@ -72,8 +72,9 @@ export default function RegisterPage() {
       }
 
       setBranchFromProfile(form.field_of_study);
-      toast.success("Enrollment complete.");
-      navigate("/", { replace: true });
+      const notice = response?.message || "Enrollment complete. Please login.";
+      toast.success(notice);
+      navigate("/login", { replace: true, state: { notice } });
     } catch (error) {
       const apiErrors = error?.response?.data || {};
       const firstError =

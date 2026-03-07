@@ -96,6 +96,7 @@ class RegisterView(APIView):
         serializer = RegisterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
+        require_email_verification = bool(getattr(settings, "REQUIRE_EMAIL_VERIFICATION", False))
 
         with transaction.atomic():
             user = User.objects.create_user(
@@ -107,21 +108,35 @@ class RegisterView(APIView):
                 field_of_study=data["field_of_study"],
                 is_student=True,
                 is_mobile_verified=False,
-                is_email_verified=False,
+                is_email_verified=not require_email_verification,
             )
 
-        email_sent = True
+        verification_required = require_email_verification
+        email_sent = False
         email_error = ""
-        try:
-            _send_verification_email(user)
-        except Exception as exc:
-            email_sent = False
-            email_error = str(exc)
+        if require_email_verification:
+            email_sent = True
+            try:
+                _send_verification_email(user)
+            except Exception as exc:
+                email_sent = False
+                email_error = str(exc)
+                verification_required = False
+                user.is_email_verified = True
+                user.email_verification_token = ""
+                user.save(update_fields=["is_email_verified", "email_verification_token"])
+
+        if verification_required:
+            message = "Registration successful. Please verify your email before login."
+        elif email_error:
+            message = "Registration successful. Verification is unavailable right now; please log in directly."
+        else:
+            message = "Registration successful. You can now log in."
 
         return Response(
             {
-                "message": "Registration successful. Please verify your email before login.",
-                "verification_required": True,
+                "message": message,
+                "verification_required": verification_required,
                 "verification_email_sent": email_sent,
                 "verification_email_error": email_error,
             },
@@ -190,6 +205,12 @@ class ResendEmailVerificationView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
+        if not bool(getattr(settings, "REQUIRE_EMAIL_VERIFICATION", False)):
+            return Response(
+                {"message": "Email verification is disabled. You can log in directly."},
+                status=status.HTTP_200_OK,
+            )
+
         identifier = str(request.data.get("identifier") or "").strip()
         if not identifier:
             return Response({"error": "identifier is required."}, status=status.HTTP_400_BAD_REQUEST)
