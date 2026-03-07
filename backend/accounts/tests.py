@@ -25,7 +25,7 @@ class RegisterViewTests(APITestCase):
 
 
 class LoginViewTests(APITestCase):
-    def test_login_allows_email_identifier_when_verified(self):
+    def test_login_allows_email_identifier(self):
         User.objects.create_user(
             username="email_login_user",
             email="email_login_user@example.com",
@@ -34,7 +34,6 @@ class LoginViewTests(APITestCase):
             mobile_number="9800000011",
             field_of_study="Civil Engineering",
             is_student=True,
-            is_email_verified=True,
             is_mobile_verified=False,
         )
 
@@ -47,7 +46,7 @@ class LoginViewTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn("tokens", response.data)
 
-    def test_login_allows_unverified_user(self):
+    def test_login_allows_username_identifier(self):
         User.objects.create_user(
             username="unverified_login_user",
             email="unverified_login_user@example.com",
@@ -56,7 +55,6 @@ class LoginViewTests(APITestCase):
             mobile_number="9800000022",
             field_of_study="Civil Engineering",
             is_student=True,
-            is_email_verified=False,
             is_mobile_verified=False,
         )
 

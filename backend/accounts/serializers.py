@@ -1,6 +1,5 @@
 from django.contrib.auth import authenticate
 from django.contrib.auth import get_user_model
-from django.db.models import Q
 from rest_framework import serializers
 
 from .models import FIELD_OF_STUDY_CHOICES
@@ -17,7 +16,6 @@ class UserSerializer(serializers.ModelSerializer):
             "mobile_number",
             "username",
             "email",
-            "is_email_verified",
             "field_of_study",
             "is_mobile_verified",
             "is_staff",
@@ -67,17 +65,35 @@ class LoginSerializer(serializers.Serializer):
     identifier = serializers.CharField(max_length=150)
     password = serializers.CharField(write_only=True)
 
+    def _resolve_user(self, identifier):
+        normalized = (identifier or "").strip()
+        if not normalized:
+            return None
+
+        base_queryset = User.objects.only("id", "username")
+
+        if "@" in normalized:
+            lowered = normalized.lower()
+            return (
+                base_queryset.filter(email=lowered).first()
+                or base_queryset.filter(email__iexact=normalized).first()
+            )
+
+        mobile_candidate = "".join(ch for ch in normalized if ch.isdigit())
+        if mobile_candidate:
+            mobile_user = (
+                base_queryset.filter(mobile_number=mobile_candidate).first()
+                or base_queryset.filter(mobile_number=normalized).first()
+            )
+            if mobile_user:
+                return mobile_user
+
+        return base_queryset.filter(username__iexact=normalized).first()
+
     def validate(self, attrs):
         identifier = (attrs.get("identifier") or "").strip()
         password = attrs.get("password") or ""
-        mobile_candidate = "".join(ch for ch in identifier if ch.isdigit())
-
-        user = User.objects.filter(
-            Q(username__iexact=identifier)
-            | Q(email__iexact=identifier)
-            | Q(mobile_number=identifier)
-            | Q(mobile_number=mobile_candidate)
-        ).first()
+        user = self._resolve_user(identifier)
 
         if not user:
             raise serializers.ValidationError("Invalid username/mobile/email or password.")

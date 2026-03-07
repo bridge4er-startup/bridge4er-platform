@@ -10,16 +10,13 @@ const parsePositiveInt = (value, fallback, minValue = 5000) => {
 
 const AUTH_REQUEST_TIMEOUT_MS = parsePositiveInt(process.env.REACT_APP_AUTH_REQUEST_TIMEOUT_MS, 120000, 10000);
 
-const ensureBackendReady = async () => {
-  try {
-    await warmupBackendConnection();
-  } catch (_error) {
-    // Continue with the request even if warmup fails.
-  }
+const ensureBackendReady = () => {
+  // Do not block auth requests on warmup retries.
+  warmupBackendConnection().catch(() => {});
 };
 
 const postAuth = async (path, payload) => {
-  await ensureBackendReady();
+  ensureBackendReady();
   const res = await API.post(path, payload, { timeout: AUTH_REQUEST_TIMEOUT_MS });
   return res.data;
 };
