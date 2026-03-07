@@ -86,6 +86,39 @@ const MYPATRO_SCRIPT_URL = "https://mypatro.com/resources/nepali_date/nepali_dat
 const NEPALI_DATE_CACHE_KEY = "bridge4er:homepage:nepali-date:v1";
 const NEPALI_DATE_POLL_INTERVAL_MS = 1200;
 const NEPALI_DATE_MAX_WAIT_MS = 12000;
+const DEVA_ZERO_CODE_POINT = 0x0966;
+const NUMERIC_TOKEN_PATTERN = /^[0-9\u0966-\u096f]+$/u;
+const NEPALI_DATE_UNAVAILABLE = "\u0928\u0947\u092a\u093e\u0932\u0940 \u092e\u093f\u0924\u093f \u0909\u092a\u0932\u092c\u094d\u0927 \u091b\u0948\u0928";
+const BS_WORD_MAP = Object.freeze({
+  sunday: "\u0906\u0907\u0924\u092c\u093e\u0930",
+  monday: "\u0938\u094b\u092e\u092c\u093e\u0930",
+  tuesday: "\u092e\u0902\u0917\u0932\u092c\u093e\u0930",
+  wednesday: "\u092c\u0941\u0927\u092c\u093e\u0930",
+  thursday: "\u092c\u093f\u0939\u0940\u092c\u093e\u0930",
+  friday: "\u0936\u0941\u0915\u094d\u0930\u092c\u093e\u0930",
+  saturday: "\u0936\u0928\u093f\u092c\u093e\u0930",
+  baisakh: "\u092c\u0948\u0936\u093e\u0916",
+  baishakh: "\u092c\u0948\u0936\u093e\u0916",
+  jestha: "\u091c\u0947\u0920",
+  jesth: "\u091c\u0947\u0920",
+  asar: "\u0905\u0938\u093e\u0930",
+  ashadh: "\u0905\u0938\u093e\u0930",
+  shrawan: "\u0936\u094d\u0930\u093e\u0935\u0923",
+  shravan: "\u0936\u094d\u0930\u093e\u0935\u0923",
+  bhadra: "\u092d\u0926\u094c",
+  bhadau: "\u092d\u0926\u094c",
+  ashwin: "\u0906\u0936\u094d\u0935\u093f\u0928",
+  asoj: "\u0906\u0936\u094d\u0935\u093f\u0928",
+  kartik: "\u0915\u093e\u0930\u094d\u0924\u093f\u0915",
+  mangsir: "\u092e\u0902\u0938\u093f\u0930",
+  marga: "\u092e\u0902\u0938\u093f\u0930",
+  poush: "\u092a\u094c\u0937",
+  paush: "\u092a\u094c\u0937",
+  magh: "\u092e\u093e\u0918",
+  falgun: "\u092b\u093e\u0932\u094d\u0917\u0941\u0923",
+  phalgun: "\u092b\u093e\u0932\u094d\u0917\u0941\u0923",
+  chaitra: "\u091a\u0948\u0924",
+});
 const WEATHER_CODE_LABELS = Object.freeze({
   0: "Clear sky",
   1: "Mainly clear",
@@ -162,9 +195,52 @@ function formatTime(date) {
   });
 }
 
+function devanagariToAsciiDigits(value = "") {
+  return String(value).replace(/[\u0966-\u096f]/g, (char) =>
+    String.fromCharCode("0".charCodeAt(0) + (char.charCodeAt(0) - DEVA_ZERO_CODE_POINT))
+  );
+}
+
+function toDevanagariDigits(value = "") {
+  return String(value).replace(/\d/g, (digit) =>
+    String.fromCharCode(DEVA_ZERO_CODE_POINT + Number(digit))
+  );
+}
+
+function escapeRegExp(value = "") {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function localizeBsWords(value = "") {
+  let normalized = String(value || "");
+  Object.entries(BS_WORD_MAP).forEach(([latinWord, nepaliWord]) => {
+    const pattern = new RegExp(`\\b${escapeRegExp(latinWord)}\\b`, "gi");
+    normalized = normalized.replace(pattern, nepaliWord);
+  });
+  return normalized;
+}
+
+function normalizeNepaliDateOutput(value = "") {
+  const localized = localizeBsWords(String(value || ""));
+  return toDevanagariDigits(localized).replace(/\s+/g, " ").replace(/\s+,/g, ",").trim();
+}
+
+function extractYearNumber(value = "") {
+  const normalized = devanagariToAsciiDigits(String(value || ""));
+  const matches = normalized.match(/\d{4}/g);
+  if (!matches?.length) return null;
+  const year = Number(matches[matches.length - 1]);
+  return Number.isFinite(year) ? year : null;
+}
+
+function isLikelyBikramSambat(value = "") {
+  const year = extractYearNumber(value);
+  return Number.isFinite(year) && year >= 2050 && year <= 2200;
+}
+
 function formatNepaliDateFallback(date) {
   try {
-    const formatter = new Intl.DateTimeFormat("ne-NP-u-ca-bikram-sambat", {
+    const formatter = new Intl.DateTimeFormat("ne-NP-u-ca-bikram-sambat-nu-deva", {
       weekday: "long",
       year: "numeric",
       month: "long",
@@ -178,7 +254,8 @@ function formatNepaliDateFallback(date) {
     const day = getPart("day");
     const year = getPart("year");
     if (weekday && month && day && year) {
-      return `${weekday}, ${month} ${day} , ${year}`;
+      const normalized = normalizeNepaliDateOutput(`${weekday}, ${month} ${day} , ${year}`);
+      return isLikelyBikramSambat(normalized) ? normalized : "";
     }
     return "";
   } catch (_error) {
@@ -186,28 +263,33 @@ function formatNepaliDateFallback(date) {
   }
 }
 
-function formatNepaliLocaleGregorianFallback(date) {
-  try {
-    return date.toLocaleDateString("ne-NP", {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-      timeZone: NEPAL_TIMEZONE,
-    });
-  } catch (_error) {
-    return "";
-  }
-}
-
 function normalizeMypatroDate(raw = "") {
-  const source = String(raw || "").trim();
+  const source = normalizeNepaliDateOutput(raw);
   if (!source) return "";
-  const pattern = /^([^,]+),\s*([०१२३४५६७८९]+)\s+(.+?)\s+([०१२३४५६७८९]+)$/;
-  const match = source.match(pattern);
-  if (!match) return source;
-  const [, weekday, day, month, year] = match;
-  return `${weekday.trim()}, ${month.trim()} ${day.trim()} , ${year.trim()}`;
+
+  const commaIndex = source.indexOf(",");
+  if (commaIndex < 0) {
+    return isLikelyBikramSambat(source) ? source : "";
+  }
+
+  const weekday = source.slice(0, commaIndex).trim();
+  const tail = source.slice(commaIndex + 1).replace(/,/g, " ").trim();
+  if (!weekday || !tail) {
+    return isLikelyBikramSambat(source) ? source : "";
+  }
+
+  const parts = tail.split(/\s+/).filter(Boolean);
+  if (parts.length >= 3) {
+    const firstToken = parts[0];
+    const lastToken = parts[parts.length - 1];
+    if (NUMERIC_TOKEN_PATTERN.test(firstToken) && NUMERIC_TOKEN_PATTERN.test(lastToken)) {
+      const month = parts.slice(1, -1).join(" ");
+      const reordered = normalizeNepaliDateOutput(`${weekday}, ${month} ${firstToken} , ${lastToken}`);
+      return isLikelyBikramSambat(reordered) ? reordered : "";
+    }
+  }
+
+  return isLikelyBikramSambat(source) ? source : "";
 }
 
 function getNepalDayCacheKey(date = new Date()) {
@@ -654,8 +736,7 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
   const nepaliDateDisplay =
     nepaliDateText ||
     formatNepaliDateFallback(clock) ||
-    formatNepaliLocaleGregorianFallback(clock) ||
-    formatDate(clock);
+    NEPALI_DATE_UNAVAILABLE;
 
   const shouldShowNewBadge = (file) => {
     const modifiedAt = new Date(file?.modified || "").getTime();
@@ -907,3 +988,4 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
     </section>
   );
 }
+
