@@ -43,9 +43,9 @@ class RegisterSerializer(serializers.Serializer):
 
     def validate_full_name(self, value):
         normalized = str(value or "").strip()
-        parts = [item.strip() for item in normalized.split(",") if item.strip()]
+        parts = [item for item in normalized.split() if item]
         if len(parts) < 2:
-            raise serializers.ValidationError("Enter at least two names separated by a comma.")
+            raise serializers.ValidationError("Enter at least two names separated by a space.")
         return normalized
 
     def validate_username(self, value):

@@ -5068,11 +5068,30 @@ footer {
 }
 
 .auth-hero {
+  position: relative;
+  isolation: isolate;
   padding: 2.4rem;
   color: #fff;
   background-image: url("./assets/forbridge4er.png");
   background-size: cover;
   background-position: center;
+  background-repeat: no-repeat;
+  overflow: hidden;
+}
+
+.auth-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: linear-gradient(135deg, rgba(2, 6, 23, 0.56), rgba(15, 23, 42, 0.4) 45%, rgba(2, 132, 199, 0.22));
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+.auth-hero > * {
+  position: relative;
+  z-index: 1;
 }
 
 .auth-hero h1 {

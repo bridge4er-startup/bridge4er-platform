@@ -256,11 +256,11 @@ KHALTI_ENV = os.getenv("KHALTI_ENV", "sandbox").strip().lower()
 KHALTI_SECRET_KEY = os.getenv("KHALTI_SECRET_KEY", "")
 
 # Optional email settings for subjective submission alerts
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "no-reply@bridge4er.local")
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "bridge4er@gmail.com")
 ADMIN_ALERT_EMAIL = os.getenv("ADMIN_ALERT_EMAIL", "")
 EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
 EMAIL_HOST = os.getenv("EMAIL_HOST", "")
 EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
 EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", True)
-EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "bridge4er@gmail.com")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")

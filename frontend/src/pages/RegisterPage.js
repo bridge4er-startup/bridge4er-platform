@@ -28,7 +28,8 @@ export default function RegisterPage() {
     event.preventDefault();
     const cleanMobile = String(form.mobile_number || "").replace(/\D/g, "");
     const fullNameParts = String(form.full_name || "")
-      .split(",")
+      .trim()
+      .split(/\s+/)
       .map((part) => part.trim())
       .filter(Boolean);
 
@@ -37,7 +38,7 @@ export default function RegisterPage() {
       return;
     }
     if (fullNameParts.length < 2) {
-      toast.error("Enter at least two names separated by a comma.");
+      toast.error("Enter at least two names separated by a space.");
       return;
     }
     if (String(form.password || "").length < 6) {
@@ -101,7 +102,7 @@ export default function RegisterPage() {
             id="full_name"
             value={form.full_name}
             onChange={(e) => setField("full_name", e.target.value)}
-            placeholder="First Name, Last Name"
+            placeholder="First Name Last Name"
           />
 
           <label htmlFor="mobile_number">Mobile Number</label>

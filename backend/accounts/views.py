@@ -61,7 +61,7 @@ def _send_verification_email(user):
             f"{verify_url}\n\n"
             "If you did not create this account, please ignore this email."
         ),
-        from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "no-reply@bridge4er.local"),
+        from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "bridge4er@gmail.com"),
         recipient_list=[user.email],
         fail_silently=False,
     )
