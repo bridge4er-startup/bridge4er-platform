@@ -1,6 +1,6 @@
 import { prefetchGet } from "./api";
 
-const BOOTSTRAP_CACHE_TTL_MS = 5 * 60 * 1000;
+const BOOTSTRAP_CACHE_TTL_MS = 1000;
 const inFlightWarmups = new Map();
 
 export async function warmInitialStudentContent(branch, isAuthenticated) {

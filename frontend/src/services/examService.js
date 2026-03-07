@@ -3,6 +3,7 @@ import API, { cachedGet } from "./api";
 export const listExamSets = async (branch, examType, refresh = false) => {
   const res = await cachedGet("exams/sets/", {
     params: { branch, exam_type: examType, refresh: !!refresh },
+    ttlMs: 1000,
   });
   return res.data;
 };

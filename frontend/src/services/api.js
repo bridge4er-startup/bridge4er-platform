@@ -30,8 +30,8 @@ const API_HEARTBEAT_INTERVAL_MS = parsePositiveInt(
 const API_WARM_CACHE_MS = parsePositiveInt(process.env.REACT_APP_API_WARM_CACHE_MS, 120000, 30000);
 const API_GET_CACHE_TTL_MS = parsePositiveInt(
   process.env.REACT_APP_API_GET_CACHE_TTL_MS,
-  5 * 60 * 1000,
-  10000
+  1000,
+  1000
 );
 
 const isBrowser = typeof window !== "undefined";

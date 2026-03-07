@@ -122,11 +122,11 @@ DEMO_SUBJECTIVE_QUESTIONS = [
 
 
 def _auto_sync_cooldown_seconds():
-    value = getattr(settings, "DROPBOX_AUTO_SYNC_COOLDOWN_SECONDS", 60)
+    value = getattr(settings, "DROPBOX_AUTO_SYNC_COOLDOWN_SECONDS", 1)
     try:
-        return max(30, int(value))
+        return max(1, int(value))
     except (TypeError, ValueError):
-        return 60
+        return 1
 
 
 AUTO_SYNC_COOLDOWN_SECONDS = _auto_sync_cooldown_seconds()
@@ -144,8 +144,6 @@ def _is_staff_user(user):
 
 def _maybe_sync_exam_sets_on_read(branch, user, force_refresh=False):
     allowed_force_refresh = bool(force_refresh and _is_staff_user(user))
-    if not allowed_force_refresh and ExamSet.objects.filter(branch=branch, is_active=True).exists():
-        return {"status": "skipped", "reason": "local_data"}
     return auto_sync_dropbox_for_branch(
         branch=branch,
         sync_objective=False,
