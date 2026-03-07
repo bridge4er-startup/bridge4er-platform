@@ -1,4 +1,3 @@
-from django.conf import settings
 from django.contrib.auth import authenticate
 from django.contrib.auth import get_user_model
 from django.db.models import Q
@@ -86,10 +85,6 @@ class LoginSerializer(serializers.Serializer):
         authenticated = authenticate(username=user.username, password=password)
         if not authenticated:
             raise serializers.ValidationError("Invalid username/mobile/email or password.")
-        if bool(getattr(settings, "REQUIRE_EMAIL_VERIFICATION", False)) and not bool(
-            getattr(authenticated, "is_email_verified", True)
-        ):
-            raise serializers.ValidationError("Please verify your email before logging in.")
 
         attrs["user"] = authenticated
         return attrs

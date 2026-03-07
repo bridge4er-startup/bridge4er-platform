@@ -28,19 +28,6 @@ export const registerStudent = async (payload) => {
   return postAuth("accounts/auth/register/", payload);
 };
 
-export const verifyStudentEmail = async (token) => {
-  const res = await API.get("accounts/auth/email/verify/", {
-    params: { token },
-  });
-  return res.data;
-};
-
-export const resendStudentVerification = async (identifier) => {
-  return postAuth("accounts/auth/email/resend-verification/", {
-    identifier,
-  });
-};
-
 export const loginStudent = async (identifier, password) => {
   return postAuth("accounts/auth/login/", {
     identifier,

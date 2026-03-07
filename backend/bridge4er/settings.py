@@ -222,7 +222,6 @@ SECURE_REFERRER_POLICY = os.getenv("SECURE_REFERRER_POLICY", "same-origin")
 X_FRAME_OPTIONS = os.getenv("X_FRAME_OPTIONS", "DENY")
 
 # App behavior toggles
-REQUIRE_EMAIL_VERIFICATION = env_bool("REQUIRE_EMAIL_VERIFICATION", False)
 ALLOW_INSECURE_PAYMENT_VERIFICATION = env_bool("ALLOW_INSECURE_PAYMENT_VERIFICATION", DEBUG)
 ENABLE_DEMO_EXAM_SETS = env_bool("ENABLE_DEMO_EXAM_SETS", DEBUG)
 DROPBOX_AUTO_SYNC_COOLDOWN_SECONDS = env_int("DROPBOX_AUTO_SYNC_COOLDOWN_SECONDS", 600, minimum=60)
@@ -256,7 +255,7 @@ ESEWA_SECRET_KEY = os.getenv("ESEWA_SECRET_KEY", "")
 KHALTI_ENV = os.getenv("KHALTI_ENV", "sandbox").strip().lower()
 KHALTI_SECRET_KEY = os.getenv("KHALTI_SECRET_KEY", "")
 
-# Email settings for verification and notifications
+# Email settings for notifications
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "bridge4er@gmail.com")
 ADMIN_ALERT_EMAIL = os.getenv("ADMIN_ALERT_EMAIL", "")
 EMAIL_HOST_PASSWORD = (

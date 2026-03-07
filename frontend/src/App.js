@@ -5,7 +5,6 @@ import MCQExamPage from "./pages/MCQExamPage";
 import SubjectiveExamPage from "./pages/SubjectiveExamPage";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
-import VerifyEmailPage from "./pages/VerifyEmailPage";
 import ProfileAnalyticsPage from "./pages/ProfileAnalyticsPage";
 import AdminDashboard from "./pages/AdminDashboard";
 import PaymentResultPage from "./pages/PaymentResultPage";
@@ -51,7 +50,6 @@ function App() {
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
-        <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/payment/result" element={<PaymentResultPage />} />
         <Route
           path="/profile"

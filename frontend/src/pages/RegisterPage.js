@@ -61,20 +61,18 @@ export default function RegisterPage() {
         password: form.password,
       };
       const response = await register(payload);
-      if (response?.verification_required) {
-        if (response?.verification_email_sent === false) {
-          toast.error(response?.verification_email_error || "Verification email could not be sent. Use resend on login page.");
-        } else {
-          toast.success("Enrollment complete. Please verify your email from the link sent to you.");
-        }
-        navigate("/login", { replace: true, state: { notice: "Verify your email before login." } });
+      setBranchFromProfile(form.field_of_study);
+      toast.success(response?.message || "Enrollment complete.");
+
+      if (response?.tokens?.access || response?.tokens?.refresh) {
+        navigate("/", { replace: true });
         return;
       }
 
-      setBranchFromProfile(form.field_of_study);
-      const notice = response?.message || "Enrollment complete. Please login.";
-      toast.success(notice);
-      navigate("/login", { replace: true, state: { notice } });
+      navigate("/login", {
+        replace: true,
+        state: { notice: "Enrollment complete. Please login." },
+      });
     } catch (error) {
       const apiErrors = error?.response?.data || {};
       const firstError =
