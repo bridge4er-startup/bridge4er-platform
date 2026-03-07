@@ -49,9 +49,13 @@ header {
     gap: 12px;
 }
 
-.logo i {
-    font-size: 2.2rem;
-    color: var(--secondary-color);
+.logo-image {
+    width: 52px;
+    height: 52px;
+    border-radius: 10px;
+    object-fit: contain;
+    padding: 4px;
+    background: rgba(255, 255, 255, 0.15);
 }
 
 .logo h1 {
@@ -4569,8 +4573,9 @@ footer {
         font-size: 1.3rem;
     }
     
-    .logo i {
-        font-size: 1.8rem;
+    .logo-image {
+        width: 44px;
+        height: 44px;
     }
     
     .field-dropdown-btn {

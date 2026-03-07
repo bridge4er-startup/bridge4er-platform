@@ -34,7 +34,15 @@ export default function Header() {
     <header className="main-header">
       <div className="container header-container">
         <div className="logo">
-          <i className="fas fa-university"></i>
+          <img
+            className="logo-image"
+            src={`${process.env.PUBLIC_URL}/bridge4er-logo.png`}
+            alt="Bridge4ER logo"
+            onError={(event) => {
+              event.currentTarget.onerror = null;
+              event.currentTarget.src = `${process.env.PUBLIC_URL}/logo192.png`;
+            }}
+          />
           <div>
             <h1>Bridge4ER Platform</h1>
             <span>Engineering study resources, library, and exam hall</span>
