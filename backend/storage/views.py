@@ -56,13 +56,13 @@ def _as_positive_int(value, default, minimum=1):
 
 
 FILE_LIST_CACHE_TTL_SECONDS = _as_positive_int(
-    getattr(settings, "DROPBOX_LIST_CACHE_TTL_SECONDS", 1),
-    1,
-    minimum=1,
+    getattr(settings, "DROPBOX_LIST_CACHE_TTL_SECONDS", 3600),
+    3600,
+    minimum=60,
 )
 FILE_LIST_CACHE_STALE_TTL_SECONDS = _as_positive_int(
-    getattr(settings, "DROPBOX_LIST_CACHE_STALE_TTL_SECONDS", 30),
-    30,
+    getattr(settings, "DROPBOX_LIST_CACHE_STALE_TTL_SECONDS", 86400),
+    86400,
     minimum=FILE_LIST_CACHE_TTL_SECONDS,
 )
 FILE_LIST_METADATA_SYNC_COOLDOWN_SECONDS = _as_positive_int(
@@ -624,6 +624,7 @@ class ListFilesView(APIView):
         refresh = _as_bool(request.GET.get("refresh"), False)
         if not is_staff:
             include_hidden = False
+            refresh = False
 
         try:
             if not _can_access_content_type(request.user, content_type):

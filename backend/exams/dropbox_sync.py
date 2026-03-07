@@ -603,7 +603,7 @@ def auto_sync_dropbox_for_branch(
     key_hash = hashlib.sha1(key_seed.encode("utf-8")).hexdigest()
     cache_key = f"{_AUTO_SYNC_KEY_PREFIX}:{key_hash}"
     sig_key = f"{cache_key}:signature"
-    cooldown = max(1, int(cooldown_seconds))
+    cooldown = max(60, int(cooldown_seconds))
     now = time.time()
 
     # Avoid repeated expensive Dropbox scans on read-heavy endpoints.
