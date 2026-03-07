@@ -1,4 +1,9 @@
+import secrets
+from urllib.parse import quote
+
+from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.mail import send_mail
 from django.db import transaction
 from django.db.models import Avg
 from django.utils import timezone
@@ -28,6 +33,40 @@ def _build_tokens_for_user(user):
     }
 
 
+def _generate_email_verification_token():
+    return secrets.token_urlsafe(48)
+
+
+def _verification_link(token):
+    frontend_base = str(getattr(settings, "FRONTEND_PUBLIC_URL", "") or "").rstrip("/")
+    if frontend_base:
+        return f"{frontend_base}/verify-email?token={quote(token)}"
+    backend_base = str(getattr(settings, "BACKEND_PUBLIC_URL", "") or "").rstrip("/")
+    return f"{backend_base}/api/accounts/auth/email/verify/?token={quote(token)}"
+
+
+def _send_verification_email(user):
+    token = _generate_email_verification_token()
+    user.email_verification_token = token
+    user.email_verification_sent_at = timezone.now()
+    user.is_email_verified = False
+    user.save(update_fields=["email_verification_token", "email_verification_sent_at", "is_email_verified"])
+
+    verify_url = _verification_link(token)
+    send_mail(
+        subject="Bridge4ER Email Verification",
+        message=(
+            f"Hi {user.full_name or user.username},\n\n"
+            "Please verify your Bridge4ER email by opening the link below:\n"
+            f"{verify_url}\n\n"
+            "If you did not create this account, please ignore this email."
+        ),
+        from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "no-reply@bridge4er.local"),
+        recipient_list=[user.email],
+        fail_silently=False,
+    )
+
+
 class RegisterView(APIView):
     permission_classes = [AllowAny]
 
@@ -46,14 +85,23 @@ class RegisterView(APIView):
                 field_of_study=data["field_of_study"],
                 is_student=True,
                 is_mobile_verified=False,
+                is_email_verified=False,
             )
 
-        tokens = _build_tokens_for_user(user)
+        email_sent = True
+        email_error = ""
+        try:
+            _send_verification_email(user)
+        except Exception as exc:
+            email_sent = False
+            email_error = str(exc)
+
         return Response(
             {
-                "message": "Registration successful.",
-                "tokens": tokens,
-                "user": UserSerializer(user).data,
+                "message": "Registration successful. Please verify your email before login.",
+                "verification_required": True,
+                "verification_email_sent": email_sent,
+                "verification_email_error": email_error,
             },
             status=status.HTTP_201_CREATED,
         )
@@ -96,3 +144,49 @@ class ProfileView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(UserSerializer(request.user).data)
+
+
+class VerifyEmailView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        token = str(request.query_params.get("token") or "").strip()
+        if not token:
+            return Response({"error": "Verification token is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = User.objects.filter(email_verification_token=token).first()
+        if not user:
+            return Response({"error": "Invalid or expired verification token."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.is_email_verified = True
+        user.email_verification_token = ""
+        user.save(update_fields=["is_email_verified", "email_verification_token"])
+        return Response({"message": "Email verified successfully."}, status=status.HTTP_200_OK)
+
+
+class ResendEmailVerificationView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        identifier = str(request.data.get("identifier") or "").strip()
+        if not identifier:
+            return Response({"error": "identifier is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        mobile_candidate = "".join(ch for ch in identifier if ch.isdigit())
+        user = (
+            User.objects.filter(email__iexact=identifier).first()
+            or User.objects.filter(username__iexact=identifier).first()
+            or User.objects.filter(mobile_number=identifier).first()
+            or User.objects.filter(mobile_number=mobile_candidate).first()
+        )
+        if not user:
+            return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+        if bool(getattr(user, "is_email_verified", False)):
+            return Response({"message": "Email is already verified."}, status=status.HTTP_200_OK)
+
+        try:
+            _send_verification_email(user)
+        except Exception as exc:
+            return Response({"error": f"Failed to send verification email: {exc}"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        return Response({"message": "Verification email sent."}, status=status.HTTP_200_OK)

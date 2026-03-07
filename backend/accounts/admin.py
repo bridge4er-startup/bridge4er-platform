@@ -57,6 +57,9 @@ class CustomUserAdmin(UserAdmin):
                     "full_name",
                     "mobile_number",
                     "field_of_study",
+                    "is_email_verified",
+                    "email_verification_token",
+                    "email_verification_sent_at",
                     "is_mobile_verified",
                     "is_student",
                 )
@@ -80,9 +83,11 @@ class CustomUserAdmin(UserAdmin):
         "mobile_number",
         "field_of_study",
         "is_staff",
+        "is_email_verified",
         "is_mobile_verified",
     )
     search_fields = ("username", "email", "full_name", "mobile_number")
+    readonly_fields = ("email_verification_sent_at",)
     actions = ("reset_selected_user_passwords",)
 
     @admin.action(description="Reset selected user passwords (temporary)")

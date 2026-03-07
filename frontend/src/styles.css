@@ -5070,9 +5070,7 @@ footer {
 .auth-hero {
   padding: 2.4rem;
   color: #fff;
-  background-image:
-    linear-gradient(145deg, rgba(15, 118, 110, 0.82), rgba(2, 132, 199, 0.7)),
-    url("./assets/forbridge4er.png");
+  background-image: url("./assets/forbridge4er.png");
   background-size: cover;
   background-position: center;
 }
@@ -5080,6 +5078,26 @@ footer {
 .auth-hero h1 {
   font-size: 2rem;
   margin-bottom: 0.6rem;
+  text-shadow: 0 2px 6px rgba(2, 6, 23, 0.45);
+}
+
+.auth-hero p {
+  text-shadow: 0 1px 4px rgba(2, 6, 23, 0.45);
+}
+
+.auth-inline-btn {
+  background: none;
+  border: 0;
+  color: #0f766e;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.auth-inline-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 
 .auth-form {

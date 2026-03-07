@@ -5,6 +5,20 @@ export const registerStudent = async (payload) => {
   return res.data;
 };
 
+export const verifyStudentEmail = async (token) => {
+  const res = await API.get("accounts/auth/email/verify/", {
+    params: { token },
+  });
+  return res.data;
+};
+
+export const resendStudentVerification = async (identifier) => {
+  const res = await API.post("accounts/auth/email/resend-verification/", {
+    identifier,
+  });
+  return res.data;
+};
+
 export const loginStudent = async (identifier, password) => {
   const res = await API.post("accounts/auth/login/", {
     identifier,

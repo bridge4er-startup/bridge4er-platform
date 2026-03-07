@@ -15,6 +15,9 @@ class User(AbstractUser):
     is_student = models.BooleanField(default=True)
     full_name = models.CharField(max_length=200, blank=True, default="")
     mobile_number = models.CharField(max_length=20, unique=True, null=True, blank=True)
+    is_email_verified = models.BooleanField(default=True)
+    email_verification_token = models.CharField(max_length=128, blank=True, default="", db_index=True)
+    email_verification_sent_at = models.DateTimeField(null=True, blank=True)
     field_of_study = models.CharField(
         max_length=80,
         choices=FIELD_OF_STUDY_CHOICES,

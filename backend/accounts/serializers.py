@@ -17,6 +17,7 @@ class UserSerializer(serializers.ModelSerializer):
             "mobile_number",
             "username",
             "email",
+            "is_email_verified",
             "field_of_study",
             "is_mobile_verified",
             "is_staff",
@@ -34,11 +35,18 @@ class RegisterSerializer(serializers.Serializer):
 
     def validate_mobile_number(self, value):
         cleaned = "".join(ch for ch in value if ch.isdigit())
-        if len(cleaned) < 7 or len(cleaned) > 15:
-            raise serializers.ValidationError("Enter a valid mobile number.")
+        if len(cleaned) != 10:
+            raise serializers.ValidationError("Mobile number must be exactly 10 digits.")
         if User.objects.filter(mobile_number=cleaned).exists():
             raise serializers.ValidationError("This mobile number is already enrolled.")
         return cleaned
+
+    def validate_full_name(self, value):
+        normalized = str(value or "").strip()
+        parts = [item.strip() for item in normalized.split(",") if item.strip()]
+        if len(parts) < 2:
+            raise serializers.ValidationError("Enter at least two names separated by a comma.")
+        return normalized
 
     def validate_username(self, value):
         normalized = value.strip()
@@ -74,6 +82,8 @@ class LoginSerializer(serializers.Serializer):
         authenticated = authenticate(username=user.username, password=password)
         if not authenticated:
             raise serializers.ValidationError("Invalid username/mobile or password.")
+        if not bool(getattr(authenticated, "is_email_verified", True)):
+            raise serializers.ValidationError("Please verify your email before logging in.")
 
         attrs["user"] = authenticated
         return attrs

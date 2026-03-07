@@ -41,8 +41,10 @@ export function AuthProvider({ children }) {
 
   const register = async (payload) => {
     const response = await registerStudent(payload);
-    storeTokens(response.tokens || {});
-    setUser(response.user || null);
+    if (response.tokens?.access || response.tokens?.refresh) {
+      storeTokens(response.tokens || {});
+      setUser(response.user || null);
+    }
     return response;
   };
 
