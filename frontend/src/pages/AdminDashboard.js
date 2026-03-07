@@ -25,6 +25,18 @@ const MANAGED_CONTENT_TYPES = [
   "take_exam_mcq",
   "take_exam_subjective",
 ];
+const BULK_SYNC_RESOURCE_CONTENT_TYPES = [
+  "notice",
+  "syllabus",
+  "old_question",
+  "subjective",
+];
+const BULK_SYNC_SCOPE_LABELS = {
+  objective: "Objective MCQ Bank",
+  exam_sets: "Exam Hall Sets",
+  resources: "Resource Files",
+  all: "All Dropbox Content",
+};
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState("upload-files"); // upload-files, manage-files, manage-mcqs, bulk-upload-mcqs, review-subjective
@@ -64,7 +76,7 @@ export default function AdminDashboard() {
   const [creatingNewChapterUpload, setCreatingNewChapterUpload] = useState(false);
   const [newBulkChapterName, setNewBulkChapterName] = useState("");
   const [newBulkChapterNote, setNewBulkChapterNote] = useState("");
-  const [syncingDropbox, setSyncingDropbox] = useState(false);
+  const [syncingDropboxScope, setSyncingDropboxScope] = useState("");
   const [quickDropboxPath, setQuickDropboxPath] = useState("");
   const [importingQuickDropboxPath, setImportingQuickDropboxPath] = useState(false);
 
@@ -387,21 +399,102 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleSyncDropboxQuestionBank = async () => {
-    setSyncingDropbox(true);
+  const summarizeStorageSyncRows = (rows) => {
+    const fileCount = rows.reduce((total, row) => total + Number(row?.file_count || 0), 0);
+    const folderCount = rows.reduce((total, row) => total + Number(row?.folder_count || 0), 0);
+    return `${fileCount} files, ${folderCount} folders`;
+  };
+
+  const handleSyncDropboxQuestionBank = async (scope = "all") => {
+    if (syncingDropboxScope) {
+      return;
+    }
+
+    setSyncingDropboxScope(scope);
     try {
-      const result = await mcqService.syncDropboxQuestionBank(branch, true, true, true);
-      const objectiveImported = result?.objective?.imported_questions || 0;
-      const mcqSetImported = result?.exam_sets?.mcq?.imported_questions || 0;
-      const subjectiveSetImported = result?.exam_sets?.subjective?.imported_questions || 0;
-      const errors = Array.isArray(result?.errors) ? result.errors : [];
-      if (errors.length > 0) {
-        const details = errors.map((row) => `${row.scope}: ${row.error}`).join(" | ");
-        toast.error(`Dropbox sync partially failed. ${details}`);
-      } else {
-        toast.success(
-          `Dropbox sync complete. Objective: ${objectiveImported}, MCQ sets: ${mcqSetImported}, Subjective sets: ${subjectiveSetImported}`
+      let objectiveImported = 0;
+      let mcqSetImported = 0;
+      let subjectiveSetImported = 0;
+      let syncedStorageRows = [];
+      const errors = [];
+
+      const collectExamSyncResult = (result) => {
+        objectiveImported += Number(result?.objective?.imported_questions || 0);
+        mcqSetImported += Number(result?.exam_sets?.mcq?.imported_questions || 0);
+        subjectiveSetImported += Number(result?.exam_sets?.subjective?.imported_questions || 0);
+        const resultErrors = Array.isArray(result?.errors) ? result.errors : [];
+        resultErrors.forEach((row) => {
+          errors.push(`${row.scope}: ${row.error}`);
+        });
+        const storageRows = Array.isArray(result?.storage?.synced) ? result.storage.synced : [];
+        syncedStorageRows = syncedStorageRows.concat(storageRows);
+        const storageErrors = Array.isArray(result?.storage?.errors) ? result.storage.errors : [];
+        storageErrors.forEach((row) => {
+          errors.push(`storage-${row.content_type}: ${row.error}`);
+        });
+      };
+
+      const collectStorageSyncResult = (result) => {
+        const syncedRows = Array.isArray(result?.synced) ? result.synced : [];
+        syncedStorageRows = syncedStorageRows.concat(syncedRows);
+        const syncErrors = Array.isArray(result?.errors) ? result.errors : [];
+        syncErrors.forEach((row) => {
+          errors.push(`storage-${row.content_type}: ${row.error}`);
+        });
+      };
+
+      if (scope === "objective" || scope === "all") {
+        const objectiveResult = await mcqService.syncDropboxQuestionBank(
+          branch,
+          true,
+          true,
+          false
         );
+        collectExamSyncResult(objectiveResult);
+      }
+
+      if (scope === "exam_sets" || scope === "all") {
+        const examResult = await mcqService.syncDropboxQuestionBank(
+          branch,
+          true,
+          false,
+          true
+        );
+        collectExamSyncResult(examResult);
+      }
+
+      if (scope === "resources" || scope === "all") {
+        const resourceResult = await fileService.syncContent(
+          branch,
+          BULK_SYNC_RESOURCE_CONTENT_TYPES,
+          true
+        );
+        collectStorageSyncResult(resourceResult);
+      }
+
+      if ((scope === "objective" || scope === "all") && subjects.length > 0) {
+        await handleLoadSubjects();
+      }
+
+      const summaryParts = [];
+      if (scope === "objective" || scope === "all") {
+        summaryParts.push(`Objective imported: ${objectiveImported}`);
+      }
+      if (scope === "exam_sets" || scope === "all") {
+        summaryParts.push(`MCQ set questions imported: ${mcqSetImported}`);
+        summaryParts.push(`Subjective set questions imported: ${subjectiveSetImported}`);
+      }
+      if (scope === "resources" || scope === "all" || syncedStorageRows.length > 0) {
+        summaryParts.push(`Indexed for management: ${summarizeStorageSyncRows(syncedStorageRows)}`);
+      }
+
+      if (errors.length > 0) {
+        toast.error(`Sync partially failed. ${errors.join(" | ")}`);
+      }
+      if (summaryParts.length > 0) {
+        toast.success(`${BULK_SYNC_SCOPE_LABELS[scope] || "Dropbox"} sync complete. ${summaryParts.join(" | ")}`);
+      } else if (errors.length === 0) {
+        toast.success(`${BULK_SYNC_SCOPE_LABELS[scope] || "Dropbox"} sync complete.`);
       }
     } catch (error) {
       const errorRows = error?.response?.data?.errors;
@@ -412,7 +505,7 @@ export default function AdminDashboard() {
       toast.error(message);
       console.error(error);
     } finally {
-      setSyncingDropbox(false);
+      setSyncingDropboxScope("");
     }
   };
 
@@ -2255,13 +2348,39 @@ export default function AdminDashboard() {
               option_c, option_d, correct_option, explanation.
             </p>
             <div style={{ marginBottom: "1rem" }}>
-              <button
-                onClick={handleSyncDropboxQuestionBank}
-                disabled={syncingDropbox}
-                className="btn btn-secondary"
-              >
-                {syncingDropbox ? "Syncing Dropbox..." : "Sync All Dropbox Question Files"}
-              </button>
+              <div style={{ marginBottom: "0.6rem", color: "#475569", fontSize: "0.92rem" }}>
+                Sync by field. New and old Dropbox files/folders will be indexed and visible on website after sync.
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+                <button
+                  onClick={() => handleSyncDropboxQuestionBank("objective")}
+                  disabled={!!syncingDropboxScope}
+                  className="btn btn-secondary"
+                >
+                  {syncingDropboxScope === "objective" ? "Syncing..." : "Sync Objective MCQ Bank"}
+                </button>
+                <button
+                  onClick={() => handleSyncDropboxQuestionBank("exam_sets")}
+                  disabled={!!syncingDropboxScope}
+                  className="btn btn-secondary"
+                >
+                  {syncingDropboxScope === "exam_sets" ? "Syncing..." : "Sync Exam Hall Sets"}
+                </button>
+                <button
+                  onClick={() => handleSyncDropboxQuestionBank("resources")}
+                  disabled={!!syncingDropboxScope}
+                  className="btn btn-secondary"
+                >
+                  {syncingDropboxScope === "resources" ? "Syncing..." : "Sync Resource Files"}
+                </button>
+                <button
+                  onClick={() => handleSyncDropboxQuestionBank("all")}
+                  disabled={!!syncingDropboxScope}
+                  className="btn btn-secondary"
+                >
+                  {syncingDropboxScope === "all" ? "Syncing..." : "Sync All Dropbox Content"}
+                </button>
+              </div>
             </div>
 
             {subjects.length === 0 && (
