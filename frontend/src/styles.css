@@ -60,6 +60,7 @@ header {
     width: 6.15rem;
     height: 6.15rem;
     flex: 0 0 auto;
+    position: relative;
     overflow: visible;
     background: transparent;
     border: 0;
@@ -89,13 +90,33 @@ header {
     line-height: 1.1;
 }
 
-.logo span {
+.logo-tagline {
     font-size: 1rem;
     opacity: 0.9;
     font-weight: 400;
     display: block;
     line-height: 1.2;
     margin-top: 0.2rem;
+}
+
+.logo .logo-company-label {
+    position: absolute;
+    left: 50%;
+    bottom: 0.22rem;
+    transform: translateX(-50%);
+    width: calc(100% - 0.45rem);
+    padding: 0.08rem 0.2rem;
+    border-radius: 999px;
+    background: rgba(2, 6, 23, 0.5);
+    color: #ffffff;
+    font-size: clamp(0.42rem, 0.7vw, 0.56rem);
+    line-height: 1;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* Field Selector */
@@ -3340,6 +3361,15 @@ footer {
     color: #aaa;
 }
 
+.footer-static-copy {
+    margin-top: 0;
+    line-height: 1.8;
+}
+
+.footer-static-copy p + p {
+    margin-top: 0.35rem;
+}
+
 .footer-report-btn {
     padding: 0.45rem 0.9rem;
 }
@@ -3999,8 +4029,13 @@ footer {
         font-size: 1.4rem;
     }
     
-    .logo span {
+    .logo-tagline {
         font-size: 0.9rem;
+    }
+    
+    .logo .logo-company-label {
+        font-size: 0.5rem;
+        bottom: 0.2rem;
     }
     
     /* FIXED: Field selector - always visible */
@@ -4613,6 +4648,10 @@ footer {
         height: 4.95rem;
     }
     
+    .logo .logo-company-label {
+        font-size: 0.45rem;
+    }
+    
     .field-dropdown-btn {
         padding: 0.7rem;
         font-size: 0.85rem;
@@ -5144,6 +5183,24 @@ footer {
   outline: none;
   border-color: #0ea5e9;
   box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.15);
+}
+
+.robot-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: 0.35rem;
+  color: #1f2937;
+  font-size: 0.94rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.robot-check input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: #0f766e;
+  cursor: pointer;
 }
 
 .auth-submit-btn {

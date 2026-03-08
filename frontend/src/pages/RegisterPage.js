@@ -17,6 +17,7 @@ export default function RegisterPage() {
     field_of_study: branches[0],
     password: "",
     confirm_password: "",
+    robot_verified: false,
   });
   const [submitting, setSubmitting] = useState(false);
 
@@ -47,6 +48,10 @@ export default function RegisterPage() {
     }
     if (form.password !== form.confirm_password) {
       toast.error("Password and re-entered password do not match.");
+      return;
+    }
+    if (!form.robot_verified) {
+      toast.error('Please tick "I am not a robot" before enrolling.');
       return;
     }
 
@@ -157,6 +162,16 @@ export default function RegisterPage() {
             onChange={(e) => setField("confirm_password", e.target.value)}
             placeholder="Re-enter password"
           />
+
+          <label htmlFor="robot_verified" className="robot-check">
+            <input
+              id="robot_verified"
+              type="checkbox"
+              checked={form.robot_verified}
+              onChange={(e) => setField("robot_verified", e.target.checked)}
+            />
+            <span>I am not a robot</span>
+          </label>
 
           <button type="submit" className="btn btn-primary auth-submit-btn" disabled={submitting}>
             {submitting ? "Enrolling..." : "Enroll"}
