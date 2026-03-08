@@ -117,7 +117,7 @@ class ExamSetAdmin(admin.ModelAdmin):
     list_filter = ("branch", "exam_type", "is_free", "is_active", "managed_by_sync")
     search_fields = ("name", "branch", "source_file_path")
     ordering = ("branch", "exam_type", "display_order", "name", "id")
-    list_editable = ("name", "display_order", "is_active")
+    list_editable = ("name", "display_order", "is_free", "fee", "duration_seconds", "is_active")
     inlines = [ExamQuestionInline]
 
     def _source_meta(self, obj):

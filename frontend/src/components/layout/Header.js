@@ -8,6 +8,8 @@ export default function Header() {
   const { branch, setBranch, branches, setBranchFromProfile } = useBranch();
   const { user, isAuthenticated, isAdmin, logout } = useAuth();
   const [open, setOpen] = useState(false);
+  const lockedField = String(user?.field_of_study || "").trim();
+  const isFieldSelectionLocked = isAuthenticated && branches.includes(lockedField);
 
   useEffect(() => {
     if (isAuthenticated && user?.field_of_study) {
@@ -55,10 +57,14 @@ export default function Header() {
           <span className="field-label">Field:</span>
           <div className="field-dropdown">
             <button
-              className="field-dropdown-btn"
+              className={`field-dropdown-btn ${isFieldSelectionLocked ? "locked" : ""}`}
               aria-expanded={open}
-              onClick={() => setOpen((prev) => !prev)}
+              onClick={() => {
+                if (isFieldSelectionLocked) return;
+                setOpen((prev) => !prev);
+              }}
               type="button"
+              disabled={isFieldSelectionLocked}
             >
               <span>
                 <i className={fieldIcon[branch] || "fas fa-building"}></i> {branch}
@@ -66,19 +72,24 @@ export default function Header() {
               <i className="fas fa-chevron-down"></i>
             </button>
             <div className={`field-dropdown-content ${open ? "show" : ""}`}>
-              {branches.map((field) => (
+              {branches.map((field) => {
+                const isLockedOption = isFieldSelectionLocked && field !== lockedField;
+                return (
                 <button
                   key={field}
                   type="button"
-                  className="field-option"
+                  className={`field-option ${isLockedOption ? "locked" : ""}`}
+                  disabled={isLockedOption}
                   onClick={() => {
+                    if (isLockedOption) return;
                     setBranch(field);
                     setOpen(false);
                   }}
                 >
                   <i className={fieldIcon[field] || "fas fa-building"}></i> {field}
                 </button>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>

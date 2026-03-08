@@ -312,7 +312,11 @@ def build_exam_set_update_payload(
     paper = _to_text(merged_exam_info.get("paper"))
     date = _to_text(merged_exam_info.get("date"))
     full_marks = _to_text(merged_exam_info.get("full_marks"))
-    duration_seconds = parse_duration_seconds(merged_exam_info.get("time"), default_seconds=3600)
+    default_duration_seconds = 10800 if exam_type == "subjective" else 3600
+    duration_seconds = parse_duration_seconds(
+        merged_exam_info.get("time"),
+        default_seconds=default_duration_seconds,
+    )
 
     is_paid = _to_bool(merged_exam_info.get("ispaid"), default=True)
     fee = parse_price_value(merged_exam_info.get("price"), default_value=Decimal("50"))

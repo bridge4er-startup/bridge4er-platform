@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { getMySubjectiveSubmissions, startExamSet, uploadSubjective } from "../services/examService";
 import toast from "react-hot-toast";
@@ -23,6 +23,20 @@ function formatSubmissionStatus(value = "") {
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 }
 
+function formatTimer(timeLeft = 0) {
+  const absTime = Math.abs(Number(timeLeft || 0));
+  const hours = Math.floor(absTime / 3600);
+  const minutes = Math.floor((absTime % 3600) / 60);
+  const seconds = absTime % 60;
+  const prefix = timeLeft < 0 ? "-" : "";
+  const paddedMinutes = String(minutes).padStart(2, "0");
+  const paddedSeconds = String(seconds).padStart(2, "0");
+  if (hours > 0) {
+    return `${prefix}${hours}:${paddedMinutes}:${paddedSeconds}`;
+  }
+  return `${prefix}${minutes}:${paddedSeconds}`;
+}
+
 export default function SubjectiveExamPage() {
   const { branch, setName: setId } = useParams();
   const decodedBranch = decodeURIComponent(branch || "");
@@ -34,6 +48,10 @@ export default function SubjectiveExamPage() {
   const [mobile, setMobile] = useState("");
   const [submissions, setSubmissions] = useState([]);
   const [loadingExam, setLoadingExam] = useState(true);
+  const [timeLeft, setTimeLeft] = useState(null);
+  const [initialDuration, setInitialDuration] = useState(10800);
+  const [isSubmissionWindowClosed, setIsSubmissionWindowClosed] = useState(false);
+  const timerRef = useRef(null);
 
   useEffect(() => {
     async function load() {
@@ -41,6 +59,11 @@ export default function SubjectiveExamPage() {
       try {
         const data = await startExamSet(numericSetId);
         setExam(data);
+        const durationFromSet = Number(data?.duration_seconds || 0);
+        const resolvedDuration = Number.isFinite(durationFromSet) && durationFromSet > 0 ? durationFromSet : 10800;
+        setInitialDuration(resolvedDuration);
+        setTimeLeft(resolvedDuration);
+        setIsSubmissionWindowClosed(false);
       } catch (e) {
         setExam(null);
         toast.error(e?.response?.data?.error || "Failed to load exam");
@@ -49,6 +72,7 @@ export default function SubjectiveExamPage() {
       }
     }
     load();
+    return () => clearInterval(timerRef.current);
   }, [numericSetId]);
 
   useEffect(() => {
@@ -63,7 +87,27 @@ export default function SubjectiveExamPage() {
     loadSubmissions();
   }, [numericSetId]);
 
+  useEffect(() => {
+    if (timeLeft == null || isSubmissionWindowClosed || !exam) return undefined;
+
+    const grace = Number(exam.grace_seconds || 0);
+    if (timeLeft <= -grace) {
+      setIsSubmissionWindowClosed(true);
+      return undefined;
+    }
+
+    timerRef.current = setInterval(() => {
+      setTimeLeft((value) => (value == null ? value : value - 1));
+    }, 1000);
+
+    return () => clearInterval(timerRef.current);
+  }, [timeLeft, exam, isSubmissionWindowClosed]);
+
   const submit = async () => {
+    if (isSubmissionWindowClosed) {
+      toast.error("Submission time window has ended.");
+      return;
+    }
     if (!file) return toast.error("Select a PDF to upload");
     const isPdfFile = /\.pdf$/i.test(String(file.name || "")) || String(file.type || "").toLowerCase() === "application/pdf";
     if (!isPdfFile) return toast.error("Only PDF files are allowed.");
@@ -122,6 +166,7 @@ export default function SubjectiveExamPage() {
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
+  const timerLabel = formatTimer(timeLeft || 0);
 
   if (loadingExam) {
     return <div className="container" style={{ paddingTop: 20 }}>Loading exam...</div>;
@@ -156,9 +201,22 @@ export default function SubjectiveExamPage() {
 
           <div className="subjective-paper-meta">
             <span><strong>Date:</strong> {formatNepalDate(new Date())}</span>
-            <span><strong>Time:</strong> {formatDuration(exam?.duration_seconds)}</span>
+            <span><strong>Time:</strong> {formatDuration(initialDuration)}</span>
             <span><strong>Subject:</strong> {decodedBranch}</span>
             <span><strong>Full Marks:</strong> {totalMarks}</span>
+          </div>
+
+          <div className="subjective-live-timer-wrap">
+            <div className={`exam-timer-large ${timeLeft < 0 ? "negative" : ""}`}>
+              {timeLeft < 0 ? `Overtime ${timerLabel}` : timerLabel}
+            </div>
+            {isSubmissionWindowClosed ? (
+              <p className="subjective-live-timer-note">Submission window closed.</p>
+            ) : (
+              <p className="subjective-live-timer-note">
+                Timer runs with grace period. Default duration is 3 hours unless changed by admin.
+              </p>
+            )}
           </div>
 
           {instructionLines.length ? (
@@ -212,7 +270,9 @@ export default function SubjectiveExamPage() {
         </div>
 
         <div className="form-actions">
-          <button className="btn btn-primary" onClick={submit}><i className="fas fa-paper-plane"></i> Submit Exam</button>
+          <button className="btn btn-primary" onClick={submit} disabled={isSubmissionWindowClosed}>
+            <i className="fas fa-paper-plane"></i> {isSubmissionWindowClosed ? "Submission Closed" : "Submit Exam"}
+          </button>
         </div>
       </div>
 

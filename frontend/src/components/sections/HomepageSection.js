@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "re
 import API, { cachedGet } from "../../services/api";
 import toast from "react-hot-toast";
 import { useBranch } from "../../context/BranchContext";
+import { useAuth } from "../../context/AuthContext";
 import FilePreviewModal from "../common/FilePreviewModal";
 
 const FEATURE_CARDS = [
@@ -381,7 +382,10 @@ function formatMetric(value) {
 
 export default function HomepageSection({ branch = "Civil Engineering", isActive = false }) {
   const { setBranch } = useBranch();
+  const { user, isAuthenticated } = useAuth();
   const metricCardRef = useRef(null);
+  const lockedField = String(user?.field_of_study || "").trim();
+  const isFieldSelectionLocked = isAuthenticated && FEATURE_CARDS.some((card) => card.title === lockedField);
 
   const [clock, setClock] = useState(new Date());
   const [metrics, setMetrics] = useState(null);
@@ -796,6 +800,7 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
   };
 
   const handleFieldClick = (fieldName) => {
+    if (isFieldSelectionLocked && fieldName !== lockedField) return;
     setBranch(fieldName);
     window.location.hash = "homepage";
   };
@@ -827,24 +832,29 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
           <div className="home-info-card home-explore-card">
             <h3 className="homepage-info-heading">Explore By Field</h3>
             <div className="feature-grid field-feature-grid">
-              {FEATURE_CARDS.map((card) => (
-                <button
-                  key={card.title}
-                  type="button"
-                  className={`feature-card feature-card-action theme-${slugify(card.title)} ${
-                    card.title === branch ? "active" : ""
-                  }`}
-                  onClick={() => handleFieldClick(card.title)}
-                  aria-label={`Open ${card.title} homepage`}
-                >
-                  <i className={card.icon}></i>
-                  <h4>{card.title}</h4>
-                  <p className={card.descriptionClass}>{card.description}</p>
-                  <span className="feature-action-text">
-                    {card.title === branch ? "Active Field" : "Open Field Homepage"}
-                  </span>
-                </button>
-              ))}
+              {FEATURE_CARDS.map((card) => {
+                const isLockedCard = isFieldSelectionLocked && card.title !== lockedField;
+                return (
+                  <button
+                    key={card.title}
+                    type="button"
+                    className={`feature-card feature-card-action theme-${slugify(card.title)} ${
+                      card.title === branch ? "active" : ""
+                    } ${isLockedCard ? "locked" : ""}`}
+                    onClick={() => handleFieldClick(card.title)}
+                    aria-label={`Open ${card.title} homepage`}
+                    disabled={isLockedCard}
+                    aria-disabled={isLockedCard}
+                  >
+                    <i className={card.icon}></i>
+                    <h4>{card.title}</h4>
+                    <p className={card.descriptionClass}>{card.description}</p>
+                    <span className="feature-action-text">
+                      {card.title === branch ? "Active Field" : "Open Field Homepage"}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 

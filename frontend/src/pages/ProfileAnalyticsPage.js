@@ -143,7 +143,7 @@ function ScoreTrendChart({ data = [] }) {
         />
       ))}
       <text x={width / 2} y={height - 10} textAnchor="middle" fill="#0f172a" fontSize="12" fontWeight="700">
-        X-axis: Attempt Timeline
+        Attempt Timeline
       </text>
       <text
         x="16"
@@ -154,7 +154,7 @@ function ScoreTrendChart({ data = [] }) {
         fontSize="12"
         fontWeight="700"
       >
-        Y-axis: Score
+        Score
       </text>
     </svg>
   );
@@ -301,21 +301,25 @@ export default function ProfileAnalyticsPage() {
         )}
       </div>
 
-      <div className="profile-attempt-list-card" style={{ marginTop: 24 }}>
+      <div className="profile-attempt-list-card profile-subjective-review-card" style={{ marginTop: 24 }}>
         <h3>Subjective Submission Reviews</h3>
         {subjectiveSubmissions.length === 0 ? (
           <p>No subjective submissions yet.</p>
         ) : (
-          <div className="subjective-submissions-list">
+          <div className="subjective-submissions-list profile-subjective-submissions">
             {subjectiveSubmissions.map((item) => {
               const hasScore = item.score !== null && item.score !== undefined && item.score !== "";
               return (
-                <article key={item.id} className="subjective-result-card">
+                <article key={item.id} className="subjective-result-card profile-subjective-result-card">
                   <header className="subjective-result-header">
                     <div>
                       <h5>{item.exam_set_name || "Subjective Exam"}</h5>
-                      <p>Submitted: {formatNepalDateTime(item.submitted_at)}</p>
-                      <p>Reviewed: {item.reviewed_at ? formatNepalDateTime(item.reviewed_at) : "Pending review"}</p>
+                      <p className="profile-subjective-time-chip">
+                        Submitted: {formatNepalDateTime(item.submitted_at)}
+                      </p>
+                      <p className="profile-subjective-time-chip">
+                        Reviewed: {item.reviewed_at ? formatNepalDateTime(item.reviewed_at) : "Pending review"}
+                      </p>
                     </div>
                     <span className={`subjective-status-pill status-${item.status || "pending"}`}>
                       {formatSubmissionStatus(item.status)}
