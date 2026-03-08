@@ -1156,9 +1156,16 @@ class SubjectiveSubmissionFileView(APIView):
         if not submission.answer_pdf:
             return Response({"error": "PDF file not found"}, status=status.HTTP_404_NOT_FOUND)
 
+        download_requested = str(request.query_params.get("download", "")).strip().lower() in {"1", "true", "yes"}
         filename = str(submission.answer_pdf.name or f"submission-{submission.id}.pdf").split("/")[-1]
-        response = FileResponse(submission.answer_pdf.open("rb"), content_type="application/pdf")
-        response["Content-Disposition"] = f'inline; filename="{filename}"'
+        try:
+            file_handle = submission.answer_pdf.open("rb")
+        except FileNotFoundError:
+            return Response({"error": "PDF file not found on server"}, status=status.HTTP_404_NOT_FOUND)
+
+        response = FileResponse(file_handle, content_type="application/pdf")
+        content_disposition = "attachment" if download_requested else "inline"
+        response["Content-Disposition"] = f'{content_disposition}; filename="{filename}"'
         response["Cache-Control"] = "private, max-age=300"
         return response
 

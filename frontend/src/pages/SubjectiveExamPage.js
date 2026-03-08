@@ -65,6 +65,9 @@ export default function SubjectiveExamPage() {
 
   const submit = async () => {
     if (!file) return toast.error("Select a PDF to upload");
+    const isPdfFile = /\.pdf$/i.test(String(file.name || "")) || String(file.type || "").toLowerCase() === "application/pdf";
+    if (!isPdfFile) return toast.error("Only PDF files are allowed.");
+    if (Number(file.size || 0) > 10 * 1024 * 1024) return toast.error("PDF size must be 10MB or less.");
     if (!mobile.trim()) return toast.error("Enter mobile number");
     const fd = new FormData();
     fd.append("file", file);

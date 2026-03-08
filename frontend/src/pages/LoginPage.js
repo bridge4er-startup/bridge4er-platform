@@ -43,7 +43,7 @@ export default function LoginPage() {
 
   return (
     <div className="auth-page auth-clean-hero">
-      <div className="auth-panel">
+      <div className="auth-panel auth-panel-login">
         <div className="auth-hero" aria-hidden="true" />
         <form className="auth-form" onSubmit={onSubmit}>
           <h2>Student Login</h2>

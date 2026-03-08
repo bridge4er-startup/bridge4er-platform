@@ -996,6 +996,30 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleDownloadSubjectivePdf = async (submission) => {
+    const fileUrl = String(submission?.file_url || "").trim();
+    if (!fileUrl) {
+      toast.error("No PDF file available.");
+      return;
+    }
+
+    const downloadUrl = fileUrl.includes("?") ? `${fileUrl}&download=1` : `${fileUrl}?download=1`;
+    try {
+      const response = await API.get(downloadUrl, { responseType: "blob" });
+      const blob = response.data instanceof Blob ? response.data : new Blob([response.data], { type: "application/pdf" });
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = `subjective-submission-${submission?.id || "file"}.pdf`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+    } catch (error) {
+      toast.error(error?.response?.data?.error || "Unable to download PDF.");
+    }
+  };
+
   return (
     <div style={{ minHeight: "100vh", backgroundColor: "#f5f5f5", padding: "2rem" }}>
       <div className="container">
@@ -1349,14 +1373,24 @@ export default function AdminDashboard() {
                             {statusLabel(submission.status)}
                           </span>
                           {submission.file_url ? (
-                            <button
-                              type="button"
-                              className="btn btn-secondary"
-                              style={{ fontSize: "0.85rem", padding: "0.35rem 0.7rem" }}
-                              onClick={() => handleOpenSubjectivePdf(submission)}
-                            >
-                              Open PDF
-                            </button>
+                            <div style={{ display: "flex", gap: "0.4rem" }}>
+                              <button
+                                type="button"
+                                className="btn btn-secondary"
+                                style={{ fontSize: "0.85rem", padding: "0.35rem 0.7rem" }}
+                                onClick={() => handleOpenSubjectivePdf(submission)}
+                              >
+                                Open PDF
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-secondary"
+                                style={{ fontSize: "0.85rem", padding: "0.35rem 0.7rem" }}
+                                onClick={() => handleDownloadSubjectivePdf(submission)}
+                              >
+                                Download
+                              </button>
+                            </div>
                           ) : (
                             <span style={{ fontSize: "0.85rem", color: "#64748b" }}>No PDF file</span>
                           )}

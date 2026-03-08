@@ -403,11 +403,13 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
           <div className="exam-type-grid">
             {Object.entries(EXAM_TYPE_CONTENT).map(([type, content]) => (
               <article key={type} className="exam-type-card exam-type-selectable">
-                <div className="exam-type-icon">
-                  <i className={content.icon}></i>
-                </div>
                 <div className="exam-type-info">
-                  <h3>{content.title}</h3>
+                  <div className="exam-type-head">
+                    <div className="exam-type-icon">
+                      <i className={content.icon}></i>
+                    </div>
+                    <h3>{content.title}</h3>
+                  </div>
                   <ul className="exam-type-feature-list">
                     {(content.features || []).map((feature) => (
                       <li key={feature.text}>

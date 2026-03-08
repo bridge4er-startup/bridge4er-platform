@@ -57,8 +57,8 @@ header {
 }
 
 .logo-image-wrap {
-    width: 7.38rem;
-    height: 7.38rem;
+    width: 8.86rem;
+    height: 8.86rem;
     flex: 0 0 auto;
     overflow: visible;
     background: transparent;
@@ -1968,8 +1968,7 @@ main {
     transition: all 0.3s ease;
     border: 2px solid #e0e0e0;
     display: flex;
-    gap: 1rem;
-    align-items: flex-start;
+    align-items: stretch;
 }
 
 .exam-type-card:hover {
@@ -1994,6 +1993,27 @@ main {
 .exam-type-info h3 {
     color: var(--dark-color);
     margin-bottom: 0.5rem;
+}
+
+.exam-type-info {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.exam-type-head {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.55rem;
+    margin-bottom: 0.45rem;
+}
+
+.exam-type-head h3,
+.exam-type-info h3 {
+    font-size: clamp(1.35rem, 2.3vw, 1.8rem);
+    font-weight: 800;
+    margin: 0;
 }
 
 .exam-type-info p {
@@ -2030,27 +2050,11 @@ main {
     color: #ffffff;
     flex-shrink: 0;
     box-shadow: 0 6px 12px rgba(15, 23, 42, 0.12);
-}
-
-.exam-feature-icon.feature-indigo {
-    background: linear-gradient(135deg, #6366f1, #4f46e5);
-}
-
-.exam-feature-icon.feature-sky {
-    background: linear-gradient(135deg, #0ea5e9, #0284c7);
-}
-
-.exam-feature-icon.feature-amber,
-.exam-feature-icon.feature-orange {
-    background: linear-gradient(135deg, #f59e0b, #d97706);
-}
-
-.exam-feature-icon.feature-emerald {
-    background: linear-gradient(135deg, #22c55e, #16a34a);
-}
-
-.exam-feature-icon.feature-rose {
-    background: linear-gradient(135deg, #f43f5e, #e11d48);
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--primary-color, #0f766e) 86%, #ffffff),
+      color-mix(in srgb, var(--secondary-color, #22c55e) 84%, #ffffff)
+    );
 }
 
 .exam-features {
@@ -4356,7 +4360,11 @@ footer {
         flex-direction: column;
         text-align: center;
     }
-    
+
+    .exam-type-head {
+        align-items: center;
+    }
+
     .exam-type-icon {
         width: 50px;
         height: 50px;
@@ -4670,8 +4678,8 @@ footer {
     }
 
     .logo-image-wrap {
-        width: 5.94rem;
-        height: 5.94rem;
+        width: 7.13rem;
+        height: 7.13rem;
     }
     
     .field-dropdown-btn {
@@ -6113,7 +6121,7 @@ body[data-branch-theme="computer-engineering"] {
 }
 
 .exam-hall-modern .exam-type-card {
-  align-items: center;
+  align-items: stretch;
 }
 
 .exam-type-selectable .btn {
@@ -6899,10 +6907,31 @@ body[data-branch-theme="computer-engineering"] {
   min-height: min(92vh, 760px);
 }
 
+.auth-page.auth-clean-hero .auth-panel.auth-panel-login {
+  width: min(620px, 100%);
+  min-height: 0;
+  grid-template-columns: 1fr;
+}
+
 .auth-page.auth-clean-hero .auth-hero {
   min-height: 100%;
   background-size: cover;
   background-position: center center;
+}
+
+.auth-page.auth-clean-hero .auth-panel.auth-panel-login .auth-hero {
+  min-height: clamp(230px, 34vh, 330px);
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center center;
+  background-color: #eff8fb;
+}
+
+.auth-page.auth-clean-hero .auth-panel.auth-panel-register .auth-hero {
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center center;
+  background-color: #f3f8fb;
 }
 
 .auth-page.auth-clean-hero .auth-hero::before {
@@ -6922,11 +6951,22 @@ body[data-branch-theme="computer-engineering"] {
     min-height: 38vh;
     background-position: center top;
   }
+
+  .auth-page.auth-clean-hero .auth-panel.auth-panel-login .auth-hero,
+  .auth-page.auth-clean-hero .auth-panel.auth-panel-register .auth-hero {
+    min-height: clamp(220px, 38vh, 330px);
+    background-position: center center;
+  }
 }
 
 @media (max-width: 640px) {
   .auth-page.auth-clean-hero .auth-hero {
     min-height: 32vh;
+  }
+
+  .auth-page.auth-clean-hero .auth-panel.auth-panel-login .auth-hero,
+  .auth-page.auth-clean-hero .auth-panel.auth-panel-register .auth-hero {
+    min-height: clamp(200px, 34vh, 280px);
   }
 }
 

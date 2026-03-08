@@ -93,7 +93,7 @@ export default function RegisterPage() {
 
   return (
     <div className="auth-page register-theme auth-clean-hero">
-      <div className="auth-panel">
+      <div className="auth-panel auth-panel-register">
         <div className="auth-hero" aria-hidden="true" />
         <form className="auth-form" onSubmit={onSubmit}>
           <h2>Student Registration</h2>
