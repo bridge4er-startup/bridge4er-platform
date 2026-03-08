@@ -4,6 +4,7 @@ import toast from "react-hot-toast";
 import { getInstitutionIcon, getSubjectIcon } from "../../utils/subjectIcons";
 import FilePreviewModal from "../common/FilePreviewModal";
 import TimedLoadingState from "../common/TimedLoadingState";
+import { formatNepalDate } from "../../utils/dateTime";
 
 function resolveFileIcon(name = "") {
   const lower = name.toLowerCase();
@@ -27,9 +28,7 @@ function formatFileSize(bytes) {
 
 function formatDate(isoString) {
   if (!isoString) return "Unknown";
-  const date = new Date(isoString);
-  if (Number.isNaN(date.getTime())) return "Unknown";
-  return date.toLocaleDateString("en-US", {
+  return formatNepalDate(isoString, {
     year: "numeric",
     month: "short",
     day: "numeric",

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { startExamSet, submitExamSet } from "../services/examService";
 import toast from "react-hot-toast";
+import { formatNepalDateTime } from "../utils/dateTime";
 
 function formatTimer(timeLeft = 0) {
   const absTime = Math.abs(timeLeft);
@@ -220,6 +221,8 @@ export default function MCQExamPage() {
     const correct = submittedResult.correct_answers || 0;
     const wrong = submittedResult.wrong_answers || 0;
     const skipped = submittedResult.unanswered || 0;
+    const obtainedMarks = Number(submittedResult.score || 0);
+    const possibleMarks = questions.reduce((sum, question) => sum + Number(question?.marks || 1), 0);
     const scorePercentValue = total > 0 ? (correct / total) * 100 : 0;
     const scorePercent = scorePercentValue.toFixed(2);
 
@@ -229,7 +232,7 @@ export default function MCQExamPage() {
           <div>
             <h2>{exam.name} - Exam Results</h2>
             <p>
-              {decodedBranch} | Submitted: {submittedResult.submitted_at ? new Date(submittedResult.submitted_at).toLocaleString() : "Now"}
+              {decodedBranch} | Submitted: {submittedResult.submitted_at ? formatNepalDateTime(submittedResult.submitted_at) : "Now"}
             </p>
           </div>
           <div
@@ -246,6 +249,13 @@ export default function MCQExamPage() {
             <article className="result-stat-card stat-score">
               <span>% Scored</span>
               <strong>{scorePercent}%</strong>
+            </article>
+            <article className="result-stat-card stat-marks">
+              <span>Marks Scored (After Negative Marking)</span>
+              <strong>
+                {obtainedMarks.toFixed(2)}
+                {possibleMarks > 0 ? ` / ${possibleMarks.toFixed(2)}` : ""}
+              </strong>
             </article>
             <article className="result-stat-card stat-correct">
               <span>Correct</span>

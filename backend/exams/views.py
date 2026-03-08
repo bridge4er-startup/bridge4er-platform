@@ -9,6 +9,7 @@ from .views_exam import (
     LoadMCQExam,
     LoadSubjectiveExam,
     MySubjectiveSubmissionsView,
+    SubjectiveSubmissionFileView,
     ReviewSubjectiveSubmissionView,
     StartExamSetView,
     SubmitExam,

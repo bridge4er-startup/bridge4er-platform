@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { getMySubjectiveSubmissions, startExamSet, uploadSubjective } from "../services/examService";
 import toast from "react-hot-toast";
+import { formatNepalDate, formatNepalDateTime } from "../utils/dateTime";
 
 function formatDuration(seconds = 0) {
   const total = Number(seconds || 0);
@@ -151,7 +152,7 @@ export default function SubjectiveExamPage() {
           </header>
 
           <div className="subjective-paper-meta">
-            <span><strong>Date:</strong> {new Date().toLocaleDateString("en-US")}</span>
+            <span><strong>Date:</strong> {formatNepalDate(new Date())}</span>
             <span><strong>Time:</strong> {formatDuration(exam?.duration_seconds)}</span>
             <span><strong>Subject:</strong> {decodedBranch}</span>
             <span><strong>Full Marks:</strong> {totalMarks}</span>
@@ -227,7 +228,7 @@ export default function SubjectiveExamPage() {
                       <h5>{item.exam_set_name || exam?.name || "Subjective Exam"}</h5>
                       <p>
                         Submitted:{" "}
-                        {item.submitted_at ? new Date(item.submitted_at).toLocaleString("en-US") : "N/A"}
+                        {item.submitted_at ? formatNepalDateTime(item.submitted_at) : "N/A"}
                       </p>
                     </div>
                     <span className={`subjective-status-pill status-${item.status || "pending"}`}>

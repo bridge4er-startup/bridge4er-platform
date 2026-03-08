@@ -200,6 +200,11 @@ SIMPLE_JWT = {
     "SIGNING_KEY": SECRET_KEY,
 }
 
+LANGUAGE_CODE = "en-us"
+TIME_ZONE = "Asia/Kathmandu"
+USE_I18N = True
+USE_TZ = True
+
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"

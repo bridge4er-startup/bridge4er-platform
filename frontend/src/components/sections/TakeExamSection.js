@@ -11,12 +11,24 @@ const EXAM_TYPE_CONTENT = {
   subjective: {
     title: "Subjective Exam",
     icon: "fas fa-pen-fancy",
-    description: "Display all questions at once and submit scanned PDF answer sheet.",
+    features: [
+      { icon: "fas fa-file-lines", tone: "feature-indigo", text: "Real Question Papers" },
+      { icon: "fas fa-stopwatch-20", tone: "feature-amber", text: "Negative Timer" },
+      { icon: "fas fa-laptop-code", tone: "feature-sky", text: "Practice Exam in real time simulation" },
+      { icon: "fas fa-cloud-arrow-up", tone: "feature-emerald", text: "Upload your answers within time limit" },
+      { icon: "fas fa-comments", tone: "feature-rose", text: "Get peer review, comments and score within a week" },
+    ],
   },
   mcq: {
     title: "Multiple Choice Exam",
     icon: "fas fa-question-circle",
-    description: "Question-by-question mode with negative timer and auto submit.",
+    features: [
+      { icon: "fas fa-desktop", tone: "feature-sky", text: "Computer Based Exam" },
+      { icon: "fas fa-triangle-exclamation", tone: "feature-orange", text: "Negative Timer, Negative Marking" },
+      { icon: "fas fa-square-check", tone: "feature-emerald", text: "Get your score on submission" },
+      { icon: "fas fa-clipboard-check", tone: "feature-indigo", text: "Review your answers" },
+      { icon: "fas fa-ranking-star", tone: "feature-rose", text: "Leaderboard" },
+    ],
   },
 };
 
@@ -396,7 +408,16 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
                 </div>
                 <div className="exam-type-info">
                   <h3>{content.title}</h3>
-                  <p>{content.description}</p>
+                  <ul className="exam-type-feature-list">
+                    {(content.features || []).map((feature) => (
+                      <li key={feature.text}>
+                        <span className={`exam-feature-icon ${feature.tone || "feature-sky"}`}>
+                          <i className={feature.icon}></i>
+                        </span>
+                        <span>{feature.text}</span>
+                      </li>
+                    ))}
+                  </ul>
                   <button className="btn btn-primary" onClick={() => selectType(type)} disabled={loadingByType[type]}>
                     {loadingByType[type] ? "Loading Sets..." : `Choose ${type.toUpperCase()} Exam`}
                   </button>

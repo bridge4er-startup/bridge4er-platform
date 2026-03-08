@@ -1,3 +1,4 @@
+from django.urls import reverse
 from rest_framework import serializers
 
 from .path_utils import parse_exam_source_path
@@ -288,9 +289,10 @@ class SubjectiveSubmissionSerializer(serializers.ModelSerializer):
     def get_file_url(self, obj):
         if obj.answer_pdf:
             request = self.context.get('request')
+            url_path = reverse('subjective-submission-file', kwargs={'submission_id': obj.id})
             if request:
-                return request.build_absolute_uri(obj.answer_pdf.url)
-            return obj.answer_pdf.url
+                return request.build_absolute_uri(url_path)
+            return url_path
         return ''
 
     def get_max_marks(self, obj):

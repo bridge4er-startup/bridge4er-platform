@@ -8,6 +8,7 @@ import {
 import { reportService } from "../services/reportService";
 import API from "../services/api";
 import toast from "react-hot-toast";
+import { formatNepalDateTime } from "../utils/dateTime";
 
 const BRANCH_OPTIONS = [
   "Civil Engineering",
@@ -977,6 +978,24 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleOpenSubjectivePdf = async (submission) => {
+    const fileUrl = String(submission?.file_url || "").trim();
+    if (!fileUrl) {
+      toast.error("No PDF file available.");
+      return;
+    }
+
+    try {
+      const response = await API.get(fileUrl, { responseType: "blob" });
+      const blob = response.data instanceof Blob ? response.data : new Blob([response.data], { type: "application/pdf" });
+      const objectUrl = URL.createObjectURL(blob);
+      window.open(objectUrl, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+    } catch (error) {
+      toast.error(error?.response?.data?.error || "Unable to open PDF.");
+    }
+  };
+
   return (
     <div style={{ minHeight: "100vh", backgroundColor: "#f5f5f5", padding: "2rem" }}>
       <div className="container">
@@ -1309,7 +1328,7 @@ export default function AdminDashboard() {
                           <p style={{ marginBottom: "0.2rem", color: "#475569", fontSize: "0.92rem" }}>
                             <strong>Submitted:</strong>{" "}
                             {submission.submitted_at
-                              ? new Date(submission.submitted_at).toLocaleString("en-US")
+                              ? formatNepalDateTime(submission.submitted_at)
                               : "N/A"}
                           </p>
                           <p style={{ marginBottom: 0, color: "#475569", fontSize: "0.92rem" }}>
@@ -1330,15 +1349,14 @@ export default function AdminDashboard() {
                             {statusLabel(submission.status)}
                           </span>
                           {submission.file_url ? (
-                            <a
-                              href={submission.file_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
+                            <button
+                              type="button"
                               className="btn btn-secondary"
                               style={{ fontSize: "0.85rem", padding: "0.35rem 0.7rem" }}
+                              onClick={() => handleOpenSubjectivePdf(submission)}
                             >
                               Open PDF
-                            </a>
+                            </button>
                           ) : (
                             <span style={{ fontSize: "0.85rem", color: "#64748b" }}>No PDF file</span>
                           )}
@@ -1553,7 +1571,7 @@ export default function AdminDashboard() {
                           </span>
                           <p style={{ marginTop: "0.5rem", color: "#64748b", fontSize: "0.85rem" }}>
                             {report.created_at
-                              ? new Date(report.created_at).toLocaleString("en-US")
+                              ? formatNepalDateTime(report.created_at)
                               : "N/A"}
                           </p>
                         </div>

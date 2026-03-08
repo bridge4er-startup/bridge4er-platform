@@ -7,6 +7,7 @@ from django.conf import settings
 from django.core.mail import send_mail
 from django.db import transaction
 from django.db.models import Avg, Count
+from django.http import FileResponse
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
@@ -1139,6 +1140,29 @@ class MySubjectiveSubmissionsView(APIView):
         return Response(serializer.data)
 
 
+class SubjectiveSubmissionFileView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, submission_id):
+        try:
+            submission = SubjectiveSubmission.objects.select_related("user").get(id=submission_id)
+        except SubjectiveSubmission.DoesNotExist:
+            return Response({"error": "Submission not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        is_owner = submission.user_id == request.user.id
+        if not request.user.is_staff and not is_owner:
+            return Response({"error": "Not allowed to access this file"}, status=status.HTTP_403_FORBIDDEN)
+
+        if not submission.answer_pdf:
+            return Response({"error": "PDF file not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        filename = str(submission.answer_pdf.name or f"submission-{submission.id}.pdf").split("/")[-1]
+        response = FileResponse(submission.answer_pdf.open("rb"), content_type="application/pdf")
+        response["Content-Disposition"] = f'inline; filename="{filename}"'
+        response["Cache-Control"] = "private, max-age=300"
+        return response
+
+
 class ReviewSubjectiveSubmissionView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUser]
 
@@ -1244,11 +1268,21 @@ class UserAnalyticsView(APIView):
         )
         score_trend = [
             {
-                "label": row["created_at"].strftime("%d %b"),
+                "label": timezone.localtime(row["created_at"]).strftime("%d %b"),
                 "score": float(row["score"]),
             }
             for row in trend_rows
         ]
+        subjective_details_queryset = (
+            subjective_submissions
+            .select_related("exam_set")
+            .order_by("-submitted_at")[:20]
+        )
+        subjective_details = SubjectiveSubmissionSerializer(
+            subjective_details_queryset,
+            many=True,
+            context={"request": request},
+        ).data
 
         profile = {
             "full_name": getattr(request.user, "full_name", "") or request.user.username,
@@ -1267,5 +1301,6 @@ class UserAnalyticsView(APIView):
                 "score_trend": score_trend,
                 "payment_gateway_breakdown": gateway_breakdown,
                 "subjective_status_breakdown": subjective_status,
+                "subjective_submissions": subjective_details,
             }
         )
