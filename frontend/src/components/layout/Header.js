@@ -44,7 +44,6 @@ export default function Header() {
                 event.currentTarget.src = `${process.env.PUBLIC_URL}/logo192.png`;
               }}
             />
-            <span className="logo-company-label">Nepal Engineering Academy</span>
           </div>
           <div className="logo-copy">
             <h1>Bridge4ER Platform</h1>

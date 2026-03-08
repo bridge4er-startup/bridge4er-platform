@@ -57,10 +57,9 @@ header {
 }
 
 .logo-image-wrap {
-    width: 6.15rem;
-    height: 6.15rem;
+    width: 7.38rem;
+    height: 7.38rem;
     flex: 0 0 auto;
-    position: relative;
     overflow: visible;
     background: transparent;
     border: 0;
@@ -97,26 +96,6 @@ header {
     display: block;
     line-height: 1.2;
     margin-top: 0.2rem;
-}
-
-.logo .logo-company-label {
-    position: absolute;
-    left: 50%;
-    bottom: 0.22rem;
-    transform: translateX(-50%);
-    width: calc(100% - 0.45rem);
-    padding: 0.08rem 0.2rem;
-    border-radius: 999px;
-    background: rgba(2, 6, 23, 0.5);
-    color: #ffffff;
-    font-size: clamp(0.42rem, 0.7vw, 0.56rem);
-    line-height: 1;
-    font-weight: 600;
-    letter-spacing: 0.01em;
-    text-align: center;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
 }
 
 /* Field Selector */
@@ -4033,11 +4012,6 @@ footer {
         font-size: 0.9rem;
     }
     
-    .logo .logo-company-label {
-        font-size: 0.5rem;
-        bottom: 0.2rem;
-    }
-    
     /* FIXED: Field selector - always visible */
     .field-selector-container {
         width: 100%;
@@ -4644,12 +4618,8 @@ footer {
     }
 
     .logo-image-wrap {
-        width: 4.95rem;
-        height: 4.95rem;
-    }
-    
-    .logo .logo-company-label {
-        font-size: 0.45rem;
+        width: 5.94rem;
+        height: 5.94rem;
     }
     
     .field-dropdown-btn {
