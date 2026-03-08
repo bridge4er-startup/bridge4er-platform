@@ -910,7 +910,7 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
             </p>
           </div>
 
-          <div className="home-info-card noticeboard">
+          <div id="noticeboard" className="home-info-card noticeboard">
             <h3>Noticeboard</h3>
             <div className="search-box">
               <input
