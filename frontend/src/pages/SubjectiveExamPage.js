@@ -149,15 +149,34 @@ export default function SubjectiveExamPage() {
     fd.append("exam_set_id", numericSetId);
     fd.append("email", email || "");
     fd.append("mobile_number", mobile || "");
+    const previousSubmissionCount = submissions.length;
     try {
       await uploadSubjective(fd);
-      toast.success("Uploaded successfully");
+      toast.success("Successfully submitted");
       setFile(null);
       setEmail(String(user?.email || "").trim());
       setMobile(String(user?.mobile_number || "").trim());
-      const data = await getMySubjectiveSubmissions();
-      setSubmissions((data || []).filter((item) => Number(item.exam_set) === numericSetId));
+      try {
+        const data = await getMySubjectiveSubmissions();
+        setSubmissions((data || []).filter((item) => Number(item.exam_set) === numericSetId));
+      } catch (_refreshError) {
+        toast.success("Successfully submitted. Submission list will refresh shortly.");
+      }
     } catch (e) {
+      try {
+        const data = await getMySubjectiveSubmissions();
+        const nextRows = (data || []).filter((item) => Number(item.exam_set) === numericSetId);
+        setSubmissions(nextRows);
+        if (nextRows.length > previousSubmissionCount) {
+          setFile(null);
+          setEmail(String(user?.email || "").trim());
+          setMobile(String(user?.mobile_number || "").trim());
+          toast.success("Successfully submitted");
+          return;
+        }
+      } catch (_verifyError) {
+        // Fall back to primary error below.
+      }
       toast.error(e?.response?.data?.error || "Upload failed");
     }
   };
@@ -241,13 +260,7 @@ export default function SubjectiveExamPage() {
             <div className={`exam-timer-large ${timeLeft < 0 ? "negative" : ""}`}>
               {timeLeft < 0 ? `Overtime ${timerLabel}` : timerLabel}
             </div>
-            {isSubmissionWindowClosed ? (
-              <p className="subjective-live-timer-note">Submission window closed.</p>
-            ) : (
-              <p className="subjective-live-timer-note">
-                Timer runs with grace period. Default duration is 3 hours unless changed by admin.
-              </p>
-            )}
+            {isSubmissionWindowClosed ? <p className="subjective-live-timer-note">Submission window closed.</p> : null}
           </div>
 
           {instructionLines.length ? (

@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from django import forms
 from django.contrib import admin
+from django.utils.safestring import mark_safe
 from django.utils import timezone
 from django.utils.html import format_html
 from .import_utils import DJANGO_IMPORT_EXPORT_AVAILABLE
@@ -102,15 +103,98 @@ class ExamQuestionInline(admin.TabularInline):
 
 
 class ExamSetAdminForm(forms.ModelForm):
+    exam_set_name = forms.CharField(required=False, label="Exam Set")
+
     class Meta:
         model = ExamSet
         fields = "__all__"
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        instance = getattr(self, "instance", None)
+        source_name = ""
+        if instance and getattr(instance, "pk", None):
+            meta = parse_exam_source_path(
+                source_file_path=getattr(instance, "source_file_path", ""),
+                branch=getattr(instance, "branch", ""),
+                exam_type=getattr(instance, "exam_type", ""),
+            )
+            source_name = str(meta.get("source_name") or instance.name or "").strip()
+        if not source_name:
+            source_name = str(self.initial.get("name") or "").strip()
+        self.fields["exam_set_name"].initial = source_name
+
+        fee_field = self.fields.get("fee")
+        is_free_field = self.fields.get("is_free")
+        if fee_field and is_free_field:
+            toggle_script = """
+<script>
+(function(){
+  function toggleFee(){
+    var freeField = document.getElementById('id_is_free');
+    var feeField = document.getElementById('id_fee');
+    if(!freeField || !feeField){ return; }
+    if(freeField.checked){
+      feeField.value = '0';
+      feeField.readOnly = true;
+      feeField.style.backgroundColor = '#f1f5f9';
+      feeField.title = 'Fee is locked to 0 for free exam sets.';
+    } else {
+      feeField.readOnly = false;
+      feeField.style.backgroundColor = '';
+      feeField.title = '';
+    }
+  }
+  window.bridge4erToggleExamSetFee = toggleFee;
+  document.addEventListener('DOMContentLoaded', function(){
+    var freeField = document.getElementById('id_is_free');
+    if(freeField){ freeField.addEventListener('change', toggleFee); }
+    toggleFee();
+  });
+})();
+</script>
+""".strip()
+            existing_help = str(fee_field.help_text or "")
+            if "bridge4erToggleExamSetFee" not in existing_help:
+                fee_field.help_text = mark_safe(f"{existing_help}{toggle_script}")
+
+            is_free_initial = bool(self.initial.get("is_free", getattr(instance, "is_free", False)))
+            if is_free_initial:
+                fee_field.widget.attrs["readonly"] = "readonly"
+                fee_field.widget.attrs["style"] = "background-color:#f1f5f9;"
+            else:
+                fee_field.widget.attrs.pop("readonly", None)
+
     def clean(self):
         cleaned_data = super().clean()
+        exam_set_name = str(cleaned_data.get("exam_set_name") or "").strip()
+        if not exam_set_name:
+            cleaned_data["exam_set_name"] = str(cleaned_data.get("name") or "").strip()
+        else:
+            cleaned_data["exam_set_name"] = exam_set_name
         if cleaned_data.get("is_free"):
             cleaned_data["fee"] = Decimal("0")
         return cleaned_data
+
+    def save(self, commit=True):
+        obj = super().save(commit=False)
+        exam_set_name = str(self.cleaned_data.get("exam_set_name") or "").strip()
+        source_file_path = str(getattr(obj, "source_file_path", "") or "").strip().replace("\\", "/")
+        if exam_set_name and source_file_path:
+            parent_path, _, file_name = source_file_path.rpartition("/")
+            extension = ""
+            if "." in file_name:
+                extension = f".{file_name.split('.')[-1]}"
+            new_file_name = f"{exam_set_name}{extension}"
+            obj.source_file_path = f"{parent_path}/{new_file_name}" if parent_path else f"/{new_file_name}"
+
+        if obj.is_free:
+            obj.fee = Decimal("0")
+
+        if commit:
+            obj.save()
+            self.save_m2m()
+        return obj
 
 
 @admin.register(ExamSet)
@@ -135,6 +219,15 @@ class ExamSetAdmin(admin.ModelAdmin):
     ordering = ("branch", "exam_type", "display_order", "name", "id")
     list_editable = ("name", "display_order", "is_free", "duration_seconds", "is_active")
     inlines = [ExamQuestionInline]
+
+    def get_fields(self, request, obj=None):
+        fields = list(super().get_fields(request, obj))
+        if "exam_set_name" not in fields:
+            if "name" in fields:
+                fields.insert(fields.index("name") + 1, "exam_set_name")
+            else:
+                fields.insert(0, "exam_set_name")
+        return fields
 
     def _source_meta(self, obj):
         source_path = str(getattr(obj, "source_file_path", "") or "").strip()
@@ -164,12 +257,6 @@ class ExamSetAdmin(admin.ModelAdmin):
     def source_folder_path(self, obj):
         meta = self._source_meta(obj)
         return meta.get("folder_path") or "General"
-
-    def get_readonly_fields(self, request, obj=None):
-        readonly_fields = list(super().get_readonly_fields(request, obj))
-        if obj and obj.is_free and "fee" not in readonly_fields:
-            readonly_fields.append("fee")
-        return tuple(readonly_fields)
 
     def save_model(self, request, obj, form, change):
         if obj.is_free:

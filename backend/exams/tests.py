@@ -356,3 +356,25 @@ class ExamSetFeeLockTests(TestCase):
         exam_set.refresh_from_db()
         self.assertTrue(exam_set.is_free)
         self.assertEqual(exam_set.fee, Decimal("0"))
+
+    def test_patch_allows_updating_exam_set_name_from_source_file(self):
+        exam_set = ExamSet.objects.create(
+            name="Hydraulics Mock",
+            branch="Civil Engineering",
+            exam_type="mcq",
+            is_free=False,
+            fee=Decimal("120.00"),
+            is_active=True,
+            managed_by_sync=True,
+            source_file_path="/bridge4er/Civil Engineering/Take Exam/Multiple Choice Exam/InstituteA/Old Name.xlsx",
+        )
+
+        response = self.client.patch(
+            f"/api/exams/sets/{exam_set.id}/",
+            {"exam_set_name": "Updated Set Name"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        exam_set.refresh_from_db()
+        self.assertTrue(exam_set.source_file_path.endswith("/Updated Set Name.xlsx"))

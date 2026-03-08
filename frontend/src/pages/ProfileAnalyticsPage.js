@@ -306,19 +306,17 @@ export default function ProfileAnalyticsPage() {
         {subjectiveSubmissions.length === 0 ? (
           <p>No subjective submissions yet.</p>
         ) : (
-          <div className="subjective-submissions-list profile-subjective-submissions">
+          <div className="subjective-submissions-list">
             {subjectiveSubmissions.map((item) => {
               const hasScore = item.score !== null && item.score !== undefined && item.score !== "";
               return (
-                <article key={item.id} className="subjective-result-card profile-subjective-result-card">
+                <article key={item.id} className="subjective-result-card">
                   <header className="subjective-result-header">
                     <div>
                       <h5>{item.exam_set_name || "Subjective Exam"}</h5>
-                      <p className="profile-subjective-time-chip">
-                        Submitted: {formatNepalDateTime(item.submitted_at)}
-                      </p>
-                      <p className="profile-subjective-time-chip">
-                        Reviewed: {item.reviewed_at ? formatNepalDateTime(item.reviewed_at) : "Pending review"}
+                      <p>
+                        Submitted:{" "}
+                        {item.submitted_at ? formatNepalDateTime(item.submitted_at) : "N/A"}
                       </p>
                     </div>
                     <span className={`subjective-status-pill status-${item.status || "pending"}`}>

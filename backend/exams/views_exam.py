@@ -340,6 +340,19 @@ def _parse_exam_from_legacy_path(path: str):
     return branch, set_name
 
 
+def _replace_source_file_name(source_file_path: str, exam_set_name: str):
+    normalized_path = str(source_file_path or "").strip().replace("\\", "/")
+    clean_name = str(exam_set_name or "").strip()
+    if not normalized_path or not clean_name:
+        return normalized_path
+    parent_path, _, file_name = normalized_path.rpartition("/")
+    extension = ""
+    if "." in file_name:
+        extension = f".{file_name.split('.')[-1]}"
+    new_file_name = f"{clean_name}{extension}"
+    return f"{parent_path}/{new_file_name}" if parent_path else f"/{new_file_name}"
+
+
 def _duration_to_label(duration_seconds: int) -> str:
     seconds = int(duration_seconds or 0)
     if seconds <= 0:
@@ -712,6 +725,15 @@ class ExamSetDetailAdminView(APIView):
         for field in editable_fields:
             if field in request.data:
                 updates[field] = request.data.get(field)
+
+        if "exam_set_name" in request.data:
+            exam_set_name = str(request.data.get("exam_set_name") or "").strip()
+            if not exam_set_name:
+                return Response({"error": "exam_set_name cannot be empty"}, status=status.HTTP_400_BAD_REQUEST)
+            if str(getattr(exam_set, "source_file_path", "") or "").strip():
+                updates["source_file_path"] = _replace_source_file_name(exam_set.source_file_path, exam_set_name)
+            elif "name" not in updates:
+                updates["name"] = exam_set_name
 
         if "is_free" in updates:
             updates["is_free"] = str(updates["is_free"]).lower() in {"1", "true", "yes"}
