@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { listExamSets } from "../../services/examService";
 import API, { cachedGet } from "../../services/api";
 import { initiateEsewaPayment, initiateKhaltiPayment } from "../../services/paymentService";
+import { useAuth } from "../../context/AuthContext";
 import toast from "react-hot-toast";
 import TimedLoadingState from "../common/TimedLoadingState";
 import { getInstitutionIcon, getSubjectIcon } from "../../utils/subjectIcons";
@@ -80,7 +81,20 @@ function byExamSetOrder(a, b) {
   return getSetDisplayName(a).localeCompare(getSetDisplayName(b));
 }
 
+function normalizeEmail(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function normalizeMobile(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (digits.startsWith("977") && digits.length > 10) {
+    return digits.slice(-10);
+  }
+  return digits;
+}
+
 export default function TakeExamSection({ branch = "Civil Engineering", isActive = false }) {
+  const { user } = useAuth();
   const [setsByType, setSetsByType] = useState({ mcq: [], subjective: [] });
   const [folderEntriesByType, setFolderEntriesByType] = useState({ mcq: [], subjective: [] });
   const [loadingByType, setLoadingByType] = useState({ mcq: false, subjective: false });
@@ -166,6 +180,14 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
     });
   };
 
+  const openPayment = (setItem, type) => {
+    setSelectedSet({ ...setItem, exam_type: type, display_name: getSetDisplayName(setItem) });
+    setPaymentForm({
+      email: String(user?.email || "").trim(),
+      mobile_number: String(user?.mobile_number || "").trim(),
+    });
+  };
+
   const submitGatewayPostForm = (url, fields) => {
     const form = document.createElement("form");
     form.method = "POST";
@@ -194,6 +216,18 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
     }
     if (!mobile) {
       toast.error("Enter mobile number for payment");
+      return;
+    }
+
+    const profileEmail = normalizeEmail(user?.email);
+    const profileMobile = normalizeMobile(user?.mobile_number);
+    if (!profileEmail || !profileMobile) {
+      toast.error("Update your profile email and mobile number before payment.");
+      return;
+    }
+
+    if (normalizeEmail(email) !== profileEmail || normalizeMobile(mobile) !== profileMobile) {
+      toast.error("Email and mobile number must match your profile details.");
       return;
     }
 
@@ -273,7 +307,7 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
           ) : (
             <button
               className="btn btn-secondary"
-              onClick={() => setSelectedSet({ ...setItem, exam_type: type, display_name: displayName })}
+              onClick={() => openPayment(setItem, type)}
             >
               Unlock by Payment
             </button>
@@ -556,7 +590,9 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
                   onChange={(e) => updatePaymentField("mobile_number", e.target.value)}
                 />
               </label>
-              <div className="full-width">You will be redirected to the selected payment gateway to complete payment.</div>
+              <div className="full-width">
+                Enter the same email and mobile number as your profile. You will then be redirected to the selected payment gateway.
+              </div>
             </div>
 
             <div className="payment-modal-actions">

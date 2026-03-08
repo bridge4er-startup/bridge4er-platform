@@ -270,6 +270,43 @@ def _is_unlocked_for_user(exam_set: ExamSet, user) -> bool:
     return ExamPurchase.objects.filter(user=user, exam_set=exam_set).exists()
 
 
+def _normalize_contact_email(value):
+    return str(value or "").strip().lower()
+
+
+def _normalize_contact_mobile(value):
+    digits = "".join(ch for ch in str(value or "") if ch.isdigit())
+    if digits.startswith("977") and len(digits) > 10:
+        return digits[-10:]
+    return digits
+
+
+def _validate_contact_matches_profile(user, email, mobile_number):
+    normalized_email = _normalize_contact_email(email)
+    normalized_mobile = _normalize_contact_mobile(mobile_number)
+    if not normalized_email or not normalized_mobile:
+        return None, None, Response(
+            {"error": "email and mobile_number are required"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    profile_email = _normalize_contact_email(getattr(user, "email", ""))
+    profile_mobile = _normalize_contact_mobile(getattr(user, "mobile_number", ""))
+    if not profile_email or not profile_mobile:
+        return None, None, Response(
+            {"error": "Please update your profile email and mobile number before submitting."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if normalized_email != profile_email or normalized_mobile != profile_mobile:
+        return None, None, Response(
+            {"error": "Entered email and mobile number must match your profile details."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return profile_email, profile_mobile, None
+
+
 def _notify_subjective_submission(submission: SubjectiveSubmission):
     admin_email = getattr(settings, "ADMIN_ALERT_EMAIL", "") or getattr(settings, "DEFAULT_FROM_EMAIL", "")
     if not admin_email:
@@ -1057,6 +1094,9 @@ class UploadSubjective(APIView):
         set_name = request.data.get("exam", "")
         email = request.data.get("email", "")
         mobile = request.data.get("mobile_number") or request.data.get("mobile") or ""
+        email, mobile, error_response = _validate_contact_matches_profile(request.user, email, mobile)
+        if error_response:
+            return error_response
 
         _maybe_seed_demo_exam_sets(branch, "subjective")
         exam_set = ExamSet.objects.filter(branch=branch, exam_type="subjective", name=set_name, is_active=True).first()
@@ -1116,6 +1156,10 @@ class SubjectiveSubmissionCreateView(APIView):
 
         if not _is_unlocked_for_user(exam_set, request.user):
             return Response({"error": "Payment required to unlock this set"}, status=status.HTTP_402_PAYMENT_REQUIRED)
+
+        email, mobile, error_response = _validate_contact_matches_profile(request.user, email, mobile)
+        if error_response:
+            return error_response
 
         submission = SubjectiveSubmission.objects.create(
             user=request.user,

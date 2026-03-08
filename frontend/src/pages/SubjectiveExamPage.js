@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { getMySubjectiveSubmissions, startExamSet, uploadSubjective } from "../services/examService";
+import { useAuth } from "../context/AuthContext";
 import toast from "react-hot-toast";
 import { formatNepalDate, formatNepalDateTime } from "../utils/dateTime";
 
@@ -37,7 +38,20 @@ function formatTimer(timeLeft = 0) {
   return `${prefix}${minutes}:${paddedSeconds}`;
 }
 
+function normalizeEmail(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function normalizeMobile(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (digits.startsWith("977") && digits.length > 10) {
+    return digits.slice(-10);
+  }
+  return digits;
+}
+
 export default function SubjectiveExamPage() {
+  const { user } = useAuth();
   const { branch, setName: setId } = useParams();
   const decodedBranch = decodeURIComponent(branch || "");
   const numericSetId = Number(setId);
@@ -52,6 +66,12 @@ export default function SubjectiveExamPage() {
   const [initialDuration, setInitialDuration] = useState(10800);
   const [isSubmissionWindowClosed, setIsSubmissionWindowClosed] = useState(false);
   const timerRef = useRef(null);
+
+  useEffect(() => {
+    if (!user) return;
+    setEmail(String(user.email || "").trim());
+    setMobile(String(user.mobile_number || "").trim());
+  }, [user]);
 
   useEffect(() => {
     async function load() {
@@ -112,7 +132,18 @@ export default function SubjectiveExamPage() {
     const isPdfFile = /\.pdf$/i.test(String(file.name || "")) || String(file.type || "").toLowerCase() === "application/pdf";
     if (!isPdfFile) return toast.error("Only PDF files are allowed.");
     if (Number(file.size || 0) > 10 * 1024 * 1024) return toast.error("PDF size must be 10MB or less.");
+    if (!email.trim()) return toast.error("Enter email address");
     if (!mobile.trim()) return toast.error("Enter mobile number");
+
+    const profileEmail = normalizeEmail(user?.email);
+    const profileMobile = normalizeMobile(user?.mobile_number);
+    if (!profileEmail || !profileMobile) {
+      return toast.error("Update your profile email and mobile number before submitting.");
+    }
+    if (normalizeEmail(email) !== profileEmail || normalizeMobile(mobile) !== profileMobile) {
+      return toast.error("Email and mobile number must match your profile details.");
+    }
+
     const fd = new FormData();
     fd.append("file", file);
     fd.append("exam_set_id", numericSetId);
@@ -122,8 +153,8 @@ export default function SubjectiveExamPage() {
       await uploadSubjective(fd);
       toast.success("Uploaded successfully");
       setFile(null);
-      setEmail("");
-      setMobile("");
+      setEmail(String(user?.email || "").trim());
+      setMobile(String(user?.mobile_number || "").trim());
       const data = await getMySubjectiveSubmissions();
       setSubmissions((data || []).filter((item) => Number(item.exam_set) === numericSetId));
     } catch (e) {
@@ -261,6 +292,7 @@ export default function SubjectiveExamPage() {
         <div className="form-group">
           <label htmlFor="user-mobile"><i className="fas fa-phone"></i> Mobile Number</label>
           <input id="user-mobile" type="text" value={mobile} onChange={e => setMobile(e.target.value)} placeholder="Enter mobile number" />
+          <small>Email and mobile number must match your profile details.</small>
         </div>
 
         <div className="form-group">

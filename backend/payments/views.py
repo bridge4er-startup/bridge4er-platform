@@ -109,15 +109,41 @@ def _get_exam_set_for_payment(exam_set_id):
     return exam_set, None
 
 
-def _validate_payment_profile(email, mobile_number):
-    email = (email or "").strip()
-    mobile_number = (mobile_number or "").strip()
-    if not email or not mobile_number:
+def _normalize_email(value):
+    return str(value or "").strip().lower()
+
+
+def _normalize_mobile(value):
+    digits = "".join(ch for ch in str(value or "") if ch.isdigit())
+    if digits.startswith("977") and len(digits) > 10:
+        return digits[-10:]
+    return digits
+
+
+def _validate_payment_profile(user, email, mobile_number):
+    normalized_email = _normalize_email(email)
+    normalized_mobile = _normalize_mobile(mobile_number)
+    if not normalized_email or not normalized_mobile:
         return None, None, Response(
             {"error": "email and mobile_number are required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    return email, mobile_number, None
+
+    profile_email = _normalize_email(getattr(user, "email", ""))
+    profile_mobile = _normalize_mobile(getattr(user, "mobile_number", ""))
+    if not profile_email or not profile_mobile:
+        return None, None, Response(
+            {"error": "Please update your profile email and mobile number before payment."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if normalized_email != profile_email or normalized_mobile != profile_mobile:
+        return None, None, Response(
+            {"error": "Entered email and mobile number must match your profile details."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return profile_email, profile_mobile, None
 
 
 class EsewaInitiatePayment(APIView):
@@ -129,6 +155,7 @@ class EsewaInitiatePayment(APIView):
             return error_response
 
         email, mobile_number, error_response = _validate_payment_profile(
+            request.user,
             request.data.get("email"),
             request.data.get("mobile_number") or request.data.get("mobile"),
         )
@@ -188,6 +215,7 @@ class KhaltiInitiatePayment(APIView):
             return error_response
 
         email, mobile_number, error_response = _validate_payment_profile(
+            request.user,
             request.data.get("email"),
             request.data.get("mobile_number") or request.data.get("mobile"),
         )
