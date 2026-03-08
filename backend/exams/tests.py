@@ -215,3 +215,144 @@ class SubjectiveSubmissionProfileValidationTests(TestCase):
         submission = SubjectiveSubmission.objects.first()
         self.assertEqual(submission.email, "student@example.com")
         self.assertEqual(submission.mobile_number, "9812345678")
+
+
+class ReviewSubjectiveSubmissionAdminUpdateTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.admin_user = User.objects.create_user(
+            username="admin-review",
+            password="secret123",
+            email="admin@example.com",
+            mobile_number="9800000000",
+            full_name="Admin Reviewer",
+            is_staff=True,
+            is_superuser=True,
+        )
+        self.student = User.objects.create_user(
+            username="review-student",
+            password="secret123",
+            email="student2@example.com",
+            mobile_number="9811111111",
+            full_name="Original Student",
+        )
+        self.client.force_authenticate(user=self.admin_user)
+
+        self.initial_set = ExamSet.objects.create(
+            name="Subjective Set A",
+            branch="Civil Engineering",
+            exam_type="subjective",
+            is_free=True,
+            fee=Decimal("0"),
+            is_active=True,
+            managed_by_sync=False,
+        )
+        self.next_set = ExamSet.objects.create(
+            name="Subjective Set B",
+            branch="Civil Engineering",
+            exam_type="subjective",
+            is_free=True,
+            fee=Decimal("0"),
+            is_active=True,
+            managed_by_sync=False,
+        )
+        self.submission = SubjectiveSubmission.objects.create(
+            user=self.student,
+            exam_set=self.initial_set,
+            email=self.student.email,
+            mobile_number=self.student.mobile_number,
+            file_path="api:dummy.pdf",
+            status="pending",
+        )
+
+    def test_review_updates_student_name_and_exam_set_name(self):
+        response = self.client.post(
+            f"/api/exams/subjective/submissions/{self.submission.id}/review/",
+            {
+                "status": "reviewed",
+                "score": "8",
+                "feedback": "Checked",
+                "student_name": "Updated Student Name",
+                "exam_set_name": self.next_set.name,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.submission.refresh_from_db()
+        self.student.refresh_from_db()
+        self.assertEqual(self.submission.exam_set_id, self.next_set.id)
+        self.assertEqual(self.student.full_name, "Updated Student Name")
+
+    def test_review_rejects_invalid_exam_set_name(self):
+        response = self.client.post(
+            f"/api/exams/subjective/submissions/{self.submission.id}/review/",
+            {
+                "status": "reviewed",
+                "score": "5",
+                "feedback": "Checked",
+                "exam_set_name": "Set Does Not Exist",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertIn("not found", str(response.data.get("error", "")).lower())
+
+
+class ExamSetFeeLockTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.admin_user = User.objects.create_user(
+            username="admin-fee-lock",
+            password="secret123",
+            email="admin2@example.com",
+            mobile_number="9822222222",
+            full_name="Admin Fee Lock",
+            is_staff=True,
+            is_superuser=True,
+        )
+        self.client.force_authenticate(user=self.admin_user)
+
+    def test_patch_keeps_fee_zero_for_free_exam_set(self):
+        exam_set = ExamSet.objects.create(
+            name="Free Set",
+            branch="Civil Engineering",
+            exam_type="mcq",
+            is_free=True,
+            fee=Decimal("999.00"),
+            is_active=True,
+            managed_by_sync=False,
+        )
+
+        response = self.client.patch(
+            f"/api/exams/sets/{exam_set.id}/",
+            {"fee": "450.00"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        exam_set.refresh_from_db()
+        self.assertEqual(exam_set.fee, Decimal("0"))
+
+    def test_patch_sets_fee_zero_when_switching_to_free(self):
+        exam_set = ExamSet.objects.create(
+            name="Paid Set",
+            branch="Civil Engineering",
+            exam_type="mcq",
+            is_free=False,
+            fee=Decimal("450.00"),
+            is_active=True,
+            managed_by_sync=False,
+        )
+
+        response = self.client.patch(
+            f"/api/exams/sets/{exam_set.id}/",
+            {"is_free": True, "fee": "450.00"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        exam_set.refresh_from_db()
+        self.assertTrue(exam_set.is_free)
+        self.assertEqual(exam_set.fee, Decimal("0"))

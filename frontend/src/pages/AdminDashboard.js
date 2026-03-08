@@ -897,6 +897,8 @@ export default function AdminDashboard() {
           status: item.status || "pending",
           score: item.score == null ? "" : String(item.score),
           feedback: item.feedback || "",
+          student_name: item.student_name || item.student_username || "",
+          exam_set_name: item.exam_set_name || "",
         };
         nextEditMode[item.id] = false;
       });
@@ -916,6 +918,8 @@ export default function AdminDashboard() {
         status: prev[submissionId]?.status || "pending",
         score: prev[submissionId]?.score || "",
         feedback: prev[submissionId]?.feedback || "",
+        student_name: prev[submissionId]?.student_name || "",
+        exam_set_name: prev[submissionId]?.exam_set_name || "",
         ...(prev[submissionId] || {}),
         [field]: value,
       },
@@ -929,6 +933,8 @@ export default function AdminDashboard() {
         status: submission.status || "pending",
         score: submission.score == null ? "" : String(submission.score),
         feedback: submission.feedback || "",
+        student_name: submission.student_name || submission.student_username || "",
+        exam_set_name: submission.exam_set_name || "",
       },
     }));
   };
@@ -952,20 +958,27 @@ export default function AdminDashboard() {
   const saveSubjectiveReview = async (submission) => {
     const draft = subjectiveReviewDrafts[submission.id] || {};
     const scoreText = String(draft.score ?? "").trim();
-    if (!scoreText) {
+    const currentStatus = String(submission.status || "pending").toLowerCase();
+    const nextStatus = scoreText ? "reviewed" : currentStatus;
+    if (nextStatus === "reviewed" && !scoreText) {
       toast.error("Marks are required");
       return;
     }
 
     setSavingSubjectiveReviewId(submission.id);
     try {
-      const nextStatus = "reviewed";
-      await reviewSubjectiveSubmission(submission.id, {
+      const payload = {
         status: nextStatus,
-        score: scoreText,
         feedback: draft.feedback || "",
-      });
-      toast.success("Submission review saved");
+        student_name: draft.student_name || "",
+        exam_set_name: draft.exam_set_name || "",
+      };
+      if (scoreText) {
+        payload.score = scoreText;
+      }
+
+      await reviewSubjectiveSubmission(submission.id, payload);
+      toast.success(nextStatus === "reviewed" ? "Submission review saved" : "Submission details saved");
       await loadSubjectiveSubmissions();
       setSubjectiveEditMode((prev) => ({
         ...prev,
@@ -1313,6 +1326,8 @@ export default function AdminDashboard() {
                     status: submission.status || "pending",
                     score: submission.score == null ? "" : String(submission.score),
                     feedback: submission.feedback || "",
+                    student_name: submission.student_name || submission.student_username || "",
+                    exam_set_name: submission.exam_set_name || "",
                   };
                   const isReviewed = String(submission.status || "").toLowerCase() === "reviewed";
                   const inEditMode = !!subjectiveEditMode[submission.id];
@@ -1404,6 +1419,40 @@ export default function AdminDashboard() {
                           gap: "0.8rem",
                         }}
                       >
+                        <div>
+                          <label style={{ display: "block", marginBottom: "0.35rem" }}>Student Name</label>
+                          <input
+                            type="text"
+                            value={draft.student_name}
+                            onChange={(e) => handleSubjectiveDraftChange(submission.id, "student_name", e.target.value)}
+                            placeholder="Enter student name"
+                            disabled={isLocked || isSavingCurrent}
+                            style={{
+                              width: "100%",
+                              padding: "0.55rem",
+                              borderRadius: "4px",
+                              border: "1px solid #d4dbe6",
+                              backgroundColor: isLocked ? "#f1f5f9" : "white",
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: "block", marginBottom: "0.35rem" }}>Exam Set Name</label>
+                          <input
+                            type="text"
+                            value={draft.exam_set_name}
+                            onChange={(e) => handleSubjectiveDraftChange(submission.id, "exam_set_name", e.target.value)}
+                            placeholder="Enter exam set name"
+                            disabled={isLocked || isSavingCurrent}
+                            style={{
+                              width: "100%",
+                              padding: "0.55rem",
+                              borderRadius: "4px",
+                              border: "1px solid #d4dbe6",
+                              backgroundColor: isLocked ? "#f1f5f9" : "white",
+                            }}
+                          />
+                        </div>
                         <div>
                           <label style={{ display: "block", marginBottom: "0.35rem" }}>Status</label>
                           <div

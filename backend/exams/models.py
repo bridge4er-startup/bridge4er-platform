@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.db import models
 from django.conf import settings
 from django.utils import timezone
@@ -76,6 +78,12 @@ class ExamSet(models.Model):
 
     def __str__(self):
         return f"{self.branch} | {self.get_exam_type_display()} | {self.name}"
+
+    def save(self, *args, **kwargs):
+        # Fee is always locked to 0 for free exam sets.
+        if self.is_free:
+            self.fee = Decimal("0")
+        super().save(*args, **kwargs)
 
 
 class ExamQuestion(models.Model):

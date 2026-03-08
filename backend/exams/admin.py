@@ -1,3 +1,6 @@
+from decimal import Decimal
+
+from django import forms
 from django.contrib import admin
 from django.utils import timezone
 from django.utils.html import format_html
@@ -98,8 +101,21 @@ class ExamQuestionInline(admin.TabularInline):
     extra = 1
 
 
+class ExamSetAdminForm(forms.ModelForm):
+    class Meta:
+        model = ExamSet
+        fields = "__all__"
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if cleaned_data.get("is_free"):
+            cleaned_data["fee"] = Decimal("0")
+        return cleaned_data
+
+
 @admin.register(ExamSet)
 class ExamSetAdmin(admin.ModelAdmin):
+    form = ExamSetAdminForm
     list_display = (
         "id",
         "name",
@@ -117,7 +133,7 @@ class ExamSetAdmin(admin.ModelAdmin):
     list_filter = ("branch", "exam_type", "is_free", "is_active", "managed_by_sync")
     search_fields = ("name", "branch", "source_file_path")
     ordering = ("branch", "exam_type", "display_order", "name", "id")
-    list_editable = ("name", "display_order", "is_free", "fee", "duration_seconds", "is_active")
+    list_editable = ("name", "display_order", "is_free", "duration_seconds", "is_active")
     inlines = [ExamQuestionInline]
 
     def _source_meta(self, obj):
@@ -148,6 +164,17 @@ class ExamSetAdmin(admin.ModelAdmin):
     def source_folder_path(self, obj):
         meta = self._source_meta(obj)
         return meta.get("folder_path") or "General"
+
+    def get_readonly_fields(self, request, obj=None):
+        readonly_fields = list(super().get_readonly_fields(request, obj))
+        if obj and obj.is_free and "fee" not in readonly_fields:
+            readonly_fields.append("fee")
+        return tuple(readonly_fields)
+
+    def save_model(self, request, obj, form, change):
+        if obj.is_free:
+            obj.fee = Decimal("0")
+        super().save_model(request, obj, form, change)
 
 
 @admin.register(ExamQuestion)

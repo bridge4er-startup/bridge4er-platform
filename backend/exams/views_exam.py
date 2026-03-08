@@ -725,7 +725,8 @@ class ExamSetDetailAdminView(APIView):
             updates["fee"] = Decimal(str(updates["fee"]))
         if "display_order" in updates:
             updates["display_order"] = int(updates["display_order"])
-        if updates.get("is_free") is True:
+        final_is_free = updates.get("is_free", exam_set.is_free)
+        if final_is_free is True:
             updates["fee"] = Decimal("0")
 
         for key, value in updates.items():
@@ -1223,6 +1224,43 @@ class ReviewSubjectiveSubmissionView(APIView):
         except SubjectiveSubmission.DoesNotExist:
             return Response({"error": "Submission not found"}, status=status.HTTP_404_NOT_FOUND)
 
+        student_name_input = request.data.get("student_name", request.data.get("name"))
+        exam_set_id_input = request.data.get("exam_set_id")
+        exam_set_name_input = request.data.get("exam_set_name")
+        target_exam_set = submission.exam_set
+
+        if exam_set_id_input not in (None, ""):
+            try:
+                target_exam_set = ExamSet.objects.get(id=exam_set_id_input, exam_type="subjective")
+            except ExamSet.DoesNotExist:
+                return Response({"error": "Subjective exam set not found"}, status=status.HTTP_404_NOT_FOUND)
+        elif exam_set_name_input is not None:
+            normalized_exam_set_name = str(exam_set_name_input or "").strip()
+            if not normalized_exam_set_name:
+                return Response(
+                    {"error": "exam_set_name cannot be empty"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            exam_set_qs = ExamSet.objects.filter(
+                exam_type="subjective",
+                name__iexact=normalized_exam_set_name,
+            )
+            if submission.exam_set_id:
+                same_branch_qs = exam_set_qs.filter(branch=submission.exam_set.branch)
+                if same_branch_qs.exists():
+                    exam_set_qs = same_branch_qs
+
+            total_matches = exam_set_qs.count()
+            if total_matches == 0:
+                return Response({"error": "Subjective exam set not found"}, status=status.HTTP_404_NOT_FOUND)
+            if total_matches > 1:
+                return Response(
+                    {"error": "Multiple subjective exam sets found for that name. Use exam_set_id."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            target_exam_set = exam_set_qs.first()
+
         status_value = request.data.get("status", "pending")
         if status_value not in {"reviewed", "rejected", "pending"}:
             return Response({"error": "Invalid status"}, status=status.HTTP_400_BAD_REQUEST)
@@ -1245,8 +1283,8 @@ class ReviewSubjectiveSubmissionView(APIView):
         if status_value == "reviewed" and score_value is None:
             return Response({"error": "Score is required when status is reviewed"}, status=status.HTTP_400_BAD_REQUEST)
 
-        if score_value is not None and submission.exam_set_id:
-            max_marks = int(sum((question.marks or 0) for question in submission.exam_set.questions.all()))
+        if score_value is not None and target_exam_set:
+            max_marks = int(sum((question.marks or 0) for question in target_exam_set.questions.all()))
             if max_marks > 0 and score_value > max_marks:
                 return Response(
                     {"error": f"Score cannot exceed total marks ({max_marks})"},
@@ -1258,11 +1296,26 @@ class ReviewSubjectiveSubmissionView(APIView):
         if status_value == "pending":
             score_value = None
 
+        if student_name_input is not None:
+            normalized_student_name = str(student_name_input or "").strip()
+            if not normalized_student_name:
+                return Response(
+                    {"error": "student_name cannot be empty"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if (submission.user.full_name or "").strip() != normalized_student_name:
+                submission.user.full_name = normalized_student_name
+                submission.user.save(update_fields=["full_name"])
+
         submission.status = status_value
         submission.score = score_value
         submission.feedback = feedback_value
+        update_fields = ["status", "score", "feedback", "reviewed_at"]
+        if target_exam_set and target_exam_set.id != submission.exam_set_id:
+            submission.exam_set = target_exam_set
+            update_fields.append("exam_set")
         submission.reviewed_at = None if status_value == "pending" else timezone.now()
-        submission.save(update_fields=["status", "score", "feedback", "reviewed_at"])
+        submission.save(update_fields=update_fields)
         serializer = SubjectiveSubmissionSerializer(submission, context={"request": request})
         return Response(serializer.data)
 
