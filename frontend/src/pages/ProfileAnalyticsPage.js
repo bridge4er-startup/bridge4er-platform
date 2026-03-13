@@ -5,10 +5,27 @@ import API from "../services/api";
 import toast from "react-hot-toast";
 import { formatNepalDateTime } from "../utils/dateTime";
 import { contributionService } from "../services/contributionService";
+import { referralService } from "../services/referralService";
+import FilePreviewModal from "../components/common/FilePreviewModal";
 
 function formatSubmissionStatus(value = "") {
   const normalized = String(value || "pending");
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+function inferPreviewType(contentType = "", filename = "") {
+  const normalized = String(contentType || "").toLowerCase();
+  const lowerName = String(filename || "").toLowerCase();
+  if (normalized.includes("pdf") || lowerName.endsWith(".pdf")) return "pdf";
+  if (
+    normalized.startsWith("image/") ||
+    [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"].some(
+      (ext) => lowerName.endsWith(ext)
+    )
+  ) {
+    return "image";
+  }
+  return "other";
 }
 
 function ScoreTrendChart({ data = [] }) {
@@ -173,9 +190,16 @@ export default function ProfileAnalyticsPage() {
     file: null,
   });
   const [unlockExamSetId, setUnlockExamSetId] = useState("");
+  const [previewFile, setPreviewFile] = useState(null);
+  const [referralModalOpen, setReferralModalOpen] = useState(false);
+  const [referralForm, setReferralForm] = useState({ name: "", mobile: "" });
+  const [submittingReferral, setSubmittingReferral] = useState(false);
+  const [referralUnlockId, setReferralUnlockId] = useState("");
+  const [unlockingReferral, setUnlockingReferral] = useState(false);
 
   useEffect(() => {
-    async function load() {
+    const load = async () => {
+      setLoading(true);
       try {
         const data = await getUserAnalytics();
         setAnalytics(data);
@@ -184,21 +208,68 @@ export default function ProfileAnalyticsPage() {
       } finally {
         setLoading(false);
       }
-    }
+    };
     load();
   }, []);
 
-  const openSubmissionPdf = async (fileUrl) => {
+  const closePreview = () => {
+    setPreviewFile((current) => {
+      if (current?.url && current.url.startsWith("blob:")) {
+        URL.revokeObjectURL(current.url);
+      }
+      return null;
+    });
+  };
+
+  useEffect(() => {
+    return () => {
+      if (previewFile?.url && previewFile.url.startsWith("blob:")) {
+        URL.revokeObjectURL(previewFile.url);
+      }
+    };
+  }, [previewFile]);
+
+  const openPreview = async (fileUrl, nameFallback) => {
     const safeUrl = String(fileUrl || "").trim();
     if (!safeUrl) return;
     try {
       const response = await API.get(safeUrl, { responseType: "blob" });
-      const blob = response.data instanceof Blob ? response.data : new Blob([response.data], { type: "application/pdf" });
+      const contentType = String(response?.headers?.["content-type"] || "");
+      const blob = response.data instanceof Blob ? response.data : new Blob([response.data], { type: contentType || undefined });
       const objectUrl = URL.createObjectURL(blob);
-      window.open(objectUrl, "_blank", "noopener,noreferrer");
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+      const previewType = inferPreviewType(contentType, nameFallback || safeUrl);
+      setPreviewFile((current) => {
+        if (current?.url && current.url.startsWith("blob:")) {
+          URL.revokeObjectURL(current.url);
+        }
+        return {
+          name: nameFallback || "File Preview",
+          url: objectUrl,
+          type: previewType,
+        };
+      });
     } catch (_error) {
-      toast.error("Unable to open submitted PDF.");
+      toast.error("Unable to open file.");
+    }
+  };
+
+  const downloadFile = async (fileUrl, nameFallback) => {
+    const safeUrl = String(fileUrl || "").trim();
+    if (!safeUrl) return;
+    try {
+      const downloadUrl = safeUrl.includes("?") ? `${safeUrl}&download=1` : `${safeUrl}?download=1`;
+      const response = await API.get(downloadUrl, { responseType: "blob" });
+      const blob = response.data instanceof Blob ? response.data : new Blob([response.data]);
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = nameFallback || "download";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    } catch (_error) {
+      toast.error("Unable to download file.");
     }
   };
 
@@ -211,6 +282,15 @@ export default function ProfileAnalyticsPage() {
       toast.error("Failed to load contributions.");
     } finally {
       setLoadingContributions(false);
+    }
+  };
+
+  const refreshAnalytics = async () => {
+    try {
+      const data = await getUserAnalytics();
+      setAnalytics(data);
+    } catch (_error) {
+      // Keep existing analytics if refresh fails.
     }
   };
 
@@ -272,6 +352,48 @@ export default function ProfileAnalyticsPage() {
     }
   };
 
+  const submitReferral = async () => {
+    const friendName = String(referralForm.name || "").trim();
+    const friendMobile = String(referralForm.mobile || "").trim();
+    if (!friendName || !friendMobile) {
+      toast.error("Enter both name and mobile number.");
+      return;
+    }
+    setSubmittingReferral(true);
+    try {
+      await referralService.submitReferral({
+        friend_name: friendName,
+        friend_mobile: friendMobile,
+      });
+      toast.success("Referral submitted.");
+      setReferralForm({ name: "", mobile: "" });
+      await refreshAnalytics();
+    } catch (error) {
+      toast.error(error?.response?.data?.error || "Failed to submit referral.");
+    } finally {
+      setSubmittingReferral(false);
+    }
+  };
+
+  const claimReferralUnlock = async () => {
+    const examSetId = String(referralUnlockId || "").trim();
+    if (!examSetId) {
+      toast.error("Enter an exam set ID.");
+      return;
+    }
+    setUnlockingReferral(true);
+    try {
+      const result = await referralService.claimUnlock(examSetId);
+      toast.success(result?.message || "Exam set unlocked.");
+      setReferralUnlockId("");
+      await refreshAnalytics();
+    } catch (error) {
+      toast.error(error?.response?.data?.error || "Failed to unlock exam set.");
+    } finally {
+      setUnlockingReferral(false);
+    }
+  };
+
   if (loading) {
     return <div style={{ padding: 20 }}>Loading analytics...</div>;
   }
@@ -289,6 +411,9 @@ export default function ProfileAnalyticsPage() {
   const contributionSummary = analytics.contribution_summary || {};
   const availableUnlocks =
     Number(contributionSummary.available_unlocks ?? summary.contribution_unlocks_available ?? 0) || 0;
+  const referralSummary = analytics.referral_summary || {};
+  const availableReferralUnlocks =
+    Number(referralSummary.available_unlocks ?? summary.referral_unlocks_available ?? 0) || 0;
 
   return (
     <div className="container profile-analytics-page" style={{ paddingTop: 20, paddingBottom: 40 }}>
@@ -306,63 +431,161 @@ export default function ProfileAnalyticsPage() {
           <span><strong>Email:</strong> {profile.email || "-"}</span>
           <span><strong>Field:</strong> {profile.field_of_study || "-"}</span>
         </div>
-        <Link className="btn btn-secondary btn-soft-blue-action profile-home-btn" to="/">Back to Home</Link>
+        <div className="profile-hero-actions">
+          <button
+            type="button"
+            className="btn btn-primary btn-soft-blue-action"
+            onClick={() => setReferralModalOpen(true)}
+          >
+            Refer to Friends
+          </button>
+          <Link className="btn btn-secondary btn-soft-blue-action profile-home-btn" to="/">Back to Home</Link>
+        </div>
+        <p className="profile-referral-note">Refer two friends to unlock a set.</p>
       </section>
 
-      <section className="profile-stat-grid">
-        <article className="profile-stat-card stat-blue">
-          <span>Exams Appeared</span>
-          <strong>{summary.total_attempts || 0}</strong>
-        </article>
-        <article className="profile-stat-card stat-green">
-          <span>Average Score</span>
-          <strong>{Number(summary.average_score || 0).toFixed(2)}</strong>
-        </article>
-        <article className="profile-stat-card stat-teal">
-          <span>Best Score</span>
-          <strong>{Number(summary.best_score || 0).toFixed(2)}</strong>
-        </article>
-        <article className="profile-stat-card stat-orange">
-          <span>MCQs Accuracy on Practice Sessions</span>
-          <strong>{summary.objective_accuracy_percent || 0}%</strong>
-        </article>
-      </section>
+      <section className="profile-analytics-grid">
+        <div className="profile-analytics-main">
+          <section className="profile-stat-grid">
+            <article className="profile-stat-card stat-blue">
+              <span>Exams Appeared</span>
+              <strong>{summary.total_attempts || 0}</strong>
+            </article>
+            <article className="profile-stat-card stat-green">
+              <span>Average Score</span>
+              <strong>{Number(summary.average_score || 0).toFixed(2)}</strong>
+            </article>
+            <article className="profile-stat-card stat-teal">
+              <span>Best Score</span>
+              <strong>{Number(summary.best_score || 0).toFixed(2)}</strong>
+            </article>
+            <article className="profile-stat-card stat-orange">
+              <span>MCQs Accuracy on Practice Sessions</span>
+              <strong>{summary.objective_accuracy_percent || 0}%</strong>
+            </article>
+          </section>
 
-      <section className="profile-visual-grid">
-        <div className="profile-chart-card profile-chart-card-modern">
-          <h3>Score Trend</h3>
-          <ScoreTrendChart data={analytics.score_trend || []} />
+          <section className="profile-visual-grid">
+            <div className="profile-chart-card profile-chart-card-modern">
+              <h3>Score Trend</h3>
+              <ScoreTrendChart data={analytics.score_trend || []} />
+            </div>
+
+            <div className="profile-breakdown-card">
+              <h3>Activity Breakdown</h3>
+              <div className="profile-breakdown-list">
+                <div>
+                  <span>Purchased Sets</span>
+                  <strong>{summary.total_purchased_sets || 0}</strong>
+                </div>
+                <div>
+                  <span>Subjective Submissions</span>
+                  <strong>{summary.subjective_submissions || 0}</strong>
+                </div>
+                <div>
+                  <span>Reviewed Subjective</span>
+                  <strong>{summary.reviewed_subjective_submissions || 0}</strong>
+                </div>
+              </div>
+              <div className="profile-breakdown-tags">
+                {paymentBreakdown.map((item) => (
+                  <span key={`pay-${item.payment_gateway || "unknown"}`} className="breakdown-pill">
+                    {item.payment_gateway || "unknown"}: {item.total}
+                  </span>
+                ))}
+                {subjectiveBreakdown.map((item) => (
+                  <span key={`sub-${item.status || "unknown"}`} className="breakdown-pill">
+                    {item.status || "unknown"}: {item.total}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </section>
         </div>
 
-        <div className="profile-breakdown-card">
-          <h3>Activity Breakdown</h3>
-          <div className="profile-breakdown-list">
-            <div>
-              <span>Purchased Sets</span>
-              <strong>{summary.total_purchased_sets || 0}</strong>
+        <aside className="profile-analytics-side">
+          <div className="profile-attempt-list-card contribution-profile-card">
+            <h3>Contribute Notes</h3>
+            <p>
+              Initially you can upload up to 3 different notes (PDF/JPG/PNG, max 2MB). Your file will appear in Contributions
+              section after admin approval. Then, you can upload and contribute more. You will get a star rating on each approved
+              contributions.
+            </p>
+
+            <div className="contribution-upload-form">
+              <input
+                type="text"
+                placeholder="Contribution name"
+                value={contributionForm.title}
+                onChange={(e) => updateContributionForm("title", e.target.value)}
+              />
+              <textarea
+                rows={2}
+                placeholder="Short details about your notes"
+                value={contributionForm.description}
+                onChange={(e) => updateContributionForm("description", e.target.value)}
+              />
+              <input
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg"
+                onChange={(e) => updateContributionForm("file", e.target.files?.[0] || null)}
+              />
+              <button
+                className="btn btn-primary"
+                type="button"
+                disabled={uploadingContribution}
+                onClick={submitContribution}
+              >
+                {uploadingContribution ? "Uploading..." : "Submit Contribution"}
+              </button>
             </div>
-            <div>
-              <span>Subjective Submissions</span>
-              <strong>{summary.subjective_submissions || 0}</strong>
-            </div>
-            <div>
-              <span>Reviewed Subjective</span>
-              <strong>{summary.reviewed_subjective_submissions || 0}</strong>
-            </div>
+
+            {availableUnlocks > 0 ? (
+              <div className="contribution-unlock-panel">
+                <div>
+                  <strong>Available Unlocks:</strong> {availableUnlocks}
+                </div>
+                <div className="contribution-unlock-row">
+                  <input
+                    type="text"
+                    placeholder="Enter Exam Set ID to unlock"
+                    value={unlockExamSetId}
+                    onChange={(e) => setUnlockExamSetId(e.target.value)}
+                  />
+                  <button className="btn btn-secondary" type="button" onClick={claimUnlock}>
+                    Unlock Exam Set
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="contribution-unlock-note">
+                Earn a free exam set unlock after every 5 approved contributions.
+              </p>
+            )}
+
+            <h4 style={{ marginTop: "1rem" }}>My Contributions</h4>
+            {loadingContributions ? (
+              <p>Loading contributions...</p>
+            ) : myContributions.length === 0 ? (
+              <p>No contributions yet.</p>
+            ) : (
+              <ul className="file-list">
+                {myContributions.map((item) => (
+                  <li key={item.id} className="file-item">
+                    <div className="file-details">
+                      <h4>{item.title || item.file_name || "Contribution"}</h4>
+                      <p>
+                        Status: {item.status || "pending"}
+                        {item.category ? ` | Category: ${item.category}` : ""}
+                      </p>
+                    </div>
+                    <small>{item.submitted_at ? formatNepalDateTime(item.submitted_at) : "N/A"}</small>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
-          <div className="profile-breakdown-tags">
-            {paymentBreakdown.map((item) => (
-              <span key={`pay-${item.payment_gateway || "unknown"}`} className="breakdown-pill">
-                {item.payment_gateway || "unknown"}: {item.total}
-              </span>
-            ))}
-            {subjectiveBreakdown.map((item) => (
-              <span key={`sub-${item.status || "unknown"}`} className="breakdown-pill">
-                {item.status || "unknown"}: {item.total}
-              </span>
-            ))}
-          </div>
-        </div>
+        </aside>
       </section>
 
       <div className="profile-attempt-list-card" style={{ marginTop: 24 }}>
@@ -426,24 +649,35 @@ export default function ProfileAnalyticsPage() {
                   </div>
 
                   {item.file_url ? (
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-soft-blue-action"
-                      style={{ marginTop: "0.75rem", width: "fit-content" }}
-                      onClick={() => openSubmissionPdf(item.file_url)}
-                    >
-                      Open Submitted PDF
-                    </button>
+                    <div className="profile-subjective-actions">
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-soft-blue-action"
+                        onClick={() => openPreview(item.file_url, item.exam_set_name || "Submitted File")}
+                      >
+                        View Submission
+                      </button>
+                    </div>
                   ) : null}
                   {item.reviewed_file_url ? (
-                    <button
-                      type="button"
-                      className="btn btn-primary btn-soft-blue-action"
-                      style={{ marginTop: "0.5rem", width: "fit-content" }}
-                      onClick={() => openSubmissionPdf(item.reviewed_file_url)}
-                    >
-                      Open Reviewed File
-                    </button>
+                    <div className="profile-subjective-actions">
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-soft-blue-action"
+                        onClick={() => openPreview(item.reviewed_file_url, item.exam_set_name || "Reviewed File")}
+                      >
+                        View Reviewed File
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-soft-blue-action"
+                        onClick={() =>
+                          downloadFile(item.reviewed_file_url, `${item.exam_set_name || "reviewed-file"}.pdf`)
+                        }
+                      >
+                        Download Reviewed File
+                      </button>
+                    </div>
                   ) : null}
                 </article>
               );
@@ -452,83 +686,90 @@ export default function ProfileAnalyticsPage() {
         )}
       </div>
 
-      <div className="profile-attempt-list-card contribution-profile-card" style={{ marginTop: 24 }}>
-        <h3>Contribute Notes</h3>
-        <p>Upload up to 3 notes (PDF/JPG/PNG, max 2MB). Your file will appear after admin approval.</p>
-
-        <div className="contribution-upload-form">
-          <input
-            type="text"
-            placeholder="Contribution name"
-            value={contributionForm.title}
-            onChange={(e) => updateContributionForm("title", e.target.value)}
-          />
-          <textarea
-            rows={2}
-            placeholder="Short details about your notes"
-            value={contributionForm.description}
-            onChange={(e) => updateContributionForm("description", e.target.value)}
-          />
-          <input
-            type="file"
-            accept=".pdf,.png,.jpg,.jpeg"
-            onChange={(e) => updateContributionForm("file", e.target.files?.[0] || null)}
-          />
-          <button
-            className="btn btn-primary"
-            type="button"
-            disabled={uploadingContribution}
-            onClick={submitContribution}
+      {referralModalOpen ? (
+        <div className="payment-overlay" onClick={() => setReferralModalOpen(false)}>
+          <div
+            className="payment-modal-content referral-modal"
+            onClick={(event) => event.stopPropagation()}
           >
-            {uploadingContribution ? "Uploading..." : "Submit Contribution"}
-          </button>
-        </div>
-
-        {availableUnlocks > 0 ? (
-          <div className="contribution-unlock-panel">
-            <div>
-              <strong>Available Unlocks:</strong> {availableUnlocks}
-            </div>
-            <div className="contribution-unlock-row">
-              <input
-                type="text"
-                placeholder="Enter Exam Set ID to unlock"
-                value={unlockExamSetId}
-                onChange={(e) => setUnlockExamSetId(e.target.value)}
-              />
-              <button className="btn btn-secondary" type="button" onClick={claimUnlock}>
-                Unlock Exam Set
+            <div className="referral-modal-header">
+              <h3>Refer to Friends</h3>
+              <button className="btn btn-secondary btn-soft-blue-action" onClick={() => setReferralModalOpen(false)}>
+                Close
               </button>
             </div>
-          </div>
-        ) : (
-          <p className="contribution-unlock-note">
-            Earn a free exam set unlock after every 5 approved contributions.
-          </p>
-        )}
+            <p className="referral-modal-note">Refer two friends to unlock a set.</p>
 
-        <h4 style={{ marginTop: "1rem" }}>My Contributions</h4>
-        {loadingContributions ? (
-          <p>Loading contributions...</p>
-        ) : myContributions.length === 0 ? (
-          <p>No contributions yet.</p>
-        ) : (
-          <ul className="file-list">
-            {myContributions.map((item) => (
-              <li key={item.id} className="file-item">
-                <div className="file-details">
-                  <h4>{item.title || item.file_name || "Contribution"}</h4>
-                  <p>
-                    Status: {item.status || "pending"}
-                    {item.category ? ` | Category: ${item.category}` : ""}
-                  </p>
+            <div className="referral-summary-grid">
+              <div>
+                <span>Matched</span>
+                <strong>{referralSummary.matched_count || 0}</strong>
+              </div>
+              <div>
+                <span>Pending</span>
+                <strong>{referralSummary.pending_count || 0}</strong>
+              </div>
+              <div>
+                <span>Available Unlocks</span>
+                <strong>{availableReferralUnlocks}</strong>
+              </div>
+            </div>
+
+            <div className="referral-form">
+              <input
+                type="text"
+                placeholder="Friend full name"
+                value={referralForm.name}
+                onChange={(e) => setReferralForm((prev) => ({ ...prev, name: e.target.value }))}
+              />
+              <input
+                type="text"
+                placeholder="Friend mobile number"
+                value={referralForm.mobile}
+                onChange={(e) => setReferralForm((prev) => ({ ...prev, mobile: e.target.value }))}
+              />
+              <button
+                className="btn btn-primary"
+                type="button"
+                disabled={submittingReferral}
+                onClick={submitReferral}
+              >
+                {submittingReferral ? "Submitting..." : "Submit Referral"}
+              </button>
+            </div>
+
+            {availableReferralUnlocks > 0 ? (
+              <div className="referral-unlock-panel">
+                <div>
+                  <strong>Unlock a paid set with referrals:</strong>
                 </div>
-                <small>{item.submitted_at ? formatNepalDateTime(item.submitted_at) : "N/A"}</small>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+                <div className="referral-unlock-row">
+                  <input
+                    type="text"
+                    placeholder="Enter Exam Set ID to unlock"
+                    value={referralUnlockId}
+                    onChange={(e) => setReferralUnlockId(e.target.value)}
+                  />
+                  <button
+                    className="btn btn-secondary"
+                    type="button"
+                    disabled={unlockingReferral}
+                    onClick={claimReferralUnlock}
+                  >
+                    {unlockingReferral ? "Unlocking..." : "Unlock Exam Set"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="referral-unlock-note">
+                Submit two successful referrals to unlock a paid set.
+              </p>
+            )}
+          </div>
+        </div>
+      ) : null}
+
+      <FilePreviewModal preview={previewFile} onClose={closePreview} />
     </div>
   );
 }

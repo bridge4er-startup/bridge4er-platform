@@ -14,6 +14,7 @@ CONTRIBUTION_CATEGORY_CHOICES = [
     ("MSC", "MSC"),
     ("GK/IQ", "GK/IQ"),
     ("NTC", "NTC"),
+    ("NEA", "NEA"),
     ("Other", "Other"),
 ]
 

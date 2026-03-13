@@ -3,35 +3,64 @@ import toast from "react-hot-toast";
 import { useAuth } from "../../context/AuthContext";
 import TimedLoadingState from "../common/TimedLoadingState";
 import { contributionService } from "../../services/contributionService";
+import API from "../../services/api";
+import { formatNepalDateTime } from "../../utils/dateTime";
+import FilePreviewModal from "../common/FilePreviewModal";
 
-const DEFAULT_CATEGORIES = ["PSC", "NEC", "MSC", "GK/IQ", "NTC", "Other"];
+const CATEGORY_OPTIONS = ["PSC", "NEC", "MSC", "GK/IQ", "NTC", "NEA"];
 
 const normalizeCategories = (values) => {
   const normalized = (values || [])
     .map((item) => String(item || "").trim())
     .filter(Boolean);
-  return normalized.length ? normalized : DEFAULT_CATEGORIES;
+  const filtered = normalized.filter((item) => CATEGORY_OPTIONS.includes(item));
+  return filtered.length ? filtered : CATEGORY_OPTIONS;
 };
 
+const CATEGORY_ICONS = {
+  PSC: "fas fa-landmark",
+  NEC: "fas fa-certificate",
+  MSC: "fas fa-graduation-cap",
+  "GK/IQ": "fas fa-brain",
+  NTC: "fas fa-satellite-dish",
+  NEA: "fas fa-bolt",
+};
+
+function inferPreviewType(contentType = "", filename = "") {
+  const normalized = String(contentType || "").toLowerCase();
+  const lowerName = String(filename || "").toLowerCase();
+  if (normalized.includes("pdf") || lowerName.endsWith(".pdf")) return "pdf";
+  if (
+    normalized.startsWith("image/") ||
+    [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"].some(
+      (ext) => lowerName.endsWith(ext)
+    )
+  ) {
+    return "image";
+  }
+  return "other";
+}
+
 export default function ContributionsSection({ branch = "Civil Engineering", isActive = false }) {
-  const { isAuthenticated } = useAuth();
-  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
-  const [selectedCategory, setSelectedCategory] = useState(DEFAULT_CATEGORIES[0]);
+  const { isAuthenticated, user } = useAuth();
+  const [categories, setCategories] = useState(CATEGORY_OPTIONS);
+  const [selectedCategory, setSelectedCategory] = useState("");
   const [contributions, setContributions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [commentDrafts, setCommentDrafts] = useState({});
   const [savingCommentId, setSavingCommentId] = useState(null);
+  const [previewFile, setPreviewFile] = useState(null);
 
   const loadCategories = async () => {
     try {
       const data = await contributionService.listCategories();
       const resolved = normalizeCategories(data?.categories || data || []);
       setCategories(resolved);
-      if (!resolved.includes(selectedCategory)) {
-        setSelectedCategory(resolved[0]);
+      if (selectedCategory && !resolved.includes(selectedCategory)) {
+        setSelectedCategory("");
       }
     } catch (_error) {
-      setCategories(DEFAULT_CATEGORIES);
+      setCategories(CATEGORY_OPTIONS);
     }
   };
 
@@ -55,19 +84,99 @@ export default function ContributionsSection({ branch = "Civil Engineering", isA
 
   useEffect(() => {
     if (!isActive) return;
-    loadContributions().catch(() => {});
+    if (!selectedCategory) {
+      setContributions([]);
+      setLoading(false);
+      return;
+    }
+    loadContributions(selectedCategory).catch(() => {});
   }, [branch, selectedCategory, isActive]);
+
+  useEffect(() => {
+    return () => {
+      if (previewFile?.url && previewFile.url.startsWith("blob:")) {
+        URL.revokeObjectURL(previewFile.url);
+      }
+    };
+  }, [previewFile]);
 
   const activeContributions = useMemo(() => contributions || [], [contributions]);
 
-  const openFile = (item, download = false) => {
-    const url = String(item?.file_url || item?.download_url || "").trim();
+  const orderedContributions = useMemo(() => {
+    const rows = [...activeContributions];
+    return rows.sort((a, b) => {
+      const aTime = a?.submitted_at ? new Date(a.submitted_at).getTime() : 0;
+      const bTime = b?.submitted_at ? new Date(b.submitted_at).getTime() : 0;
+      return bTime - aTime;
+    });
+  }, [activeContributions]);
+
+  const resolveStarTone = (count) => {
+    const value = Number(count || 0);
+    if (value > 15) return "gold";
+    if (value > 5) return "green";
+    if (value > 0) return "blue";
+    return "muted";
+  };
+
+  const closePreview = () => {
+    setPreviewFile((current) => {
+      if (current?.url && current.url.startsWith("blob:")) {
+        URL.revokeObjectURL(current.url);
+      }
+      return null;
+    });
+  };
+
+  const openPreview = async (item) => {
+    const url = String(item?.file_url || "").trim();
     if (!url) {
       toast.error("File unavailable.");
       return;
     }
-    const targetUrl = download ? (url.includes("?") ? `${url}&download=1` : `${url}?download=1`) : url;
-    window.open(targetUrl, "_blank", "noopener,noreferrer");
+    try {
+      const response = await API.get(url, { responseType: "blob" });
+      const contentType = String(response?.headers?.["content-type"] || "");
+      const blob = response.data instanceof Blob ? response.data : new Blob([response.data], { type: contentType || undefined });
+      const objectUrl = URL.createObjectURL(blob);
+      const filename = item?.file_name || item?.title || "Contribution";
+      const previewType = inferPreviewType(contentType, filename);
+      setPreviewFile((current) => {
+        if (current?.url && current.url.startsWith("blob:")) {
+          URL.revokeObjectURL(current.url);
+        }
+        return {
+          name: filename,
+          url: objectUrl,
+          type: previewType,
+        };
+      });
+    } catch (_error) {
+      toast.error("Unable to open file.");
+    }
+  };
+
+  const downloadFile = async (item) => {
+    const url = String(item?.file_url || "").trim();
+    if (!url) {
+      toast.error("File unavailable.");
+      return;
+    }
+    try {
+      const downloadUrl = url.includes("?") ? `${url}&download=1` : `${url}?download=1`;
+      const response = await API.get(downloadUrl, { responseType: "blob" });
+      const blob = response.data instanceof Blob ? response.data : new Blob([response.data]);
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = item?.file_name || item?.title || "download";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    } catch (_error) {
+      toast.error("Unable to download file.");
+    }
   };
 
   const submitComment = async (item) => {
@@ -98,90 +207,138 @@ export default function ContributionsSection({ branch = "Civil Engineering", isA
           <i className="fas fa-building"></i> {branch}
         </span>
       </h2>
-      <p>Community-shared notes approved by admins. Read, download, and add one short comment per file.</p>
+      <p>Community-shared notes approved by admins. Read, download, and you can add one short comment per file.</p>
 
-      <div className="contribution-category-row">
+      <div className="contribution-folder-grid">
         {categories.map((category) => (
           <button
             key={category}
             type="button"
-            className={`contribution-chip ${selectedCategory === category ? "active" : ""}`}
+            className={`contribution-folder-card ${selectedCategory === category ? "active" : ""}`}
             onClick={() => setSelectedCategory(category)}
           >
-            {category}
+            <div className="contribution-folder-icon">
+              <i className={CATEGORY_ICONS[category] || "fas fa-folder"}></i>
+            </div>
+            <div className="contribution-folder-label">{category}</div>
+            <span className="contribution-folder-meta">Open Folder</span>
           </button>
         ))}
       </div>
 
-      {loading ? (
+      {!selectedCategory ? (
+        <div className="contribution-empty-note">
+          Choose a folder to see what is inside.
+        </div>
+      ) : loading ? (
         <TimedLoadingState baseMessage="Loading contributions..." />
-      ) : activeContributions.length === 0 ? (
+      ) : orderedContributions.length === 0 ? (
         <div className="empty-state">
           <i className="fas fa-inbox"></i>
           <h4>No contributions found</h4>
         </div>
       ) : (
         <div className="contribution-message-list">
-          {activeContributions.map((item) => (
-            <article key={item.id} className="contribution-message">
-              <div className="contribution-message-head">
-                <div>
-                  <h4>{item.title || item.file_name || "Shared Notes"}</h4>
-                  <p className="contribution-meta">
-                    {item.contributor_name || item.contributor_username || "Contributor"}
-                    <span className="contribution-star">
-                      <i className="fas fa-star"></i> Power +{item.star_count || 0}
-                    </span>
-                  </p>
-                </div>
-                <div className="contribution-actions">
-                  <button className="btn btn-secondary btn-soft-blue-action" onClick={() => openFile(item, false)}>
-                    Read
-                  </button>
-                  <button className="btn btn-primary btn-soft-blue-action" onClick={() => openFile(item, true)}>
-                    Download
-                  </button>
-                </div>
-              </div>
+          {orderedContributions.map((item) => {
+            const starCount = Number(item.star_count || 0);
+            const starTone = resolveStarTone(starCount);
+            const contributorLabel = item.contributor_name || item.contributor_username || "Contributor";
+            const userName = String(user?.full_name || "").trim().toLowerCase();
+            const userUsername = String(user?.username || "").trim().toLowerCase();
+            const hasUserComment = Array.isArray(item.comments)
+              ? item.comments.some((comment) => {
+                  const commentName = String(comment.user_name || "").trim().toLowerCase();
+                  const commentUsername = String(comment.user_username || "").trim().toLowerCase();
+                  return (
+                    (userUsername && commentUsername === userUsername) ||
+                    (userName && commentName === userName)
+                  );
+                })
+              : false;
 
-              {item.description ? <p className="contribution-description">{item.description}</p> : null}
+            return (
+              <article key={item.id} className="contribution-message">
+                <div className="contribution-message-head">
+                  <div>
+                    <h4>{item.title || item.file_name || "Shared Notes"}</h4>
+                    <p className="contribution-meta">
+                      <span className="contribution-user">{contributorLabel}</span>
+                      <span className={`contribution-star tone-${starTone}`}>
+                        <i className="fas fa-star"></i>
+                      </span>
+                      <span className="contribution-badge">Badge {starCount}</span>
+                    </p>
+                  </div>
+                  <div className="contribution-actions">
+                    <button
+                      className="btn btn-secondary btn-soft-blue-action contribution-icon-btn"
+                      onClick={() => openPreview(item)}
+                      aria-label="Read"
+                      title="Read"
+                    >
+                      <i className="fas fa-book-open"></i>
+                    </button>
+                    <button
+                      className="btn btn-secondary btn-soft-blue-action contribution-icon-btn"
+                      onClick={() => downloadFile(item)}
+                      aria-label="Download"
+                      title="Download"
+                    >
+                      <i className="fas fa-arrow-down"></i>
+                    </button>
+                  </div>
+                </div>
 
-              {Array.isArray(item.comments) && item.comments.length > 0 ? (
-                <div className="contribution-comments">
-                  {item.comments.map((comment) => (
-                    <div key={comment.id || `${item.id}-${comment.user_name}`} className="contribution-comment">
-                      <strong>{comment.user_name || comment.user_username || "User"}:</strong> {comment.text}
+                {item.description ? <p className="contribution-description">{item.description}</p> : null}
+
+                {Array.isArray(item.comments) && item.comments.length > 0 ? (
+                  <div className="contribution-comments">
+                    {item.comments.map((comment) => (
+                      <div key={comment.id || `${item.id}-${comment.user_name}`} className="contribution-comment">
+                        <div className="contribution-comment-main">
+                          <strong>{comment.user_name || comment.user_username || "User"}:</strong> {comment.text}
+                        </div>
+                        <div className="contribution-comment-time">
+                          {comment.created_at ? formatNepalDateTime(comment.created_at) : ""}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="contribution-no-comments">No comments yet.</p>
+                )}
+
+                {isAuthenticated ? (
+                  hasUserComment ? (
+                    <p className="contribution-comment-note">You have already commented on this file.</p>
+                  ) : (
+                    <div className="contribution-comment-form">
+                      <input
+                        type="text"
+                        placeholder="add a comment. you can comment only once"
+                        value={commentDrafts[item.id] || ""}
+                        onChange={(e) =>
+                          setCommentDrafts((prev) => ({ ...prev, [item.id]: e.target.value }))
+                        }
+                      />
+                      <button
+                        className="btn btn-secondary"
+                        type="button"
+                        disabled={savingCommentId === item.id}
+                        onClick={() => submitComment(item)}
+                      >
+                        {savingCommentId === item.id ? "Saving..." : "Send"}
+                      </button>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="contribution-no-comments">No comments yet.</p>
-              )}
-
-              {isAuthenticated ? (
-                <div className="contribution-comment-form">
-                  <input
-                    type="text"
-                    placeholder="Add one-line comment..."
-                    value={commentDrafts[item.id] || ""}
-                    onChange={(e) =>
-                      setCommentDrafts((prev) => ({ ...prev, [item.id]: e.target.value }))
-                    }
-                  />
-                  <button
-                    className="btn btn-secondary"
-                    type="button"
-                    disabled={savingCommentId === item.id}
-                    onClick={() => submitComment(item)}
-                  >
-                    {savingCommentId === item.id ? "Saving..." : "Send"}
-                  </button>
-                </div>
-              ) : null}
-            </article>
-          ))}
+                  )
+                ) : null}
+              </article>
+            );
+          })}
         </div>
       )}
+
+      <FilePreviewModal preview={previewFile} onClose={closePreview} />
     </section>
   );
 }

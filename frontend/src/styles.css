@@ -7211,6 +7211,23 @@ body[data-branch-theme="computer-engineering"] {
   gap: 1rem;
 }
 
+.profile-analytics-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.profile-analytics-main {
+  display: grid;
+  gap: 0.9rem;
+  min-width: 0;
+}
+
+.profile-analytics-side {
+  min-width: 0;
+}
+
 .profile-home-btn {
   width: fit-content !important;
   min-width: 0;
@@ -7252,6 +7269,20 @@ body[data-branch-theme="computer-engineering"] {
   gap: 0.35rem 0.9rem;
   font-size: 0.9rem;
   color: #334155;
+}
+
+.profile-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.profile-referral-note {
+  margin: 0;
+  color: #475569;
+  font-size: 0.86rem;
+  font-weight: 600;
 }
 
 .profile-stat-grid {
@@ -7353,6 +7384,10 @@ body[data-branch-theme="computer-engineering"] {
 
 @media (max-width: 960px) {
   .profile-hero-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-analytics-grid {
     grid-template-columns: 1fr;
   }
 
@@ -8378,24 +8413,22 @@ body[data-branch-theme="computer-engineering"] {
 }
 
 .profile-subjective-time-chip {
-  margin: 0.22rem 0 0;
+  margin: 0.2rem 0 0;
   display: inline-flex;
   align-items: center;
   max-width: max-content;
   border-radius: 999px;
-  padding: 0.16rem 0.54rem;
-  background: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--primary-color, #0f766e) 84%, #ffffff),
-    color-mix(in srgb, var(--secondary-color, #22c55e) 84%, #ffffff)
-  );
-  color: #ffffff !important;
-  font-size: 0.72rem;
-  font-weight: 700;
+  padding: 0.12rem 0.45rem;
+  background: transparent;
+  border: 1px solid #e2e8f0;
+  color: #0f172a !important;
+  font-size: 0.68rem;
+  font-weight: 600;
 }
 
 .profile-subjective-time-chip strong {
-  color: #ffffff;
+  color: #0f172a;
+  font-weight: 700;
 }
 
 .profile-subjective-submissions .subjective-score-panel {
@@ -8426,6 +8459,14 @@ body[data-branch-theme="computer-engineering"] {
 .profile-subjective-submissions .subjective-comment-notepad {
   margin-top: 0.56rem;
   padding: 0.5rem 0.62rem;
+  background: transparent;
+}
+
+.profile-subjective-actions {
+  margin-top: 0.6rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
 .contribution-category-row {
@@ -8433,6 +8474,84 @@ body[data-branch-theme="computer-engineering"] {
   flex-wrap: wrap;
   gap: 0.6rem;
   margin: 0.9rem 0 1.2rem;
+}
+
+.contribution-folder-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.8rem;
+  margin: 0.9rem 0 1.4rem;
+}
+
+.contribution-folder-card {
+  position: relative;
+  border: 1px solid #d7e0ec;
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 0.95rem 0.9rem 0.85rem;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.contribution-folder-card::before {
+  content: "";
+  position: absolute;
+  top: -10px;
+  left: 18px;
+  width: 55px;
+  height: 18px;
+  border-radius: 10px 10px 0 0;
+  background: #e2e8f0;
+  border: 1px solid #d7e0ec;
+  border-bottom: none;
+}
+
+.contribution-folder-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 28px rgba(15, 23, 42, 0.12);
+}
+
+.contribution-folder-card.active {
+  border-color: var(--primary-color);
+  box-shadow: 0 16px 28px rgba(15, 23, 42, 0.14);
+}
+
+.contribution-folder-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--primary-color, #0f766e) 12%, #ffffff);
+  color: var(--primary-color, #0f766e);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  margin-bottom: 0.45rem;
+}
+
+.contribution-folder-label {
+  font-weight: 700;
+  color: #0f172a;
+  font-size: 1rem;
+}
+
+.contribution-folder-meta {
+  display: inline-block;
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.contribution-empty-note {
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  padding: 1rem;
+  color: #475569;
+  font-weight: 600;
+  text-align: center;
 }
 
 .contribution-chip {
@@ -8455,6 +8574,8 @@ body[data-branch-theme="computer-engineering"] {
 .contribution-message-list {
   display: grid;
   gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  align-items: start;
 }
 
 .contribution-message {
@@ -8497,14 +8618,39 @@ body[data-branch-theme="computer-engineering"] {
   gap: 0.6rem;
   font-size: 0.85rem;
   color: #64748b;
+  flex-wrap: wrap;
 }
 
 .contribution-star {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  font-size: 0.78rem;
-  color: #0f766e;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.contribution-star.tone-blue {
+  color: #2563eb;
+}
+
+.contribution-star.tone-green {
+  color: #16a34a;
+}
+
+.contribution-star.tone-gold {
+  color: #ca8a04;
+}
+
+.contribution-star.tone-muted {
+  color: #94a3b8;
+}
+
+.contribution-badge {
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #0f172a;
+  font-size: 0.72rem;
   font-weight: 700;
 }
 
@@ -8517,6 +8663,14 @@ body[data-branch-theme="computer-engineering"] {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.contribution-icon-btn {
+  padding: 0.35rem 0.45rem;
+  font-size: 0.75rem;
+  min-width: 32px;
+  line-height: 1;
 }
 
 .contribution-comments {
@@ -8534,6 +8688,16 @@ body[data-branch-theme="computer-engineering"] {
   color: #0f172a;
 }
 
+.contribution-comment {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.contribution-comment-time {
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
 .contribution-no-comments {
   margin-top: 0.5rem;
   color: #94a3b8;
@@ -8545,6 +8709,13 @@ body[data-branch-theme="computer-engineering"] {
   display: flex;
   gap: 0.6rem;
   flex-wrap: wrap;
+}
+
+.contribution-comment-note {
+  margin-top: 0.6rem;
+  font-size: 0.82rem;
+  color: #64748b;
+  font-weight: 600;
 }
 
 .contribution-comment-form input {
@@ -8594,6 +8765,94 @@ body[data-branch-theme="computer-engineering"] {
 
 .contribution-unlock-note {
   margin-top: 0.8rem;
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.referral-modal {
+  width: min(620px, 96%);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.referral-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.8rem;
+  margin-bottom: 0.4rem;
+}
+
+.referral-modal-note {
+  margin: 0 0 0.8rem;
+  color: #475569;
+  font-weight: 600;
+}
+
+.referral-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.6rem;
+  margin-bottom: 0.9rem;
+}
+
+.referral-summary-grid > div {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 0.55rem 0.65rem;
+  background: #f8fafc;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.referral-summary-grid span {
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.referral-summary-grid strong {
+  color: #0f172a;
+  font-size: 1.1rem;
+}
+
+.referral-form {
+  display: grid;
+  gap: 0.6rem;
+  margin-bottom: 0.8rem;
+}
+
+.referral-form input {
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 0.6rem 0.7rem;
+}
+
+.referral-unlock-panel {
+  margin-top: 0.6rem;
+  padding: 0.7rem 0.8rem;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.referral-unlock-row {
+  margin-top: 0.5rem;
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.referral-unlock-row input {
+  flex: 1;
+  min-width: 220px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 0.55rem 0.7rem;
+}
+
+.referral-unlock-note {
+  margin-top: 0.7rem;
   color: #64748b;
   font-size: 0.9rem;
 }

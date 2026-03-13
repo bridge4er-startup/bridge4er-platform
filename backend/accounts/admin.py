@@ -4,7 +4,7 @@ from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.forms import UserChangeForm
 from django.utils.crypto import get_random_string
 
-from .models import User
+from .models import ReferralInvite, ReferralUnlock, User
 
 
 class CustomUserChangeForm(UserChangeForm):
@@ -103,3 +103,17 @@ class CustomUserAdmin(UserAdmin):
             "Temporary passwords generated. Share securely with users:\n" + " | ".join(generated),
             level=messages.INFO,
         )
+
+
+@admin.register(ReferralInvite)
+class ReferralInviteAdmin(admin.ModelAdmin):
+    list_display = ("id", "referrer", "friend_name", "friend_mobile", "status", "created_at", "matched_at")
+    list_filter = ("status", "created_at")
+    search_fields = ("friend_name", "friend_mobile", "referrer__username", "referrer__email")
+
+
+@admin.register(ReferralUnlock)
+class ReferralUnlockAdmin(admin.ModelAdmin):
+    list_display = ("id", "user", "exam_set", "created_at")
+    list_filter = ("created_at",)
+    search_fields = ("user__username", "exam_set__name")

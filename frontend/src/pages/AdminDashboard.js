@@ -39,7 +39,7 @@ const BULK_SYNC_SCOPE_LABELS = {
   resources: "Resource Files",
   all: "All Dropbox Content",
 };
-const CONTRIBUTION_CATEGORIES = ["PSC", "NEC", "MSC", "GK/IQ", "NTC", "Other"];
+const CONTRIBUTION_CATEGORIES = ["PSC", "NEC", "MSC", "GK/IQ", "NTC", "NEA", "Other"];
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState("upload-files"); // upload-files, manage-mcqs, bulk-upload-mcqs, review-subjective

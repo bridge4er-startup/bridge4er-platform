@@ -1500,6 +1500,26 @@ class UserAnalyticsView(APIView):
         except Exception:
             contribution_summary = {}
 
+        referral_summary = {}
+        try:
+            from accounts.models import ReferralInvite, ReferralUnlock
+
+            matched_count = ReferralInvite.objects.filter(referrer=request.user, status="matched").count()
+            pending_referrals = ReferralInvite.objects.filter(referrer=request.user, status="pending").count()
+            earned_referral_unlocks = matched_count // 2
+            redeemed_referral_unlocks = ReferralUnlock.objects.filter(user=request.user).count()
+            available_referral_unlocks = max(earned_referral_unlocks - redeemed_referral_unlocks, 0)
+            referral_summary = {
+                "matched_count": matched_count,
+                "pending_count": pending_referrals,
+                "earned_unlocks": earned_referral_unlocks,
+                "redeemed_unlocks": redeemed_referral_unlocks,
+                "available_unlocks": available_referral_unlocks,
+            }
+            summary["referral_unlocks_available"] = available_referral_unlocks
+        except Exception:
+            referral_summary = {}
+
         return Response(
             {
                 "profile": profile,
@@ -1510,5 +1530,6 @@ class UserAnalyticsView(APIView):
                 "subjective_status_breakdown": subjective_status,
                 "subjective_submissions": subjective_details,
                 "contribution_summary": contribution_summary,
+                "referral_summary": referral_summary,
             }
         )

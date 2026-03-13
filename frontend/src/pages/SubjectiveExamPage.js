@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { getMySubjectiveSubmissions, startExamSet, uploadSubjective } from "../services/examService";
+import API from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import toast from "react-hot-toast";
 import { formatNepalDate, formatNepalDateTime } from "../utils/dateTime";
+import FilePreviewModal from "../components/common/FilePreviewModal";
 
 function formatDuration(seconds = 0) {
   const total = Number(seconds || 0);
@@ -38,6 +40,21 @@ function formatTimer(timeLeft = 0) {
   return `${prefix}${minutes}:${paddedSeconds}`;
 }
 
+function inferPreviewType(contentType = "", filename = "") {
+  const normalized = String(contentType || "").toLowerCase();
+  const lowerName = String(filename || "").toLowerCase();
+  if (normalized.includes("pdf") || lowerName.endsWith(".pdf")) return "pdf";
+  if (
+    normalized.startsWith("image/") ||
+    [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"].some(
+      (ext) => lowerName.endsWith(ext)
+    )
+  ) {
+    return "image";
+  }
+  return "other";
+}
+
 function normalizeEmail(value) {
   return String(value || "").trim().toLowerCase();
 }
@@ -65,6 +82,7 @@ export default function SubjectiveExamPage() {
   const [timeLeft, setTimeLeft] = useState(null);
   const [initialDuration, setInitialDuration] = useState(10800);
   const [isSubmissionWindowClosed, setIsSubmissionWindowClosed] = useState(false);
+  const [previewFile, setPreviewFile] = useState(null);
   const timerRef = useRef(null);
 
   useEffect(() => {
@@ -122,6 +140,67 @@ export default function SubjectiveExamPage() {
 
     return () => clearInterval(timerRef.current);
   }, [timeLeft, exam, isSubmissionWindowClosed]);
+
+  const closePreview = () => {
+    setPreviewFile((current) => {
+      if (current?.url && current.url.startsWith("blob:")) {
+        URL.revokeObjectURL(current.url);
+      }
+      return null;
+    });
+  };
+
+  useEffect(() => {
+    return () => {
+      if (previewFile?.url && previewFile.url.startsWith("blob:")) {
+        URL.revokeObjectURL(previewFile.url);
+      }
+    };
+  }, [previewFile]);
+
+  const openPreview = async (fileUrl, nameFallback) => {
+    const safeUrl = String(fileUrl || "").trim();
+    if (!safeUrl) return;
+    try {
+      const response = await API.get(safeUrl, { responseType: "blob" });
+      const contentType = String(response?.headers?.["content-type"] || "");
+      const blob = response.data instanceof Blob ? response.data : new Blob([response.data], { type: contentType || undefined });
+      const objectUrl = URL.createObjectURL(blob);
+      const previewType = inferPreviewType(contentType, nameFallback || safeUrl);
+      setPreviewFile((current) => {
+        if (current?.url && current.url.startsWith("blob:")) {
+          URL.revokeObjectURL(current.url);
+        }
+        return {
+          name: nameFallback || "File Preview",
+          url: objectUrl,
+          type: previewType,
+        };
+      });
+    } catch (_error) {
+      toast.error("Unable to open file.");
+    }
+  };
+
+  const downloadFile = async (fileUrl, nameFallback) => {
+    const safeUrl = String(fileUrl || "").trim();
+    if (!safeUrl) return;
+    try {
+      const downloadUrl = safeUrl.includes("?") ? `${safeUrl}&download=1` : `${safeUrl}?download=1`;
+      const response = await API.get(downloadUrl, { responseType: "blob" });
+      const blob = response.data instanceof Blob ? response.data : new Blob([response.data]);
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = nameFallback || "download";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    } catch (_error) {
+      toast.error("Unable to download file.");
+    }
+  };
 
   const submit = async () => {
     if (isSubmissionWindowClosed) {
@@ -321,12 +400,12 @@ export default function SubjectiveExamPage() {
         </div>
       </div>
 
-      <div style={{ marginTop: 24 }}>
-        <h4>Your Submissions</h4>
+      <div className="profile-attempt-list-card" style={{ marginTop: 24 }}>
+        <h3>Your Submissions</h3>
         {submissions.length === 0 ? (
           <p>No submissions yet.</p>
         ) : (
-          <div className="subjective-submissions-list">
+          <div className="subjective-submissions-list profile-subjective-submissions">
             {submissions.map((item) => {
               const hasScore = item.score !== null && item.score !== undefined && item.score !== "";
               return (
@@ -334,10 +413,15 @@ export default function SubjectiveExamPage() {
                   <header className="subjective-result-header">
                     <div>
                       <h5>{item.exam_set_name || exam?.name || "Subjective Exam"}</h5>
-                      <p>
+                      <p className="profile-subjective-time-chip">
                         Submitted:{" "}
-                        {item.submitted_at ? formatNepalDateTime(item.submitted_at) : "N/A"}
+                        <strong>{item.submitted_at ? formatNepalDateTime(item.submitted_at) : "N/A"}</strong>
                       </p>
+                      {item.reviewed_at ? (
+                        <p className="profile-subjective-time-chip">
+                          Reviewed: <strong>{formatNepalDateTime(item.reviewed_at)}</strong>
+                        </p>
+                      ) : null}
                     </div>
                     <span className={`subjective-status-pill status-${item.status || "pending"}`}>
                       {formatSubmissionStatus(item.status)}
@@ -358,12 +442,46 @@ export default function SubjectiveExamPage() {
                     <div className="subjective-comment-title">Examiner Comments</div>
                     <p>{item.feedback || "No comments yet. Your submission is under review."}</p>
                   </div>
+
+                  {item.file_url ? (
+                    <div className="profile-subjective-actions">
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-soft-blue-action"
+                        onClick={() => openPreview(item.file_url, item.exam_set_name || "Submitted File")}
+                      >
+                        View Submission
+                      </button>
+                    </div>
+                  ) : null}
+                  {item.reviewed_file_url ? (
+                    <div className="profile-subjective-actions">
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-soft-blue-action"
+                        onClick={() => openPreview(item.reviewed_file_url, item.exam_set_name || "Reviewed File")}
+                      >
+                        View Reviewed File
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-soft-blue-action"
+                        onClick={() =>
+                          downloadFile(item.reviewed_file_url, `${item.exam_set_name || "reviewed-file"}.pdf`)
+                        }
+                      >
+                        Download Reviewed File
+                      </button>
+                    </div>
+                  ) : null}
                 </article>
               );
             })}
           </div>
         )}
       </div>
+
+      <FilePreviewModal preview={previewFile} onClose={closePreview} />
     </div>
   );
 }
