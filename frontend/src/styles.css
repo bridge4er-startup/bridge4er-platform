@@ -8475,6 +8475,25 @@ body[data-branch-theme="computer-engineering"] {
 .subjective-summary-score {
   font-weight: 700;
   color: #0f172a;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+}
+
+.subjective-summary-score.pending {
+  color: #64748b;
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+}
+
+.subjective-summary-score.scored {
+  color: #0f172a;
+  background: #eef2ff;
+  border-color: #c7d2fe;
 }
 
 .subjective-summary-date {
@@ -8737,6 +8756,16 @@ body[data-branch-theme="computer-engineering"] {
   font-weight: 700;
 }
 
+.contribution-star i {
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.contribution-star-count {
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
 .contribution-star-badge {
   width: 34px;
   height: 34px;
@@ -8855,6 +8884,10 @@ body[data-branch-theme="computer-engineering"] {
   flex-wrap: wrap;
   gap: 0.35rem;
   align-items: baseline;
+  color: #0f172a;
+}
+
+.contribution-comment-text {
   color: #0f172a;
 }
 

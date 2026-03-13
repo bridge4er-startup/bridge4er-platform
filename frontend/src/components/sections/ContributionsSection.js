@@ -262,11 +262,12 @@ export default function ContributionsSection({ branch = "Civil Engineering", isA
                     <p className="contribution-meta">
                       <span className="contribution-user">{contributorLabel}</span>
                       <span
-                        className={`contribution-star-badge tone-${starTone}`}
+                        className={`contribution-star tone-${starTone}`}
                         aria-label={`Star rating ${starCount}`}
                         title={`Star rating ${starCount}`}
                       >
-                        {starCount}
+                        <i className="fas fa-star" aria-hidden="true"></i>
+                        <span className="contribution-star-count">{starCount}</span>
                       </span>
                     </p>
                   </div>
@@ -297,10 +298,11 @@ export default function ContributionsSection({ branch = "Civil Engineering", isA
                     {item.comments.map((comment) => (
                       <div key={comment.id || `${item.id}-${comment.user_name}`} className="contribution-comment">
                         <div className="contribution-comment-line">
-                          <strong>{comment.user_name || comment.user_username || "User"}</strong>, {comment.text}
+                          <strong>{comment.user_name || comment.user_username || "User"}</strong>
+                          <span className="contribution-comment-text">: {comment.text}</span>
                           {comment.created_at ? (
                             <span className="contribution-comment-time">
-                              {formatNepalDateTime(comment.created_at)}
+                              ({formatNepalDateTime(comment.created_at)})
                             </span>
                           ) : null}
                         </div>

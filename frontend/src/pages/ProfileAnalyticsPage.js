@@ -446,7 +446,6 @@ export default function ProfileAnalyticsPage() {
         <div className="profile-hero-actions">
           <Link className="btn btn-secondary btn-soft-blue-action profile-home-btn" to="/">Back to Home</Link>
         </div>
-        <p className="profile-referral-note">Refer two friends to unlock a set.</p>
       </section>
 
       <section className="profile-analytics-grid">
@@ -551,7 +550,7 @@ export default function ProfileAnalyticsPage() {
                             </span>
                           </div>
                           <div className="subjective-summary-meta">
-                            <span className="subjective-summary-score">
+                            <span className={`subjective-summary-score ${hasScore ? "scored" : "pending"}`}>
                               {hasScore ? item.score : "Pending"}
                               {hasScore && item.max_marks != null ? ` / ${item.max_marks}` : ""}
                             </span>
