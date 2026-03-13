@@ -196,6 +196,7 @@ export default function ProfileAnalyticsPage() {
   const [submittingReferral, setSubmittingReferral] = useState(false);
   const [referralUnlockId, setReferralUnlockId] = useState("");
   const [unlockingReferral, setUnlockingReferral] = useState(false);
+  const [expandedSubmissionId, setExpandedSubmissionId] = useState(null);
 
   useEffect(() => {
     const load = async () => {
@@ -394,6 +395,10 @@ export default function ProfileAnalyticsPage() {
     }
   };
 
+  const toggleSubjectiveDetails = (submissionId) => {
+    setExpandedSubmissionId((current) => (current === submissionId ? null : submissionId));
+  };
+
   if (loading) {
     return <div style={{ padding: 20 }}>Loading analytics...</div>;
   }
@@ -418,6 +423,13 @@ export default function ProfileAnalyticsPage() {
   return (
     <div className="container profile-analytics-page" style={{ paddingTop: 20, paddingBottom: 40 }}>
       <section className="profile-hero-card">
+        <button
+          type="button"
+          className="btn btn-primary btn-soft-blue-action profile-referral-cta"
+          onClick={() => setReferralModalOpen(true)}
+        >
+          Refer to Friends
+        </button>
         <div className="profile-hero-head">
           <div className="profile-avatar-large">{String(profile.full_name || profile.username || "S").slice(0, 1).toUpperCase()}</div>
           <div>
@@ -432,13 +444,6 @@ export default function ProfileAnalyticsPage() {
           <span><strong>Field:</strong> {profile.field_of_study || "-"}</span>
         </div>
         <div className="profile-hero-actions">
-          <button
-            type="button"
-            className="btn btn-primary btn-soft-blue-action"
-            onClick={() => setReferralModalOpen(true)}
-          >
-            Refer to Friends
-          </button>
           <Link className="btn btn-secondary btn-soft-blue-action profile-home-btn" to="/">Back to Home</Link>
         </div>
         <p className="profile-referral-note">Refer two friends to unlock a set.</p>
@@ -501,6 +506,129 @@ export default function ProfileAnalyticsPage() {
               </div>
             </div>
           </section>
+
+          <div className="profile-attempt-list-card" style={{ marginTop: 6 }}>
+            <h3>Recent Attempts</h3>
+            {recentAttempts.length === 0 ? (
+              <p>No attempts yet.</p>
+            ) : (
+              <ul className="file-list">
+                {recentAttempts.map((item) => (
+                  <li key={item.id} className="file-item">
+                    <div className="file-details">
+                      <h4>{item.exam_name}</h4>
+                      <p>Score: {Number(item.score || 0).toFixed(2)}</p>
+                    </div>
+                    <small>{formatNepalDateTime(item.created_at)}</small>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div className="profile-attempt-list-card profile-subjective-review-card" style={{ marginTop: 10 }}>
+            <h3>Subjective Submission Reviews</h3>
+            {subjectiveSubmissions.length === 0 ? (
+              <p>No subjective submissions yet.</p>
+            ) : (
+              <div className="subjective-summary-list profile-subjective-submissions">
+                {subjectiveSubmissions.map((item) => {
+                  const hasScore = item.score !== null && item.score !== undefined && item.score !== "";
+                  const isExpanded = expandedSubmissionId === item.id;
+                  return (
+                    <div key={item.id} className="subjective-summary-item">
+                      <button
+                        type="button"
+                        className={`subjective-summary-row ${isExpanded ? "expanded" : ""}`}
+                        onClick={() => toggleSubjectiveDetails(item.id)}
+                        aria-expanded={isExpanded}
+                      >
+                        <div className="subjective-summary-left">
+                          <div className="subjective-summary-title">
+                            <span className="subjective-summary-name">{item.exam_set_name || "Subjective Exam"}</span>
+                            <span className={`subjective-status-pill status-${item.status || "pending"}`}>
+                              {formatSubmissionStatus(item.status)}
+                            </span>
+                          </div>
+                          <div className="subjective-summary-meta">
+                            <span className="subjective-summary-score">
+                              {hasScore ? item.score : "Pending"}
+                              {hasScore && item.max_marks != null ? ` / ${item.max_marks}` : ""}
+                            </span>
+                            <span className="subjective-summary-date">
+                              {item.submitted_at ? formatNepalDateTime(item.submitted_at) : "N/A"}
+                            </span>
+                          </div>
+                        </div>
+                        <span className="subjective-summary-toggle">{isExpanded ? "Hide" : "Details"}</span>
+                      </button>
+
+                      {isExpanded ? (
+                        <div className="subjective-summary-details">
+                          <div className="subjective-detail-times">
+                            <span>
+                              Submitted:{" "}
+                              <strong>{item.submitted_at ? formatNepalDateTime(item.submitted_at) : "N/A"}</strong>
+                            </span>
+                            {item.reviewed_at ? (
+                              <span>
+                                Reviewed: <strong>{formatNepalDateTime(item.reviewed_at)}</strong>
+                              </span>
+                            ) : null}
+                          </div>
+
+                          <div className={`subjective-score-panel ${hasScore ? "scored" : "pending"}`}>
+                            <span className="subjective-score-label">Marks</span>
+                            <strong className="subjective-score-value">{hasScore ? item.score : "Pending"}</strong>
+                            {hasScore && item.max_marks != null ? (
+                              <span className="subjective-score-total">/ {item.max_marks}</span>
+                            ) : null}
+                          </div>
+
+                          <div className="subjective-comment-notepad">
+                            <div className="subjective-comment-title">Examiner Comments</div>
+                            <p>{item.feedback || "No comments yet. Your submission is under review."}</p>
+                          </div>
+
+                          {item.file_url ? (
+                            <div className="profile-subjective-actions">
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-soft-blue-action"
+                                onClick={() => openPreview(item.file_url, item.exam_set_name || "Submitted File")}
+                              >
+                                View Submission
+                              </button>
+                            </div>
+                          ) : null}
+                          {item.reviewed_file_url ? (
+                            <div className="profile-subjective-actions">
+                              <button
+                                type="button"
+                                className="btn btn-primary btn-soft-blue-action"
+                                onClick={() => openPreview(item.reviewed_file_url, item.exam_set_name || "Reviewed File")}
+                              >
+                                View Reviewed File
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-soft-blue-action"
+                                onClick={() =>
+                                  downloadFile(item.reviewed_file_url, `${item.exam_set_name || "reviewed-file"}.pdf`)
+                                }
+                              >
+                                Download Reviewed File
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
         <aside className="profile-analytics-side">
@@ -587,104 +715,6 @@ export default function ProfileAnalyticsPage() {
           </div>
         </aside>
       </section>
-
-      <div className="profile-attempt-list-card" style={{ marginTop: 24 }}>
-        <h3>Recent Attempts</h3>
-        {recentAttempts.length === 0 ? (
-          <p>No attempts yet.</p>
-        ) : (
-          <ul className="file-list">
-            {recentAttempts.map((item) => (
-              <li key={item.id} className="file-item">
-                <div className="file-details">
-                  <h4>{item.exam_name}</h4>
-                  <p>Score: {Number(item.score || 0).toFixed(2)}</p>
-                </div>
-                <small>{formatNepalDateTime(item.created_at)}</small>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      <div className="profile-attempt-list-card profile-subjective-review-card" style={{ marginTop: 24 }}>
-        <h3>Subjective Submission Reviews</h3>
-        {subjectiveSubmissions.length === 0 ? (
-          <p>No subjective submissions yet.</p>
-        ) : (
-          <div className="subjective-submissions-list profile-subjective-submissions">
-            {subjectiveSubmissions.map((item) => {
-              const hasScore = item.score !== null && item.score !== undefined && item.score !== "";
-              return (
-                <article key={item.id} className="subjective-result-card">
-                  <header className="subjective-result-header">
-                    <div>
-                      <h5>{item.exam_set_name || "Subjective Exam"}</h5>
-                      <p className="profile-subjective-time-chip">
-                        Submitted:{" "}
-                        <strong>{item.submitted_at ? formatNepalDateTime(item.submitted_at) : "N/A"}</strong>
-                      </p>
-                      {item.reviewed_at ? (
-                        <p className="profile-subjective-time-chip">
-                          Reviewed: <strong>{formatNepalDateTime(item.reviewed_at)}</strong>
-                        </p>
-                      ) : null}
-                    </div>
-                    <span className={`subjective-status-pill status-${item.status || "pending"}`}>
-                      {formatSubmissionStatus(item.status)}
-                    </span>
-                  </header>
-
-                  <div className={`subjective-score-panel ${hasScore ? "scored" : "pending"}`}>
-                    <span className="subjective-score-label">Marks</span>
-                    <strong className="subjective-score-value">{hasScore ? item.score : "Pending"}</strong>
-                    {hasScore && item.max_marks != null ? (
-                      <span className="subjective-score-total">/ {item.max_marks}</span>
-                    ) : null}
-                  </div>
-
-                  <div className="subjective-comment-notepad">
-                    <div className="subjective-comment-title">Examiner Comments</div>
-                    <p>{item.feedback || "No comments yet. Your submission is under review."}</p>
-                  </div>
-
-                  {item.file_url ? (
-                    <div className="profile-subjective-actions">
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-soft-blue-action"
-                        onClick={() => openPreview(item.file_url, item.exam_set_name || "Submitted File")}
-                      >
-                        View Submission
-                      </button>
-                    </div>
-                  ) : null}
-                  {item.reviewed_file_url ? (
-                    <div className="profile-subjective-actions">
-                      <button
-                        type="button"
-                        className="btn btn-primary btn-soft-blue-action"
-                        onClick={() => openPreview(item.reviewed_file_url, item.exam_set_name || "Reviewed File")}
-                      >
-                        View Reviewed File
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-soft-blue-action"
-                        onClick={() =>
-                          downloadFile(item.reviewed_file_url, `${item.exam_set_name || "reviewed-file"}.pdf`)
-                        }
-                      >
-                        Download Reviewed File
-                      </button>
-                    </div>
-                  ) : null}
-                </article>
-              );
-            })}
-          </div>
-        )}
-      </div>
 
       {referralModalOpen ? (
         <div className="payment-overlay" onClick={() => setReferralModalOpen(false)}>

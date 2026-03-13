@@ -227,9 +227,7 @@ export default function ContributionsSection({ branch = "Civil Engineering", isA
       </div>
 
       {!selectedCategory ? (
-        <div className="contribution-empty-note">
-          Choose a folder to see what is inside.
-        </div>
+        null
       ) : loading ? (
         <TimedLoadingState baseMessage="Loading contributions..." />
       ) : orderedContributions.length === 0 ? (
@@ -263,10 +261,13 @@ export default function ContributionsSection({ branch = "Civil Engineering", isA
                     <h4>{item.title || item.file_name || "Shared Notes"}</h4>
                     <p className="contribution-meta">
                       <span className="contribution-user">{contributorLabel}</span>
-                      <span className={`contribution-star tone-${starTone}`}>
-                        <i className="fas fa-star"></i>
+                      <span
+                        className={`contribution-star-badge tone-${starTone}`}
+                        aria-label={`Star rating ${starCount}`}
+                        title={`Star rating ${starCount}`}
+                      >
+                        {starCount}
                       </span>
-                      <span className="contribution-badge">Badge {starCount}</span>
                     </p>
                   </div>
                   <div className="contribution-actions">
@@ -295,11 +296,13 @@ export default function ContributionsSection({ branch = "Civil Engineering", isA
                   <div className="contribution-comments">
                     {item.comments.map((comment) => (
                       <div key={comment.id || `${item.id}-${comment.user_name}`} className="contribution-comment">
-                        <div className="contribution-comment-main">
-                          <strong>{comment.user_name || comment.user_username || "User"}:</strong> {comment.text}
-                        </div>
-                        <div className="contribution-comment-time">
-                          {comment.created_at ? formatNepalDateTime(comment.created_at) : ""}
+                        <div className="contribution-comment-line">
+                          <strong>{comment.user_name || comment.user_username || "User"}</strong>, {comment.text}
+                          {comment.created_at ? (
+                            <span className="contribution-comment-time">
+                              {formatNepalDateTime(comment.created_at)}
+                            </span>
+                          ) : null}
                         </div>
                       </div>
                     ))}

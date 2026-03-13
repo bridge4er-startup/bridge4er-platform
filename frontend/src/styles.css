@@ -7244,6 +7244,13 @@ body[data-branch-theme="computer-engineering"] {
   gap: 0.8rem;
 }
 
+.profile-referral-cta {
+  justify-self: end;
+  align-self: start;
+  width: fit-content;
+  padding: 0.45rem 0.9rem;
+}
+
 .profile-hero-head {
   display: flex;
   align-items: center;
@@ -7401,6 +7408,10 @@ body[data-branch-theme="computer-engineering"] {
 }
 
 @media (max-width: 640px) {
+  .profile-referral-cta {
+    justify-self: start;
+  }
+
   .profile-stat-grid {
     grid-template-columns: 1fr;
   }
@@ -8398,43 +8409,136 @@ body[data-branch-theme="computer-engineering"] {
   gap: 0.58rem;
 }
 
-.profile-subjective-submissions .subjective-result-card {
-  padding: 0.72rem;
-  border-radius: 8px;
+.subjective-summary-list {
+  display: grid;
+  gap: 0.6rem;
 }
 
-.profile-subjective-submissions .subjective-result-header {
-  gap: 0.58rem;
-  margin-bottom: 0.46rem;
+.subjective-summary-item {
+  display: grid;
+  gap: 0;
 }
 
-.profile-subjective-submissions .subjective-result-header h5 {
-  font-size: 0.9rem;
-}
-
-.profile-subjective-time-chip {
-  margin: 0.2rem 0 0;
-  display: inline-flex;
-  align-items: center;
-  max-width: max-content;
-  border-radius: 999px;
-  padding: 0.12rem 0.45rem;
-  background: transparent;
+.subjective-summary-row {
+  width: 100%;
   border: 1px solid #e2e8f0;
-  color: #0f172a !important;
-  font-size: 0.68rem;
-  font-weight: 600;
+  border-radius: 10px;
+  background: transparent;
+  padding: 0.65rem 0.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
 }
 
-.profile-subjective-time-chip strong {
+.subjective-summary-row.expanded {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.subjective-summary-row:focus-visible {
+  outline: 2px solid #94a3b8;
+  outline-offset: 2px;
+}
+
+.subjective-summary-left {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.subjective-summary-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.subjective-summary-name {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.subjective-summary-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  font-size: 0.8rem;
+  color: #475569;
+}
+
+.subjective-summary-score {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.subjective-summary-date {
+  font-size: 0.74rem;
+  color: #64748b;
+}
+
+.subjective-summary-toggle {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: #475569;
+  white-space: nowrap;
+}
+
+.subjective-summary-details {
+  border: 1px solid #e2e8f0;
+  border-top: none;
+  border-radius: 0 0 10px 10px;
+  padding: 0.75rem 0.85rem;
+  margin-top: -1px;
+  display: grid;
+  gap: 0.7rem;
+}
+
+.subjective-detail-times {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  font-size: 0.8rem;
+  color: #475569;
+}
+
+.subjective-detail-times strong {
   color: #0f172a;
   font-weight: 700;
+}
+
+.profile-subjective-submissions .subjective-status-pill {
+  background: transparent;
+  border: 1px solid #cbd5e1;
+  color: #475569;
+}
+
+.profile-subjective-submissions .subjective-status-pill.status-pending,
+.profile-subjective-submissions .subjective-status-pill.status-reviewed,
+.profile-subjective-submissions .subjective-status-pill.status-rejected {
+  background: transparent;
+  color: #475569;
 }
 
 .profile-subjective-submissions .subjective-score-panel {
   gap: 0.34rem;
   padding: 0.42rem 0.56rem;
   border-radius: 7px;
+  background: transparent;
+  border: 1px solid #e2e8f0;
+}
+
+.profile-subjective-submissions .subjective-score-panel.pending {
+  background: transparent;
+}
+
+.profile-subjective-submissions .subjective-score-panel.scored {
+  background: transparent;
 }
 
 .profile-subjective-submissions .subjective-score-label {
@@ -8442,7 +8546,10 @@ body[data-branch-theme="computer-engineering"] {
 }
 
 .profile-subjective-submissions .subjective-score-value {
-  font-size: clamp(1.3rem, 2.8vw, 1.8rem);
+  font-size: clamp(1.2rem, 2.4vw, 1.7rem);
+  background: none;
+  -webkit-text-fill-color: #0f172a;
+  color: #0f172a;
 }
 
 .profile-subjective-submissions .subjective-score-panel.pending .subjective-score-value {
@@ -8457,9 +8564,10 @@ body[data-branch-theme="computer-engineering"] {
 }
 
 .profile-subjective-submissions .subjective-comment-notepad {
-  margin-top: 0.56rem;
+  margin-top: 0.2rem;
   padding: 0.5rem 0.62rem;
   background: transparent;
+  border: 1px solid #e2e8f0;
 }
 
 .profile-subjective-actions {
@@ -8629,6 +8737,55 @@ body[data-branch-theme="computer-engineering"] {
   font-weight: 700;
 }
 
+.contribution-star-badge {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #0f172a;
+  background: #e2e8f0;
+  border: 1px solid #cbd5e1;
+  clip-path: polygon(
+    50% 0%,
+    61% 35%,
+    98% 35%,
+    68% 57%,
+    79% 91%,
+    50% 72%,
+    21% 91%,
+    32% 57%,
+    2% 35%,
+    39% 35%
+  );
+}
+
+.contribution-star-badge.tone-blue {
+  background: #dbeafe;
+  color: #1e3a8a;
+  border-color: #bfdbfe;
+}
+
+.contribution-star-badge.tone-green {
+  background: #dcfce7;
+  color: #166534;
+  border-color: #bbf7d0;
+}
+
+.contribution-star-badge.tone-gold {
+  background: #fef9c3;
+  color: #854d0e;
+  border-color: #fde68a;
+}
+
+.contribution-star-badge.tone-muted {
+  background: #f1f5f9;
+  color: #64748b;
+  border-color: #e2e8f0;
+}
+
 .contribution-star.tone-blue {
   color: #2563eb;
 }
@@ -8693,9 +8850,18 @@ body[data-branch-theme="computer-engineering"] {
   gap: 0.2rem;
 }
 
+.contribution-comment-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: baseline;
+  color: #0f172a;
+}
+
 .contribution-comment-time {
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   color: #64748b;
+  margin-left: 0.2rem;
 }
 
 .contribution-no-comments {
