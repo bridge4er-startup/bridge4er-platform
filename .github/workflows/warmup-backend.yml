@@ -1,0 +1,17 @@
+name: Keep Render Backend Warm
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  warmup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Render backend root
+        run: |
+          curl -sSf "https://bridge4er-api.onrender.com/" > /dev/null
+      - name: Ping Render API stats
+        run: |
+          curl -sSf "https://bridge4er-api.onrender.com/api/storage/homepage/stats/" > /dev/null
