@@ -65,6 +65,7 @@ class ExamSet(models.Model):
     duration_seconds = models.PositiveIntegerField(default=1800)
     grace_seconds = models.PositiveIntegerField(default=60)
     negative_marking = models.DecimalField(max_digits=4, decimal_places=2, default=0.25)
+    total_marks_override = models.PositiveIntegerField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
     managed_by_sync = models.BooleanField(default=True)
     source_file_path = models.CharField(max_length=1000, blank=True, default="", db_index=True)
@@ -164,6 +165,7 @@ class SubjectiveSubmission(models.Model):
     exam_set = models.ForeignKey(ExamSet, on_delete=models.SET_NULL, null=True, blank=True, related_name='subjective_submissions')
     file_path = models.CharField(max_length=500, blank=True)
     answer_pdf = models.FileField(upload_to='subjective_submissions/%Y/%m/%d/', null=True, blank=True)
+    reviewed_file = models.FileField(upload_to='subjective_reviews/%Y/%m/%d/', null=True, blank=True)
     email = models.EmailField(blank=True)
     mobile_number = models.CharField(max_length=20, blank=True)
     status = models.CharField(

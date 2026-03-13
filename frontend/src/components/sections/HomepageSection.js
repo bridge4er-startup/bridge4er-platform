@@ -704,7 +704,11 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
   const filteredFiles = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return files;
-    return files.filter((item) => item.name.toLowerCase().includes(query));
+    return files.filter((item) =>
+      String(item.display_name || item.name || "")
+        .toLowerCase()
+        .includes(query)
+    );
   }, [files, searchQuery]);
 
   const totalNoticePages = Math.max(1, Math.ceil(filteredFiles.length / NOTICE_PAGE_SIZE));
@@ -789,7 +793,7 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
       const objectUrl = URL.createObjectURL(new Blob([res.data]));
       const anchor = document.createElement("a");
       anchor.href = objectUrl;
-      anchor.download = file.name;
+      anchor.download = file.display_name || file.name;
       document.body.appendChild(anchor);
       anchor.click();
       document.body.removeChild(anchor);
@@ -936,12 +940,16 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
                     <li key={file.path} className="file-item">
                       <div className="file-info">
                         <div className="file-icon">
-                          <i className="fas fa-file"></i>
+                          {file.icon_url ? (
+                            <img src={file.icon_url} alt="" className="library-file-icon-img" />
+                          ) : (
+                            <i className="fas fa-file"></i>
+                          )}
                         </div>
                         <div className="file-details">
                           <h4>
                             {shouldShowNewBadge(file) ? <span className="notice-new-badge">New</span> : null}
-                            {file.name}
+                            {file.display_name || file.name}
                           </h4>
                           <p>{formatFileSize(file.size)}</p>
                         </div>

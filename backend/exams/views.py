@@ -10,6 +10,8 @@ from .views_exam import (
     LoadSubjectiveExam,
     MySubjectiveSubmissionsView,
     SubjectiveSubmissionFileView,
+    SubjectiveSubmissionReviewedFileView,
+    SubjectiveSubmissionAdminDetailView,
     ReviewSubjectiveSubmissionView,
     StartExamSetView,
     SubmitExam,

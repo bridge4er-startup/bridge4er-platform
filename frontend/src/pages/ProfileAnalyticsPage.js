@@ -4,6 +4,7 @@ import { getUserAnalytics } from "../services/examService";
 import API from "../services/api";
 import toast from "react-hot-toast";
 import { formatNepalDateTime } from "../utils/dateTime";
+import { contributionService } from "../services/contributionService";
 
 function formatSubmissionStatus(value = "") {
   const normalized = String(value || "pending");
@@ -163,6 +164,15 @@ function ScoreTrendChart({ data = [] }) {
 export default function ProfileAnalyticsPage() {
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [myContributions, setMyContributions] = useState([]);
+  const [loadingContributions, setLoadingContributions] = useState(false);
+  const [uploadingContribution, setUploadingContribution] = useState(false);
+  const [contributionForm, setContributionForm] = useState({
+    title: "",
+    description: "",
+    file: null,
+  });
+  const [unlockExamSetId, setUnlockExamSetId] = useState("");
 
   useEffect(() => {
     async function load() {
@@ -192,6 +202,76 @@ export default function ProfileAnalyticsPage() {
     }
   };
 
+  const loadMyContributions = async () => {
+    setLoadingContributions(true);
+    try {
+      const data = await contributionService.listMyContributions();
+      setMyContributions(Array.isArray(data) ? data : data?.results || []);
+    } catch (_error) {
+      toast.error("Failed to load contributions.");
+    } finally {
+      setLoadingContributions(false);
+    }
+  };
+
+  useEffect(() => {
+    loadMyContributions().catch(() => {});
+  }, []);
+
+  const updateContributionForm = (field, value) => {
+    setContributionForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const submitContribution = async () => {
+    const title = String(contributionForm.title || "").trim();
+    const description = String(contributionForm.description || "").trim();
+    const file = contributionForm.file;
+    if (!title || !file) {
+      toast.error("Please provide a name and file.");
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("File must be under 2MB.");
+      return;
+    }
+    const allowed = [".pdf", ".png", ".jpg", ".jpeg"];
+    const lower = String(file.name || "").toLowerCase();
+    if (!allowed.some((ext) => lower.endsWith(ext))) {
+      toast.error("Only PDF, JPG, or PNG files are allowed.");
+      return;
+    }
+    setUploadingContribution(true);
+    try {
+      const formData = new FormData();
+      formData.append("title", title);
+      formData.append("description", description);
+      formData.append("file", file);
+      await contributionService.uploadContribution(formData);
+      toast.success("Contribution submitted for review.");
+      setContributionForm({ title: "", description: "", file: null });
+      await loadMyContributions();
+    } catch (error) {
+      toast.error(error?.response?.data?.error || "Failed to upload contribution.");
+    } finally {
+      setUploadingContribution(false);
+    }
+  };
+
+  const claimUnlock = async () => {
+    const examSetId = String(unlockExamSetId || "").trim();
+    if (!examSetId) {
+      toast.error("Enter an exam set ID.");
+      return;
+    }
+    try {
+      await contributionService.claimUnlock(examSetId);
+      toast.success("Exam set unlocked.");
+      setUnlockExamSetId("");
+    } catch (error) {
+      toast.error(error?.response?.data?.error || "Failed to unlock exam set.");
+    }
+  };
+
   if (loading) {
     return <div style={{ padding: 20 }}>Loading analytics...</div>;
   }
@@ -206,6 +286,9 @@ export default function ProfileAnalyticsPage() {
   const paymentBreakdown = analytics.payment_gateway_breakdown || [];
   const subjectiveBreakdown = analytics.subjective_status_breakdown || [];
   const subjectiveSubmissions = analytics.subjective_submissions || [];
+  const contributionSummary = analytics.contribution_summary || {};
+  const availableUnlocks =
+    Number(contributionSummary.available_unlocks ?? summary.contribution_unlocks_available ?? 0) || 0;
 
   return (
     <div className="container profile-analytics-page" style={{ paddingTop: 20, paddingBottom: 40 }}>
@@ -306,7 +389,7 @@ export default function ProfileAnalyticsPage() {
         {subjectiveSubmissions.length === 0 ? (
           <p>No subjective submissions yet.</p>
         ) : (
-          <div className="subjective-submissions-list">
+          <div className="subjective-submissions-list profile-subjective-submissions">
             {subjectiveSubmissions.map((item) => {
               const hasScore = item.score !== null && item.score !== undefined && item.score !== "";
               return (
@@ -314,10 +397,15 @@ export default function ProfileAnalyticsPage() {
                   <header className="subjective-result-header">
                     <div>
                       <h5>{item.exam_set_name || "Subjective Exam"}</h5>
-                      <p>
+                      <p className="profile-subjective-time-chip">
                         Submitted:{" "}
-                        {item.submitted_at ? formatNepalDateTime(item.submitted_at) : "N/A"}
+                        <strong>{item.submitted_at ? formatNepalDateTime(item.submitted_at) : "N/A"}</strong>
                       </p>
+                      {item.reviewed_at ? (
+                        <p className="profile-subjective-time-chip">
+                          Reviewed: <strong>{formatNepalDateTime(item.reviewed_at)}</strong>
+                        </p>
+                      ) : null}
                     </div>
                     <span className={`subjective-status-pill status-${item.status || "pending"}`}>
                       {formatSubmissionStatus(item.status)}
@@ -347,10 +435,98 @@ export default function ProfileAnalyticsPage() {
                       Open Submitted PDF
                     </button>
                   ) : null}
+                  {item.reviewed_file_url ? (
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-soft-blue-action"
+                      style={{ marginTop: "0.5rem", width: "fit-content" }}
+                      onClick={() => openSubmissionPdf(item.reviewed_file_url)}
+                    >
+                      Open Reviewed File
+                    </button>
+                  ) : null}
                 </article>
               );
             })}
           </div>
+        )}
+      </div>
+
+      <div className="profile-attempt-list-card contribution-profile-card" style={{ marginTop: 24 }}>
+        <h3>Contribute Notes</h3>
+        <p>Upload up to 3 notes (PDF/JPG/PNG, max 2MB). Your file will appear after admin approval.</p>
+
+        <div className="contribution-upload-form">
+          <input
+            type="text"
+            placeholder="Contribution name"
+            value={contributionForm.title}
+            onChange={(e) => updateContributionForm("title", e.target.value)}
+          />
+          <textarea
+            rows={2}
+            placeholder="Short details about your notes"
+            value={contributionForm.description}
+            onChange={(e) => updateContributionForm("description", e.target.value)}
+          />
+          <input
+            type="file"
+            accept=".pdf,.png,.jpg,.jpeg"
+            onChange={(e) => updateContributionForm("file", e.target.files?.[0] || null)}
+          />
+          <button
+            className="btn btn-primary"
+            type="button"
+            disabled={uploadingContribution}
+            onClick={submitContribution}
+          >
+            {uploadingContribution ? "Uploading..." : "Submit Contribution"}
+          </button>
+        </div>
+
+        {availableUnlocks > 0 ? (
+          <div className="contribution-unlock-panel">
+            <div>
+              <strong>Available Unlocks:</strong> {availableUnlocks}
+            </div>
+            <div className="contribution-unlock-row">
+              <input
+                type="text"
+                placeholder="Enter Exam Set ID to unlock"
+                value={unlockExamSetId}
+                onChange={(e) => setUnlockExamSetId(e.target.value)}
+              />
+              <button className="btn btn-secondary" type="button" onClick={claimUnlock}>
+                Unlock Exam Set
+              </button>
+            </div>
+          </div>
+        ) : (
+          <p className="contribution-unlock-note">
+            Earn a free exam set unlock after every 5 approved contributions.
+          </p>
+        )}
+
+        <h4 style={{ marginTop: "1rem" }}>My Contributions</h4>
+        {loadingContributions ? (
+          <p>Loading contributions...</p>
+        ) : myContributions.length === 0 ? (
+          <p>No contributions yet.</p>
+        ) : (
+          <ul className="file-list">
+            {myContributions.map((item) => (
+              <li key={item.id} className="file-item">
+                <div className="file-details">
+                  <h4>{item.title || item.file_name || "Contribution"}</h4>
+                  <p>
+                    Status: {item.status || "pending"}
+                    {item.category ? ` | Category: ${item.category}` : ""}
+                  </p>
+                </div>
+                <small>{item.submitted_at ? formatNepalDateTime(item.submitted_at) : "N/A"}</small>
+              </li>
+            ))}
+          </ul>
         )}
       </div>
     </div>

@@ -26,7 +26,6 @@ from .models import (
     ExamPurchase,
     ExamQuestion,
     ExamSet,
-    QuestionAttempt,
     SubjectiveSubmission,
 )
 from .question_normalizers import normalize_exam_question_payload
@@ -365,8 +364,15 @@ def _duration_to_label(duration_seconds: int) -> str:
     return f"{seconds} Seconds"
 
 
+def _exam_total_marks(exam_set: ExamSet) -> int:
+    override = getattr(exam_set, "total_marks_override", None)
+    if override is not None:
+        return int(override)
+    return int(sum((question.marks or 0) for question in exam_set.questions.all()))
+
+
 def _legacy_mcq_payload(exam_set: ExamSet):
-    total_marks = int(sum((question.marks or 0) for question in exam_set.questions.all()))
+    total_marks = _exam_total_marks(exam_set)
     questions = []
     for q in exam_set.questions.all():
         questions.append(
@@ -403,7 +409,7 @@ def _legacy_mcq_payload(exam_set: ExamSet):
 
 
 def _legacy_subjective_payload(exam_set: ExamSet):
-    total_marks = int(sum((question.marks or 0) for question in exam_set.questions.all()))
+    total_marks = _exam_total_marks(exam_set)
     questions = []
     for q in exam_set.questions.all():
         questions.append(
@@ -1237,6 +1243,66 @@ class SubjectiveSubmissionFileView(APIView):
         return response
 
 
+class SubjectiveSubmissionReviewedFileView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, submission_id):
+        try:
+            submission = SubjectiveSubmission.objects.select_related("user").get(id=submission_id)
+        except SubjectiveSubmission.DoesNotExist:
+            return Response({"error": "Submission not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        is_owner = submission.user_id == request.user.id
+        if not request.user.is_staff and not is_owner:
+            return Response({"error": "Not allowed to access this file"}, status=status.HTTP_403_FORBIDDEN)
+
+        if not submission.reviewed_file:
+            return Response({"error": "Reviewed file not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        download_requested = str(request.query_params.get("download", "")).strip().lower() in {"1", "true", "yes"}
+        filename = str(submission.reviewed_file.name or f"reviewed-{submission.id}.pdf").split("/")[-1]
+        try:
+            file_handle = submission.reviewed_file.open("rb")
+        except FileNotFoundError:
+            return Response({"error": "Reviewed file not found on server"}, status=status.HTTP_404_NOT_FOUND)
+
+        response = FileResponse(file_handle, content_type="application/pdf")
+        content_disposition = "attachment" if download_requested else "inline"
+        response["Content-Disposition"] = f'{content_disposition}; filename="{filename}"'
+        response["Cache-Control"] = "private, max-age=300"
+        return response
+
+    def post(self, request, submission_id):
+        if not request.user.is_staff:
+            return Response({"error": "Admin access required"}, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            submission = SubjectiveSubmission.objects.get(id=submission_id)
+        except SubjectiveSubmission.DoesNotExist:
+            return Response({"error": "Submission not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        file_obj = request.FILES.get("file")
+        if not file_obj:
+            return Response({"error": "file is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        submission.reviewed_file = file_obj
+        if submission.status == "reviewed" and not submission.reviewed_at:
+            submission.reviewed_at = timezone.now()
+        submission.save(update_fields=["reviewed_file", "reviewed_at"])
+        serializer = SubjectiveSubmissionSerializer(submission, context={"request": request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class SubjectiveSubmissionAdminDetailView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def delete(self, request, submission_id):
+        deleted, _ = SubjectiveSubmission.objects.filter(id=submission_id).delete()
+        if not deleted:
+            return Response({"error": "Submission not found"}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"message": "Submission deleted"}, status=status.HTTP_200_OK)
+
+
 class ReviewSubjectiveSubmissionView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUser]
 
@@ -1306,7 +1372,7 @@ class ReviewSubjectiveSubmissionView(APIView):
             return Response({"error": "Score is required when status is reviewed"}, status=status.HTTP_400_BAD_REQUEST)
 
         if score_value is not None and target_exam_set:
-            max_marks = int(sum((question.marks or 0) for question in target_exam_set.questions.all()))
+            max_marks = _exam_total_marks(target_exam_set)
             if max_marks > 0 and score_value > max_marks:
                 return Response(
                     {"error": f"Score cannot exceed total marks ({max_marks})"},
@@ -1349,7 +1415,6 @@ class UserAnalyticsView(APIView):
         attempts = ExamAttempt.objects.filter(user=request.user)
         purchases = ExamPurchase.objects.filter(user=request.user)
         subjective_submissions = SubjectiveSubmission.objects.filter(user=request.user)
-        question_attempts = QuestionAttempt.objects.filter(user=request.user)
 
         summary = {
             "total_attempts": attempts.count(),
@@ -1359,13 +1424,7 @@ class UserAnalyticsView(APIView):
             "subjective_submissions": subjective_submissions.count(),
             "reviewed_subjective_submissions": subjective_submissions.filter(status="reviewed").count(),
         }
-
-        total_q_attempts = question_attempts.count()
-        correct_q_attempts = question_attempts.filter(is_correct=True).count()
-        summary["objective_accuracy_percent"] = round(
-            (correct_q_attempts / total_q_attempts * 100) if total_q_attempts else 0,
-            2,
-        )
+        summary["objective_accuracy_percent"] = 0
 
         history = [
             {
@@ -1419,6 +1478,28 @@ class UserAnalyticsView(APIView):
             "date_joined": request.user.date_joined,
         }
 
+        contribution_summary = {}
+        try:
+            from contributions.models import Contribution, ContributionUnlock
+
+            approved_count = Contribution.objects.filter(user=request.user, status="approved").count()
+            pending_count = Contribution.objects.filter(user=request.user, status="pending").count()
+            rejected_count = Contribution.objects.filter(user=request.user, status="rejected").count()
+            earned_unlocks = approved_count // 5
+            redeemed_unlocks = ContributionUnlock.objects.filter(user=request.user).count()
+            available_unlocks = max(earned_unlocks - redeemed_unlocks, 0)
+            contribution_summary = {
+                "approved_count": approved_count,
+                "pending_count": pending_count,
+                "rejected_count": rejected_count,
+                "earned_unlocks": earned_unlocks,
+                "redeemed_unlocks": redeemed_unlocks,
+                "available_unlocks": available_unlocks,
+            }
+            summary["contribution_unlocks_available"] = available_unlocks
+        except Exception:
+            contribution_summary = {}
+
         return Response(
             {
                 "profile": profile,
@@ -1428,5 +1509,6 @@ class UserAnalyticsView(APIView):
                 "payment_gateway_breakdown": gateway_breakdown,
                 "subjective_status_breakdown": subjective_status,
                 "subjective_submissions": subjective_details,
+                "contribution_summary": contribution_summary,
             }
         )

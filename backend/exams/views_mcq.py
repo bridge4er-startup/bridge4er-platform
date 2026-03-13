@@ -17,7 +17,7 @@ from .import_utils import (
     parse_rows_from_uploaded_file,
 )
 from .dropbox_sync import auto_sync_dropbox_for_branch
-from .models import Chapter, InstitutionFolder, MCQQuestion, QuestionAttempt, Subject
+from .models import Chapter, InstitutionFolder, MCQQuestion, Subject
 from .path_utils import GENERAL_INSTITUTION, objective_subject_roots, parse_subject_key
 from .question_normalizers import normalize_mcq_payload
 from .resources import MCQQuestionResource
@@ -459,16 +459,6 @@ class SubmitAnswerView(APIView):
             question = MCQQuestion.objects.get(id=question_id)
             is_correct = selected_option == question.correct_option.lower()
 
-            if request.user and request.user.is_authenticated:
-                QuestionAttempt.objects.update_or_create(
-                    user=request.user,
-                    question=question,
-                    defaults={
-                        "selected_option": selected_option,
-                        "is_correct": is_correct,
-                    },
-                )
-
             return Response(
                 {
                     "locked": True,
@@ -476,7 +466,7 @@ class SubmitAnswerView(APIView):
                     "selected_option": selected_option,
                     "correct_option": question.correct_option,
                     "explanation": question.explanation,
-                    "saved": bool(request.user and request.user.is_authenticated),
+                    "saved": False,
                     "options": {
                         "a": question.option_a,
                         "b": question.option_b,
@@ -825,11 +815,7 @@ class UserProgressView(APIView):
             chapter_obj = Chapter.objects.get(name=chapter, subject=subject_obj)
 
             total_questions = MCQQuestion.objects.filter(chapter=chapter_obj).count()
-            correct_answers = QuestionAttempt.objects.filter(
-                user=request.user,
-                question__chapter=chapter_obj,
-                is_correct=True,
-            ).count()
+            correct_answers = 0
 
             return Response(
                 {

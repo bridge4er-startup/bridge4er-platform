@@ -6,7 +6,6 @@ from .models import (
     Subject,
     Chapter,
     MCQQuestion,
-    QuestionAttempt,
     ExamAttempt,
     ExamSet,
     ExamQuestion,
@@ -64,14 +63,6 @@ class MCQQuestionPublicSerializer(serializers.ModelSerializer):
     class Meta:
         model = MCQQuestion
         fields = ['id', 'chapter', 'question_header', 'question_text', 'question_image_url', 'options']
-
-
-class QuestionAttemptSerializer(serializers.ModelSerializer):
-    question_text = serializers.CharField(source='question.question_text', read_only=True)
-
-    class Meta:
-        model = QuestionAttempt
-        fields = ['id', 'question', 'question_text', 'selected_option', 'is_correct', 'attempted_at']
 
 
 class ExamAttemptSerializer(serializers.ModelSerializer):
@@ -181,6 +172,9 @@ class ExamSetSerializer(serializers.ModelSerializer):
         return obj.questions.count()
 
     def get_total_marks(self, obj):
+        override = getattr(obj, "total_marks_override", None)
+        if override is not None:
+            return int(override)
         return int(sum((question.marks or 0) for question in obj.questions.all()))
 
     def get_is_unlocked(self, obj):
@@ -193,7 +187,7 @@ class ExamSetSerializer(serializers.ModelSerializer):
 
     def get_display_name(self, obj):
         source_name = self._source_meta(obj).get("source_name")
-        return source_name or obj.name
+        return obj.name or source_name
 
     def get_institution(self, obj):
         default_value = self._source_meta(obj).get("institution") or "General"
@@ -263,6 +257,7 @@ class ExamSetSerializer(serializers.ModelSerializer):
             'institution_order',
             'folder_display_parts',
             'display_order',
+            'total_marks_override',
             'created_at',
             'updated_at',
         ]
@@ -280,6 +275,7 @@ class SubjectiveSubmissionSerializer(serializers.ModelSerializer):
     student_name = serializers.SerializerMethodField()
     exam_set_name = serializers.CharField(source='exam_set.name', read_only=True)
     file_url = serializers.SerializerMethodField()
+    reviewed_file_url = serializers.SerializerMethodField()
     max_marks = serializers.SerializerMethodField()
 
     def get_student_name(self, obj):
@@ -295,9 +291,21 @@ class SubjectiveSubmissionSerializer(serializers.ModelSerializer):
             return url_path
         return ''
 
+    def get_reviewed_file_url(self, obj):
+        if obj.reviewed_file:
+            request = self.context.get('request')
+            url_path = reverse('subjective-submission-reviewed-file', kwargs={'submission_id': obj.id})
+            if request:
+                return request.build_absolute_uri(url_path)
+            return url_path
+        return ''
+
     def get_max_marks(self, obj):
         if not obj.exam_set_id:
             return None
+        override = getattr(obj.exam_set, "total_marks_override", None)
+        if override is not None:
+            return int(override)
         return int(sum((question.marks or 0) for question in obj.exam_set.questions.all()))
 
     class Meta:
@@ -317,6 +325,7 @@ class SubjectiveSubmissionSerializer(serializers.ModelSerializer):
             'reviewed_at',
             'submitted_at',
             'file_url',
+            'reviewed_file_url',
         ]
 
 

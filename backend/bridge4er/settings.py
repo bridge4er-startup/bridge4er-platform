@@ -117,6 +117,7 @@ INSTALLED_APPS = [
     "exams",
     "payments",
     "storage",
+    "contributions",
 ]
 
 if importlib.util.find_spec("import_export"):

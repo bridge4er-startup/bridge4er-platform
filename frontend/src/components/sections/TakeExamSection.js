@@ -136,6 +136,9 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
         .filter((entry) => !!entry?.is_dir)
         .map((entry) => ({
           ...entry,
+          display_name: entry.display_name || entry.name,
+          icon_url: entry.icon_url || "",
+          sort_order: Number(entry.sort_order || 0),
           folder_parts: getRelativeExamParts(entry.path || "", type),
         }))
         .filter((entry) => entry.folder_parts.length > 0);
@@ -351,7 +354,19 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
     }
 
     const folderMap = new Map();
+    const folderMetaByKey = new Map();
     const directSets = [];
+
+    folderEntriesForCurrentType.forEach((folderEntry) => {
+      const folderParts = normalizeFolderParts(folderEntry.folder_parts);
+      if (!folderParts.length) return;
+      const key = folderParts.join("/");
+      folderMetaByKey.set(key, {
+        display_name: folderEntry.display_name || folderParts[folderParts.length - 1],
+        icon_url: folderEntry.icon_url || "",
+        sort_order: Number(folderEntry.sort_order || 0),
+      });
+    });
 
     folderEntriesForCurrentType.forEach((folderEntry) => {
       const folderParts = normalizeFolderParts(folderEntry.folder_parts);
@@ -365,9 +380,13 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
       const folderName = remainder[0];
       const key = [...currentFolderParts, folderName].join("/");
       if (!folderMap.has(key)) {
+        const meta = folderMetaByKey.get(key) || {};
         folderMap.set(key, {
           key,
           name: folderName,
+          display_name: meta.display_name || folderName,
+          icon_url: meta.icon_url || "",
+          sort_order: Number(meta.sort_order || 0),
           parts: [...currentFolderParts, folderName],
           count: 0,
         });
@@ -387,9 +406,13 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
         const folderName = remainder[0];
         const key = [...currentFolderParts, folderName].join("/");
         if (!folderMap.has(key)) {
+          const meta = folderMetaByKey.get(key) || {};
           folderMap.set(key, {
             key,
             name: folderName,
+            display_name: meta.display_name || folderName,
+            icon_url: meta.icon_url || "",
+            sort_order: Number(meta.sort_order || 0),
             parts: [...currentFolderParts, folderName],
             count: 0,
           });
@@ -402,7 +425,12 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
       directSets.push(setItem);
     });
 
-    const folders = [...folderMap.values()];
+    const folders = [...folderMap.values()].sort((a, b) => {
+      const aOrder = Number(a.sort_order || 0);
+      const bOrder = Number(b.sort_order || 0);
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      return String(a.display_name || a.name || "").localeCompare(String(b.display_name || b.name || ""));
+    });
     directSets.sort(byExamSetOrder);
 
     return { folders, sets: directSets };
@@ -436,7 +464,19 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
           <h3>Select Exam Type</h3>
           <div className="exam-type-grid">
             {Object.entries(EXAM_TYPE_CONTENT).map(([type, content]) => (
-              <article key={type} className="exam-type-card exam-type-selectable">
+              <article
+                key={type}
+                className="exam-type-card exam-type-selectable"
+                role="button"
+                tabIndex={0}
+                onClick={() => selectType(type)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    selectType(type);
+                  }
+                }}
+              >
                 <div className="exam-type-info">
                   <div className="exam-type-head">
                     <div className="exam-type-icon">
@@ -498,22 +538,34 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
               {folderView.folders.length > 0 ? (
                 <div className="subject-grid exam-folder-grid">
                   {folderView.folders.map((folder) => (
-                    <div key={folder.key} className="subject-card folder-card exam-folder-card">
-                      <i
-                        className={
-                          currentFolderParts.length === 0
-                            ? getInstitutionIcon(folder.name, "fas fa-building-columns")
-                            : getSubjectIcon(folder.name, "fas fa-folder-open")
-                        }
-                      ></i>
+                    <button
+                      key={folder.key}
+                      type="button"
+                      className="subject-card folder-card exam-folder-card"
+                      onClick={() => openFolder(folder.parts)}
+                    >
+                      <div className="exam-folder-icon">
+                        {folder.icon_url ? (
+                          <img src={folder.icon_url} alt="" className="exam-folder-icon-img" />
+                        ) : (
+                          <i
+                            className={
+                              currentFolderParts.length === 0
+                                ? getInstitutionIcon(folder.name, "fas fa-building-columns")
+                                : getSubjectIcon(folder.name, "fas fa-folder-open")
+                            }
+                          ></i>
+                        )}
+                      </div>
                       <h3 className="folder-display-name">
-                        {currentFolderParts.length === 0 ? institutionDisplayMap.get(folder.name) || folder.name : folder.name}
+                        {folder.display_name
+                          || (currentFolderParts.length === 0
+                            ? institutionDisplayMap.get(folder.name) || folder.name
+                            : folder.name)}
                       </h3>
                       <p className="chapter-small-note">{folder.count} sets</p>
-                      <button className="btn btn-primary mcq-folder-open-btn" onClick={() => openFolder(folder.parts)}>
-                        Open Folder
-                      </button>
-                    </div>
+                      <span className="library-folder-action">Open Folder</span>
+                    </button>
                   ))}
                 </div>
               ) : null}

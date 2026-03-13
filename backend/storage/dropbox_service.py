@@ -249,3 +249,19 @@ def create_folder(path):
         return True
     except Exception as e:
         return False
+
+
+def move_path(from_path, to_path):
+    """Move or rename a file/folder in Dropbox"""
+    try:
+        _execute_with_auth_retry(
+            lambda client: client.files_move_v2(
+                from_path,
+                to_path,
+                allow_ownership_transfer=True,
+                autorename=False,
+            )
+        )
+        return True
+    except Exception as e:
+        raise Exception(f"Error moving path: {str(e)}")

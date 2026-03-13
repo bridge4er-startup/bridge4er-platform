@@ -14,9 +14,12 @@ CONTENT_TYPE_CHOICES = [
 
 class FileMetadata(models.Model):
     name = models.CharField(max_length=500)
+    display_name = models.CharField(max_length=500, blank=True, default="")
     dropbox_path = models.CharField(max_length=1000, unique=True)
     content_type = models.CharField(max_length=20, choices=CONTENT_TYPE_CHOICES)
     branch = models.CharField(max_length=200)
+    sort_order = models.IntegerField(default=0, db_index=True)
+    icon_url = models.CharField(max_length=1000, blank=True, default="")
     file_size = models.BigIntegerField()  # in bytes
     is_visible = models.BooleanField(default=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
@@ -31,12 +34,14 @@ class FileMetadata(models.Model):
 
 class FolderMetadata(models.Model):
     name = models.CharField(max_length=500)
+    display_name = models.CharField(max_length=500, blank=True, default="")
     dropbox_path = models.CharField(max_length=1000, unique=True, db_index=True)
     content_type = models.CharField(max_length=20, choices=CONTENT_TYPE_CHOICES)
     branch = models.CharField(max_length=200)
     parent_path = models.CharField(max_length=1000, blank=True, default="", db_index=True)
     depth = models.PositiveIntegerField(default=0)
-    sort_order = models.IntegerField(default=0)
+    sort_order = models.IntegerField(default=0, db_index=True)
+    icon_url = models.CharField(max_length=1000, blank=True, default="")
     is_visible = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     modified_at = models.DateTimeField(auto_now=True)
@@ -50,7 +55,6 @@ class FolderMetadata(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.content_type})"
-
 
 class FileSyncLog(models.Model):
     branch = models.CharField(max_length=200)
@@ -70,6 +74,8 @@ class PlatformMetrics(models.Model):
     exam_sets_available = models.PositiveIntegerField(null=True, blank=True)
     motivational_quote = models.TextField(blank=True, default="")
     motivational_image_url = models.CharField(max_length=1000, blank=True, default="")
+    login_hero_image_url = models.CharField(max_length=1000, blank=True, default="")
+    register_hero_image_url = models.CharField(max_length=1000, blank=True, default="")
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):

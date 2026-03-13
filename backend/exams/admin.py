@@ -21,7 +21,6 @@ from .models import (
     InstitutionFolder,
     MCQQuestion,
     ProblemReport,
-    QuestionAttempt,
     Subject,
     SubjectiveSubmission,
 )
@@ -66,7 +65,7 @@ class SubjectAdmin(admin.ModelAdmin):
     list_filter = ("branch", InstitutionFolderFilter)
     search_fields = ("name", "branch")
     ordering = ("branch", "display_order", "name", "id")
-    list_editable = ("name", "display_order")
+    list_editable = ("name", "branch", "display_order")
 
     @admin.display(description="Subject")
     def display_name(self, obj):
@@ -90,9 +89,31 @@ class ChapterAdmin(admin.ModelAdmin):
 
 @admin.register(MCQQuestion)
 class MCQQuestionAdmin(ImportExportModelAdmin):
-    list_display = ("id", "chapter", "question_header", "correct_option", "created_at")
+    list_display = (
+        "id",
+        "chapter",
+        "question_header",
+        "question_text",
+        "option_a",
+        "option_b",
+        "option_c",
+        "option_d",
+        "correct_option",
+        "explanation",
+        "created_at",
+    )
     list_filter = ("chapter__subject__branch", "chapter__subject__name")
     search_fields = ("question_header", "question_text")
+    list_editable = (
+        "question_header",
+        "question_text",
+        "option_a",
+        "option_b",
+        "option_c",
+        "option_d",
+        "correct_option",
+        "explanation",
+    )
     if DJANGO_IMPORT_EXPORT_AVAILABLE and MCQQuestionResource is not None:
         resource_class = MCQQuestionResource
 
@@ -119,7 +140,7 @@ class ExamSetAdminForm(forms.ModelForm):
                 branch=getattr(instance, "branch", ""),
                 exam_type=getattr(instance, "exam_type", ""),
             )
-            source_name = str(meta.get("source_name") or instance.name or "").strip()
+            source_name = str(instance.name or meta.get("source_name") or "").strip()
         if not source_name:
             source_name = str(self.initial.get("name") or "").strip()
         self.fields["exam_set_name"].initial = source_name
@@ -168,25 +189,19 @@ class ExamSetAdminForm(forms.ModelForm):
     def clean(self):
         cleaned_data = super().clean()
         exam_set_name = str(cleaned_data.get("exam_set_name") or "").strip()
-        if not exam_set_name:
-            cleaned_data["exam_set_name"] = str(cleaned_data.get("name") or "").strip()
+        if exam_set_name:
+            cleaned_data["name"] = exam_set_name
         else:
-            cleaned_data["exam_set_name"] = exam_set_name
+            cleaned_data["name"] = str(cleaned_data.get("name") or "").strip()
         if cleaned_data.get("is_free"):
             cleaned_data["fee"] = Decimal("0")
         return cleaned_data
 
     def save(self, commit=True):
         obj = super().save(commit=False)
-        exam_set_name = str(self.cleaned_data.get("exam_set_name") or "").strip()
-        source_file_path = str(getattr(obj, "source_file_path", "") or "").strip().replace("\\", "/")
-        if exam_set_name and source_file_path:
-            parent_path, _, file_name = source_file_path.rpartition("/")
-            extension = ""
-            if "." in file_name:
-                extension = f".{file_name.split('.')[-1]}"
-            new_file_name = f"{exam_set_name}{extension}"
-            obj.source_file_path = f"{parent_path}/{new_file_name}" if parent_path else f"/{new_file_name}"
+        exam_set_name = str(self.cleaned_data.get("name") or "").strip()
+        if exam_set_name:
+            obj.name = exam_set_name
 
         if obj.is_free:
             obj.fee = Decimal("0")
@@ -212,12 +227,25 @@ class ExamSetAdmin(admin.ModelAdmin):
         "is_free",
         "fee",
         "duration_seconds",
+        "grace_seconds",
+        "negative_marking",
+        "total_marks_override",
         "is_active",
     )
     list_filter = ("branch", "exam_type", "is_free", "is_active", "managed_by_sync")
     search_fields = ("name", "branch", "source_file_path")
     ordering = ("branch", "exam_type", "display_order", "name", "id")
-    list_editable = ("name", "display_order", "is_free", "duration_seconds", "is_active")
+    list_editable = (
+        "name",
+        "display_order",
+        "is_free",
+        "fee",
+        "duration_seconds",
+        "grace_seconds",
+        "negative_marking",
+        "total_marks_override",
+        "is_active",
+    )
     inlines = [ExamQuestionInline]
 
     def get_fields(self, request, obj=None):
@@ -266,9 +294,32 @@ class ExamSetAdmin(admin.ModelAdmin):
 
 @admin.register(ExamQuestion)
 class ExamQuestionAdmin(ImportExportModelAdmin):
-    list_display = ("id", "exam_set", "order", "question_header", "marks")
+    list_display = (
+        "id",
+        "exam_set",
+        "order",
+        "question_header",
+        "question_text",
+        "option_a",
+        "option_b",
+        "option_c",
+        "option_d",
+        "correct_option",
+        "marks",
+    )
     list_filter = ("exam_set__branch", "exam_set__exam_type")
     search_fields = ("question_header", "question_text", "exam_set__name")
+    list_editable = (
+        "order",
+        "question_header",
+        "question_text",
+        "option_a",
+        "option_b",
+        "option_c",
+        "option_d",
+        "correct_option",
+        "marks",
+    )
     if DJANGO_IMPORT_EXPORT_AVAILABLE and ExamQuestionResource is not None:
         resource_class = ExamQuestionResource
 
@@ -296,13 +347,6 @@ class ExamAttemptAdmin(admin.ModelAdmin):
     search_fields = ("user__username", "exam_name")
 
 
-@admin.register(QuestionAttempt)
-class QuestionAttemptAdmin(admin.ModelAdmin):
-    list_display = ("id", "user", "question", "selected_option", "is_correct", "attempted_at")
-    list_filter = ("is_correct", "attempted_at")
-    search_fields = ("user__username", "question__question_text")
-
-
 @admin.register(SubjectiveSubmission)
 class SubjectiveSubmissionAdmin(admin.ModelAdmin):
     list_display = (
@@ -318,7 +362,7 @@ class SubjectiveSubmissionAdmin(admin.ModelAdmin):
     )
     list_filter = ("status", "exam_set__branch", "submitted_at", "reviewed_at")
     search_fields = ("user__username", "email", "mobile_number", "exam_set__name")
-    readonly_fields = ("submitted_at", "reviewed_at", "answer_sheet_link")
+    readonly_fields = ("submitted_at", "reviewed_at", "answer_sheet_link", "reviewed_sheet_link")
     fieldsets = (
         (
             "Submission Details",
@@ -329,13 +373,14 @@ class SubjectiveSubmissionAdmin(admin.ModelAdmin):
                     "email",
                     "mobile_number",
                     "answer_sheet_link",
+                    "reviewed_sheet_link",
                     "submitted_at",
                 )
             },
         ),
         (
             "Evaluation (Admin)",
-            {"fields": ("status", "score", "feedback", "reviewed_at")},
+            {"fields": ("status", "score", "feedback", "reviewed_at", "reviewed_file")},
         ),
     )
 
@@ -354,6 +399,15 @@ class SubjectiveSubmissionAdmin(admin.ModelAdmin):
                 obj.answer_pdf.url,
             )
         return "No file uploaded"
+
+    @admin.display(description="Reviewed File")
+    def reviewed_sheet_link(self, obj):
+        if obj.reviewed_file:
+            return format_html(
+                '<a href="{}" target="_blank" rel="noopener noreferrer">Open reviewed file</a>',
+                obj.reviewed_file.url,
+            )
+        return "No reviewed file uploaded"
 
     def save_model(self, request, obj, form, change):
         if obj.status in {"reviewed", "rejected"} and not obj.reviewed_at:

@@ -1,8 +1,9 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useAuth } from "../context/AuthContext";
 import { useBranch } from "../context/BranchContext";
+import { cachedGet } from "../services/api";
 
 export default function RegisterPage() {
   const navigate = useNavigate();
@@ -20,6 +21,21 @@ export default function RegisterPage() {
     robot_verified: false,
   });
   const [submitting, setSubmitting] = useState(false);
+  const [heroImageUrl, setHeroImageUrl] = useState("");
+
+  useEffect(() => {
+    let mounted = true;
+    cachedGet("storage/homepage/stats/")
+      .then((res) => {
+        if (!mounted) return;
+        const url = res?.data?.register_hero_image_url || res?.data?.motivational_image_url || "";
+        setHeroImageUrl(url);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const setField = (key, value) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -94,7 +110,11 @@ export default function RegisterPage() {
   return (
     <div className="auth-page register-theme auth-clean-hero">
       <div className="auth-panel auth-panel-register">
-        <div className="auth-hero" aria-hidden="true" />
+        <div
+          className="auth-hero"
+          aria-hidden="true"
+          style={heroImageUrl ? { backgroundImage: `url(${heroImageUrl})` } : undefined}
+        />
         <form className="auth-form" onSubmit={onSubmit}>
           <h2>Student Registration</h2>
 

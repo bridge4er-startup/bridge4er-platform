@@ -13,6 +13,8 @@ from .views import (
     LoadSubjectiveExam,
     MySubjectiveSubmissionsView,
     SubjectiveSubmissionFileView,
+    SubjectiveSubmissionReviewedFileView,
+    SubjectiveSubmissionAdminDetailView,
     ReviewSubjectiveSubmissionView,
     StartExamSetView,
     SubmitExamSetView,
@@ -52,7 +54,9 @@ urlpatterns = [
     path('subjective/submissions/', SubjectiveSubmissionCreateView.as_view()),
     path('subjective/submissions/my/', MySubjectiveSubmissionsView.as_view()),
     path('subjective/submissions/<int:submission_id>/file/', SubjectiveSubmissionFileView.as_view(), name='subjective-submission-file'),
+    path('subjective/submissions/<int:submission_id>/reviewed-file/', SubjectiveSubmissionReviewedFileView.as_view(), name='subjective-submission-reviewed-file'),
     path('subjective/submissions/<int:submission_id>/review/', ReviewSubjectiveSubmissionView.as_view()),
+    path('subjective/submissions/<int:submission_id>/', SubjectiveSubmissionAdminDetailView.as_view()),
     
     # New MCQ endpoints
     path('subjects/', SubjectListView.as_view()),

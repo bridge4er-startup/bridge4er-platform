@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useDeferredValue, useEffect, useMemo, useState } from "react";
 import API, { cachedGet } from "../../services/api";
 import toast from "react-hot-toast";
 import { getInstitutionIcon, getSubjectIcon } from "../../utils/subjectIcons";
@@ -76,6 +76,7 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
   const [searchQuery, setSearchQuery] = useState("");
   const [previewFile, setPreviewFile] = useState(null);
   const [currentFolderParts, setCurrentFolderParts] = useState([]);
+  const deferredQuery = useDeferredValue(searchQuery);
 
   const closePreview = () => {
     setPreviewFile((current) => {
@@ -139,11 +140,15 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
           const relativeParts = getRelativeLibraryParts(file.path || "");
           const folderParts = relativeParts.length > 1 ? relativeParts.slice(0, -1) : [];
           const filename = relativeParts.length > 0 ? relativeParts[relativeParts.length - 1] : file.name;
+          const displayName = file.display_name || filename;
           return {
             ...file,
             __folderParts: folderParts,
             __filename: filename,
-            __searchPath: `${folderParts.join(" / ")} ${filename}`.toLowerCase(),
+            __displayName: displayName,
+            __iconUrl: file.icon_url || "",
+            __sortOrder: Number(file.sort_order || 0),
+            __searchPath: `${folderParts.join(" / ")} ${displayName}`.toLowerCase(),
           };
         }),
     [entries]
@@ -155,16 +160,20 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
         .filter((entry) => !!entry?.is_dir)
         .map((dir) => {
           const relativeParts = getRelativeLibraryParts(dir.path || "");
+          const displayName = dir.display_name || (relativeParts[relativeParts.length - 1] || dir.name);
           return {
             ...dir,
             __parts: relativeParts,
-            __searchPath: relativeParts.join(" / ").toLowerCase(),
+            __displayName: displayName,
+            __iconUrl: dir.icon_url || "",
+            __sortOrder: Number(dir.sort_order || 0),
+            __searchPath: `${relativeParts.join(" / ")} ${displayName}`.toLowerCase(),
           };
         }),
     [entries]
   );
 
-  const query = searchQuery.trim().toLowerCase();
+  const query = deferredQuery.trim().toLowerCase();
   const filteredFileItems = useMemo(() => {
     if (!query) return fileItems;
     return fileItems.filter((file) => file.__searchPath.includes(query));
@@ -177,7 +186,18 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
 
   const folderView = useMemo(() => {
     const folderMap = new Map();
+    const folderMetaByKey = new Map();
     const directFiles = [];
+
+    filteredDirectoryItems.forEach((dir) => {
+      const key = dir.__parts.join("/");
+      if (!key) return;
+      folderMetaByKey.set(key, {
+        display_name: dir.__displayName,
+        icon_url: dir.__iconUrl,
+        sort_order: dir.__sortOrder,
+      });
+    });
 
     filteredDirectoryItems.forEach((dir) => {
       if (!startsWithParts(dir.__parts, currentFolderParts)) {
@@ -190,9 +210,13 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
       const folderName = remainder[0];
       const folderKey = [...currentFolderParts, folderName].join("/");
       if (!folderMap.has(folderKey)) {
+        const meta = folderMetaByKey.get(folderKey) || {};
         folderMap.set(folderKey, {
           key: folderKey,
           name: folderName,
+          display_name: meta.display_name || folderName,
+          icon_url: meta.icon_url || "",
+          sort_order: Number(meta.sort_order || 0),
           parts: [...currentFolderParts, folderName],
           fileCount: 0,
         });
@@ -210,14 +234,18 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
       if (remainder.length > 0) {
         const folderName = remainder[0];
         const folderKey = [...currentFolderParts, folderName].join("/");
-        if (!folderMap.has(folderKey)) {
-          folderMap.set(folderKey, {
-            key: folderKey,
-            name: folderName,
-            parts: [...currentFolderParts, folderName],
-            fileCount: 0,
-          });
-        }
+      if (!folderMap.has(folderKey)) {
+        const meta = folderMetaByKey.get(folderKey) || {};
+        folderMap.set(folderKey, {
+          key: folderKey,
+          name: folderName,
+          display_name: meta.display_name || folderName,
+          icon_url: meta.icon_url || "",
+          sort_order: Number(meta.sort_order || 0),
+          parts: [...currentFolderParts, folderName],
+          fileCount: 0,
+        });
+      }
         const existing = folderMap.get(folderKey);
         existing.fileCount += 1;
         return;
@@ -226,7 +254,19 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
       directFiles.push(file);
     });
 
-    const folders = [...folderMap.values()];
+    const folders = [...folderMap.values()].sort((a, b) => {
+      const aOrder = Number(a.sort_order || 0);
+      const bOrder = Number(b.sort_order || 0);
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      return String(a.display_name || a.name || "").localeCompare(String(b.display_name || b.name || ""));
+    });
+
+    directFiles.sort((a, b) => {
+      const aOrder = Number(a.__sortOrder || 0);
+      const bOrder = Number(b.__sortOrder || 0);
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      return String(a.__displayName || a.__filename || "").localeCompare(String(b.__displayName || b.__filename || ""));
+    });
 
     return {
       folders,
@@ -332,16 +372,20 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
                   onClick={() => handleOpenFolder(folder.parts)}
                 >
                   <div className="library-folder-icon">
-                    <i
-                      className={
-                        isAtRoot
-                          ? getInstitutionIcon(folder.name, "fas fa-building-columns")
-                          : getSubjectIcon(folder.name, "fas fa-folder-open")
-                      }
-                    ></i>
+                    {folder.icon_url ? (
+                      <img src={folder.icon_url} alt="" className="library-folder-icon-img" />
+                    ) : (
+                      <i
+                        className={
+                          isAtRoot
+                            ? getInstitutionIcon(folder.name, "fas fa-building-columns")
+                            : getSubjectIcon(folder.name, "fas fa-folder-open")
+                        }
+                      ></i>
+                    )}
                   </div>
                   <div className="library-folder-info">
-                    <h3>{folder.name}</h3>
+                    <h3>{folder.display_name || folder.name}</h3>
                     <p>{folder.fileCount} files available</p>
                   </div>
                   <span className="library-folder-action">Open Folder</span>
@@ -362,10 +406,14 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
                 {folderView.files.map((file) => (
                   <article key={file.path} className="library-book-item">
                     <div className="library-book-icon">
-                      <i className={resolveFileIcon(file.__filename || file.name)}></i>
+                      {file.__iconUrl ? (
+                        <img src={file.__iconUrl} alt="" className="library-file-icon-img" />
+                      ) : (
+                        <i className={resolveFileIcon(file.__filename || file.name)}></i>
+                      )}
                     </div>
                     <div className="library-book-meta">
-                      <h4>{file.__filename || file.name}</h4>
+                      <h4>{file.__displayName || file.__filename || file.name}</h4>
                       <p>
                         {formatFileSize(file.size)} | Updated: {formatDate(file.modified)}
                       </p>

@@ -71,12 +71,18 @@ export const fileService = {
   },
 
   // Upload file (admin only)
-  uploadFile: async (file, contentType, branch = "Civil Engineering") => {
+  uploadFile: async (file, contentType, branch = "Civil Engineering", folderPath = "", isVisible = null) => {
     try {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("content_type", contentType);
       formData.append("branch", branch);
+      if (folderPath) {
+        formData.append("folder_path", folderPath);
+      }
+      if (isVisible !== null && isVisible !== undefined) {
+        formData.append("is_visible", String(!!isVisible));
+      }
 
       const response = await API.post("storage/files/upload/", formData, {
         headers: {
@@ -129,6 +135,66 @@ export const fileService = {
       return response.data;
     } catch (error) {
       console.error("Error syncing Dropbox content:", error);
+      throw error;
+    }
+  },
+
+  updateMetadata: async (path, payload = {}, isDir = false) => {
+    try {
+      const response = await API.post("storage/files/metadata/", {
+        path,
+        is_dir: !!isDir,
+        ...payload,
+      });
+      return response.data;
+    } catch (error) {
+      console.error("Error updating metadata:", error);
+      throw error;
+    }
+  },
+
+  renamePath: async (path, newPath) => {
+    try {
+      const response = await API.post("storage/files/rename/", {
+        path,
+        new_path: newPath,
+      });
+      return response.data;
+    } catch (error) {
+      console.error("Error renaming path:", error);
+      throw error;
+    }
+  },
+
+  createFolder: async (payload = {}) => {
+    try {
+      const response = await API.post("storage/files/create-folder/", payload);
+      return response.data;
+    } catch (error) {
+      console.error("Error creating folder:", error);
+      throw error;
+    }
+  },
+
+  syncPath: async (path, includeDirs = true) => {
+    try {
+      const response = await API.post("storage/files/sync-path/", {
+        path,
+        include_dirs: !!includeDirs,
+      });
+      return response.data;
+    } catch (error) {
+      console.error("Error syncing path:", error);
+      throw error;
+    }
+  },
+
+  attachPath: async (payload = {}) => {
+    try {
+      const response = await API.post("storage/files/attach/", payload);
+      return response.data;
+    } catch (error) {
+      console.error("Error attaching path:", error);
       throw error;
     }
   },

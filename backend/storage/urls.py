@@ -11,10 +11,17 @@ from .views import (
     DeleteFileView,
     FileVisibilityView,
     HomePageMetricsView,
+    FileMetadataUpdateView,
+    RenameFileView,
+    CreateFolderView,
+    SyncPathView,
+    AttachPathView,
+    HomePageHeroImageUploadView,
 )
 
 urlpatterns = [
     path('homepage/stats/', HomePageMetricsView.as_view()),
+    path('homepage/hero-image/', HomePageHeroImageUploadView.as_view()),
     path('files/', DropboxListView.as_view()),
     path('files/list/', ListFilesView.as_view()),
     path('files/sync/', SyncDropboxContentView.as_view()),
@@ -23,6 +30,11 @@ urlpatterns = [
     path('files/preview/', PreviewFileView.as_view()),
     path('files/view/', ViewFileView.as_view()),
     path('files/upload/', UploadFileView.as_view()),
+    path('files/metadata/', FileMetadataUpdateView.as_view()),
+    path('files/rename/', RenameFileView.as_view()),
+    path('files/create-folder/', CreateFolderView.as_view()),
+    path('files/sync-path/', SyncPathView.as_view()),
+    path('files/attach/', AttachPathView.as_view()),
     path('files/visibility/', FileVisibilityView.as_view()),
     path('files/delete/', DeleteFileView.as_view()),
 ]

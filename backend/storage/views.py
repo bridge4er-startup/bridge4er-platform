@@ -24,6 +24,8 @@ from storage.dropbox_service import (
     delete_file,
     get_shareable_link,
     get_file_metadata,
+    create_folder,
+    move_path,
 )
 from storage.models import FileMetadata, FileSyncLog, FolderMetadata, PlatformMetrics
 
@@ -51,6 +53,8 @@ PUBLIC_PATH_MARKERS = (
     "/notice/",
 )
 ALLOWED_ROOT = "/bridge4er/"
+HERO_IMAGE_BASE_PATH = "/bridge4er/System/Hero Images"
+HERO_IMAGE_TARGETS = {"login", "register"}
 FILE_LIST_CACHE_KEY_PREFIX = "storage:file-list:v1"
 
 
@@ -276,8 +280,11 @@ def _ensure_metadata_entry(path, content_type=None, branch=None, size=None):
         dropbox_path=normalized_path,
         defaults={
             "name": str(normalized_path).split("/")[-1] or "file",
+            "display_name": str(normalized_path).split("/")[-1] or "file",
             "content_type": resolved_content_type,
             "branch": resolved_branch,
+            "sort_order": 0,
+            "icon_url": "",
             "file_size": int(size or 0),
             "is_visible": True,
         },
@@ -295,11 +302,13 @@ def _ensure_folder_metadata_entry(path, content_type=None, branch=None):
         dropbox_path=normalized_path,
         defaults={
             "name": str(normalized_path).split("/")[-1] or "folder",
+            "display_name": str(normalized_path).split("/")[-1] or "folder",
             "content_type": resolved_content_type,
             "branch": resolved_branch,
             "parent_path": _parent_dropbox_path(normalized_path),
             "depth": _folder_depth(normalized_path, resolved_content_type, resolved_branch),
             "sort_order": 0,
+            "icon_url": "",
             "is_visible": True,
         },
     )
@@ -328,6 +337,12 @@ def _sync_metadata_from_listing(files, content_type, branch):
                 parent_path=_parent_dropbox_path(item_path),
                 depth=_folder_depth(item_path, resolved_content_type, resolved_branch),
             )
+            FolderMetadata.objects.filter(
+                dropbox_path=item_path,
+                display_name="",
+            ).update(
+                display_name=item.get("name") or (item_path.split("/")[-1] or "folder"),
+            )
             continue
 
         _ensure_metadata_entry(
@@ -341,6 +356,12 @@ def _sync_metadata_from_listing(files, content_type, branch):
             content_type=resolved_content_type,
             branch=resolved_branch,
             file_size=int(item.get("size") or 0),
+        )
+        FileMetadata.objects.filter(
+            dropbox_path=item_path,
+            display_name="",
+        ).update(
+            display_name=item.get("name") or (item_path.split("/")[-1] or "file"),
         )
 
         parent_path = _parent_dropbox_path(item_path)
@@ -379,7 +400,7 @@ def _metadata_listing_fallback(content_type, branch, include_dirs):
     file_rows = FileMetadata.objects.filter(
         content_type=resolved_content_type,
         branch=resolved_branch,
-    ).values("name", "dropbox_path", "file_size", "modified_at")
+    ).values("name", "display_name", "icon_url", "sort_order", "dropbox_path", "file_size", "modified_at")
     for row in file_rows:
         path = _normalize_dropbox_path(row.get("dropbox_path"))
         if not _is_under_root(path):
@@ -387,6 +408,9 @@ def _metadata_listing_fallback(content_type, branch, include_dirs):
         entries.append(
             {
                 "name": row.get("name") or (path.split("/")[-1] or "file"),
+                "display_name": row.get("display_name") or row.get("name") or (path.split("/")[-1] or "file"),
+                "icon_url": row.get("icon_url") or "",
+                "sort_order": int(row.get("sort_order") or 0),
                 "path": path,
                 "size": int(row.get("file_size") or 0),
                 "modified": row.get("modified_at").isoformat() if row.get("modified_at") else "",
@@ -398,7 +422,7 @@ def _metadata_listing_fallback(content_type, branch, include_dirs):
         folder_rows = FolderMetadata.objects.filter(
             content_type=resolved_content_type,
             branch=resolved_branch,
-        ).values("name", "dropbox_path", "modified_at")
+        ).values("name", "display_name", "icon_url", "sort_order", "dropbox_path", "modified_at")
         for row in folder_rows:
             path = _normalize_dropbox_path(row.get("dropbox_path"))
             if not _is_under_root(path):
@@ -406,6 +430,9 @@ def _metadata_listing_fallback(content_type, branch, include_dirs):
             entries.append(
                 {
                     "name": row.get("name") or (path.split("/")[-1] or "folder"),
+                    "display_name": row.get("display_name") or row.get("name") or (path.split("/")[-1] or "folder"),
+                    "icon_url": row.get("icon_url") or "",
+                    "sort_order": int(row.get("sort_order") or 0),
                     "path": path,
                     "modified": row.get("modified_at").isoformat() if row.get("modified_at") else "",
                     "is_dir": True,
@@ -434,6 +461,7 @@ def _visibility_map_for_paths(paths):
     return {row["dropbox_path"]: bool(row["is_visible"]) for row in rows}
 
 
+
 def _folder_visibility_map_for_paths(paths):
     normalized_paths = []
     for path in paths:
@@ -444,6 +472,56 @@ def _folder_visibility_map_for_paths(paths):
         return {}
     rows = FolderMetadata.objects.filter(dropbox_path__in=normalized_paths).values("dropbox_path", "is_visible")
     return {row["dropbox_path"]: bool(row["is_visible"]) for row in rows}
+
+
+def _metadata_detail_map_for_paths(paths):
+    normalized_paths = []
+    for path in paths:
+        normalized = _normalize_dropbox_path(path)
+        if normalized:
+            normalized_paths.append(normalized)
+    if not normalized_paths:
+        return {}, {}
+    file_rows = FileMetadata.objects.filter(dropbox_path__in=normalized_paths).values(
+        "dropbox_path",
+        "display_name",
+        "icon_url",
+        "sort_order",
+    )
+    folder_rows = FolderMetadata.objects.filter(dropbox_path__in=normalized_paths).values(
+        "dropbox_path",
+        "display_name",
+        "icon_url",
+        "sort_order",
+    )
+    file_map = {row["dropbox_path"]: row for row in file_rows}
+    folder_map = {row["dropbox_path"]: row for row in folder_rows}
+    return file_map, folder_map
+
+
+def _apply_metadata_overrides(files, content_type, branch):
+    if not files:
+        return []
+    paths = [_normalize_dropbox_path(item.get("path")) for item in files if item.get("path")]
+    file_map, folder_map = _metadata_detail_map_for_paths(paths)
+    enriched = []
+    for item in files:
+        path = _normalize_dropbox_path(item.get("path"))
+        if not path:
+            continue
+        is_dir = bool(item.get("is_dir"))
+        meta = folder_map.get(path, {}) if is_dir else file_map.get(path, {})
+        display_name = meta.get("display_name") or item.get("name") or (path.split("/")[-1] or "")
+        icon_url = meta.get("icon_url") or ""
+        sort_order = int(meta.get("sort_order") or 0)
+        enriched.append({
+            **item,
+            "path": path,
+            "display_name": display_name,
+            "icon_url": icon_url,
+            "sort_order": sort_order,
+        })
+    return enriched
 
 
 def _hidden_folder_prefixes(content_type, branch):
@@ -495,9 +573,17 @@ def _sort_files_by_admin_order(files, content_type, branch):
         content_type=resolved_content_type,
         branch=resolved_branch,
     ).values("dropbox_path", "sort_order")
+    file_rows = FileMetadata.objects.filter(
+        content_type=resolved_content_type,
+        branch=resolved_branch,
+    ).values("dropbox_path", "sort_order")
     folder_order_map = {
         _normalize_dropbox_path(row["dropbox_path"]): int(row.get("sort_order") or 0)
         for row in folder_rows
+    }
+    file_order_map = {
+        _normalize_dropbox_path(row["dropbox_path"]): int(row.get("sort_order") or 0)
+        for row in file_rows
     }
 
     def _sort_key(item):
@@ -508,7 +594,7 @@ def _sort_files_by_admin_order(files, content_type, branch):
         for chain_path in chain:
             name = chain_path.split("/")[-1].lower()
             chain_key.append((folder_order_map.get(chain_path, 0), name))
-        self_order = folder_order_map.get(path, 0) if is_dir else 0
+        self_order = folder_order_map.get(path, 0) if is_dir else file_order_map.get(path, 0)
         name_value = item.get("name") or (path.split("/")[-1] if path else "")
         name_key = str(name_value).lower()
         return (chain_key, 0 if is_dir else 1, self_order, name_key)
@@ -862,6 +948,7 @@ class ListFilesView(APIView):
                 branch=branch,
                 include_hidden=include_hidden,
             )
+            visible_files = _apply_metadata_overrides(visible_files, content_type=content_type, branch=branch)
             return Response(visible_files)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -924,6 +1011,7 @@ class SearchFilesView(APIView):
                 branch=branch,
                 include_hidden=include_hidden,
             )
+            visible_results = _apply_metadata_overrides(visible_results, content_type=content_type, branch=branch)
             return Response(visible_results)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -1009,6 +1097,7 @@ class UploadFileView(APIView):
         content_type = request.data.get('content_type')
         branch = _normalize_branch(request.data.get('branch', 'Civil Engineering'))
         requested_visibility = request.data.get("is_visible")
+        folder_path_input = request.data.get("folder_path")
 
         if not file or not content_type:
             return Response(
@@ -1024,7 +1113,16 @@ class UploadFileView(APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
+            if folder_path_input:
+                normalized_folder_path = _normalize_dropbox_path(str(folder_path_input))
+                if _is_safe_path(normalized_folder_path):
+                    folder = normalized_folder_path
+                else:
+                    folder = _normalize_dropbox_path(f"{folder}/{folder_path_input}")
+
             path = _normalize_dropbox_path(f"{folder}/{file.name}")
+            if not _is_safe_path(path):
+                return Response({"error": "Invalid upload path"}, status=status.HTTP_400_BAD_REQUEST)
             metadata = upload_file(path, file)
             metadata_size = int((metadata or {}).get("size") or 0)
 
@@ -1033,6 +1131,8 @@ class UploadFileView(APIView):
                 'name': file.name,
                 'content_type': content_type,
                 'branch': branch,
+                'sort_order': 0,
+                'icon_url': "",
                 'file_size': metadata_size,
             }
             if requested_visibility is not None:
@@ -1042,6 +1142,9 @@ class UploadFileView(APIView):
                 dropbox_path=path,
                 defaults=defaults
             )
+            if not file_meta.display_name:
+                file_meta.display_name = file.name
+                file_meta.save(update_fields=["display_name", "modified_at"])
             _ensure_folder_metadata_entry(
                 path=folder,
                 content_type=content_type,
@@ -1157,6 +1260,367 @@ class FileVisibilityView(APIView):
         return Response(payload, status=status.HTTP_200_OK)
 
 
+class FileMetadataUpdateView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def post(self, request):
+        path = request.data.get("path")
+        if not path:
+            return Response({"error": "Path required"}, status=status.HTTP_400_BAD_REQUEST)
+        normalized_path = _normalize_dropbox_path(path)
+        if not _is_safe_path(normalized_path):
+            return Response({"error": "Invalid path"}, status=status.HTTP_400_BAD_REQUEST)
+
+        is_dir = _as_bool(request.data.get("is_dir"), False)
+        display_name = request.data.get("display_name")
+        icon_url = request.data.get("icon_url")
+        sort_order_input = request.data.get("sort_order")
+
+        sort_order = None
+        if sort_order_input is not None:
+            try:
+                sort_order = int(sort_order_input)
+            except (TypeError, ValueError):
+                return Response({"error": "sort_order must be an integer"}, status=status.HTTP_400_BAD_REQUEST)
+
+        branch = _extract_branch_from_path(normalized_path)
+        content_type = _infer_content_type_from_path(normalized_path)
+
+        if is_dir:
+            meta = _ensure_folder_metadata_entry(
+                path=normalized_path,
+                content_type=content_type,
+                branch=branch,
+            )
+            if meta is None:
+                return Response({"error": "Unable to manage folder metadata"}, status=status.HTTP_400_BAD_REQUEST)
+            update_fields = []
+            if display_name is not None:
+                meta.display_name = str(display_name).strip()
+                update_fields.append("display_name")
+            if icon_url is not None:
+                meta.icon_url = str(icon_url).strip()
+                update_fields.append("icon_url")
+            if sort_order is not None:
+                meta.sort_order = sort_order
+                update_fields.append("sort_order")
+            if update_fields:
+                meta.save(update_fields=update_fields + ["modified_at"])
+        else:
+            meta = _ensure_metadata_entry(path=normalized_path, content_type=content_type, branch=branch)
+            if meta is None:
+                return Response({"error": "Unable to manage file metadata"}, status=status.HTTP_400_BAD_REQUEST)
+            update_fields = []
+            if display_name is not None:
+                meta.display_name = str(display_name).strip()
+                update_fields.append("display_name")
+            if icon_url is not None:
+                meta.icon_url = str(icon_url).strip()
+                update_fields.append("icon_url")
+            if sort_order is not None:
+                meta.sort_order = sort_order
+                update_fields.append("sort_order")
+            if update_fields:
+                meta.save(update_fields=update_fields + ["modified_at"])
+
+        _invalidate_list_cache(content_type=content_type, branch=branch)
+        return Response(
+            {
+                "message": "Metadata updated",
+                "path": normalized_path,
+                "is_dir": is_dir,
+                "display_name": display_name,
+                "icon_url": icon_url,
+                "sort_order": sort_order if sort_order is not None else None,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class RenameFileView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def post(self, request):
+        path = request.data.get("path")
+        new_path = request.data.get("new_path")
+        if not path or not new_path:
+            return Response({"error": "path and new_path are required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        normalized_path = _normalize_dropbox_path(path)
+        normalized_new_path = _normalize_dropbox_path(new_path)
+        if not _is_safe_path(normalized_path) or not _is_safe_path(normalized_new_path):
+            return Response({"error": "Invalid path"}, status=status.HTTP_400_BAD_REQUEST)
+        if normalized_path == normalized_new_path:
+            return Response({"error": "path and new_path are identical"}, status=status.HTTP_400_BAD_REQUEST)
+
+        is_dir = FolderMetadata.objects.filter(dropbox_path=normalized_path).exists()
+        if not is_dir:
+            try:
+                file_meta = get_file_metadata(normalized_path)
+                is_dir = file_meta is None
+            except Exception:
+                is_dir = False
+
+        try:
+            move_path(normalized_path, normalized_new_path)
+        except Exception as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        old_prefix = normalized_path.rstrip("/")
+        new_prefix = normalized_new_path.rstrip("/")
+
+        if is_dir:
+            folder_rows = FolderMetadata.objects.filter(dropbox_path__startswith=old_prefix).order_by("depth")
+            for folder in folder_rows:
+                updated_path = folder.dropbox_path.replace(old_prefix, new_prefix, 1)
+                updated_branch = _extract_branch_from_path(updated_path)
+                updated_content_type = _infer_content_type_from_path(updated_path)
+                folder.dropbox_path = updated_path
+                folder.name = updated_path.split("/")[-1] or folder.name
+                folder.branch = updated_branch
+                folder.content_type = updated_content_type
+                folder.parent_path = _parent_dropbox_path(updated_path)
+                folder.depth = _folder_depth(updated_path, updated_content_type, updated_branch)
+                folder.save(
+                    update_fields=[
+                        "dropbox_path",
+                        "name",
+                        "branch",
+                        "content_type",
+                        "parent_path",
+                        "depth",
+                        "modified_at",
+                    ]
+                )
+
+            file_rows = FileMetadata.objects.filter(dropbox_path__startswith=old_prefix)
+            for file_row in file_rows:
+                updated_path = file_row.dropbox_path.replace(old_prefix, new_prefix, 1)
+                updated_branch = _extract_branch_from_path(updated_path)
+                updated_content_type = _infer_content_type_from_path(updated_path)
+                file_row.dropbox_path = updated_path
+                file_row.name = updated_path.split("/")[-1] or file_row.name
+                file_row.branch = updated_branch
+                file_row.content_type = updated_content_type
+                file_row.save(
+                    update_fields=[
+                        "dropbox_path",
+                        "name",
+                        "branch",
+                        "content_type",
+                        "modified_at",
+                    ]
+                )
+
+            exam_sets = ExamSet.objects.filter(source_file_path__startswith=f"{old_prefix}/")
+            for exam_set in exam_sets:
+                exam_set.source_file_path = exam_set.source_file_path.replace(old_prefix, new_prefix, 1)
+                exam_set.save(update_fields=["source_file_path", "updated_at"])
+        else:
+            file_meta = FileMetadata.objects.filter(dropbox_path=normalized_path).first()
+            updated_branch = _extract_branch_from_path(normalized_new_path)
+            updated_content_type = _infer_content_type_from_path(normalized_new_path)
+            if file_meta:
+                file_meta.dropbox_path = normalized_new_path
+                file_meta.name = normalized_new_path.split("/")[-1] or file_meta.name
+                file_meta.branch = updated_branch
+                file_meta.content_type = updated_content_type
+                file_meta.save(
+                    update_fields=[
+                        "dropbox_path",
+                        "name",
+                        "branch",
+                        "content_type",
+                        "modified_at",
+                    ]
+                )
+            else:
+                _ensure_metadata_entry(
+                    path=normalized_new_path,
+                    content_type=updated_content_type,
+                    branch=updated_branch,
+                )
+            ExamSet.objects.filter(source_file_path=normalized_path).update(source_file_path=normalized_new_path)
+
+        _invalidate_list_cache_for_path(normalized_path)
+        _invalidate_list_cache_for_path(normalized_new_path)
+
+        payload = {"message": "Path renamed", "path": normalized_path, "new_path": normalized_new_path}
+        if _is_exam_set_path(normalized_path) or _is_exam_set_path(normalized_new_path):
+            try:
+                payload["exam_sets_sync"] = _sync_exam_sets_for_branch(_extract_branch_from_path(normalized_new_path))
+            except Exception as sync_error:
+                payload["exam_sets_sync_error"] = str(sync_error)
+        return Response(payload, status=status.HTTP_200_OK)
+
+
+class CreateFolderView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def post(self, request):
+        path = request.data.get("path")
+        content_type = request.data.get("content_type")
+        branch = _normalize_branch(request.data.get("branch", "Civil Engineering"))
+        if not path:
+            return Response({"error": "path is required"}, status=status.HTTP_400_BAD_REQUEST)
+        normalized_path = _normalize_dropbox_path(path)
+        if not _is_safe_path(normalized_path):
+            return Response({"error": "Invalid path"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            create_folder(normalized_path)
+        except Exception as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        resolved_content_type = content_type or _infer_content_type_from_path(normalized_path)
+        resolved_branch = branch or _extract_branch_from_path(normalized_path)
+        _ensure_folder_metadata_entry(
+            path=normalized_path,
+            content_type=resolved_content_type,
+            branch=resolved_branch,
+        )
+        _invalidate_list_cache(content_type=resolved_content_type, branch=resolved_branch)
+        return Response({"message": "Folder created", "path": normalized_path}, status=status.HTTP_201_CREATED)
+
+
+class SyncPathView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def post(self, request):
+        path = request.data.get("path")
+        include_dirs = _as_bool(request.data.get("include_dirs"), True)
+        if not path:
+            return Response({"error": "path is required"}, status=status.HTTP_400_BAD_REQUEST)
+        normalized_path = _normalize_dropbox_path(path)
+        if not _is_safe_path(normalized_path):
+            return Response({"error": "Invalid path"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            file_meta = get_file_metadata(normalized_path)
+        except Exception:
+            file_meta = None
+
+        if file_meta:
+            resolved_content_type = _infer_content_type_from_path(normalized_path)
+            resolved_branch = _extract_branch_from_path(normalized_path)
+            _ensure_metadata_entry(
+                path=normalized_path,
+                content_type=resolved_content_type,
+                branch=resolved_branch,
+                size=file_meta.get("size"),
+            )
+            _invalidate_list_cache(content_type=resolved_content_type, branch=resolved_branch)
+            return Response({"message": "File synced", "path": normalized_path}, status=status.HTTP_200_OK)
+
+        resolved_content_type = _infer_content_type_from_path(normalized_path)
+        resolved_branch = _extract_branch_from_path(normalized_path)
+        try:
+            entries = list_folder_with_metadata(normalized_path, include_dirs=include_dirs, recursive=True)
+        except Exception as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        _ensure_folder_metadata_entry(
+            path=normalized_path,
+            content_type=resolved_content_type,
+            branch=resolved_branch,
+        )
+        _sync_metadata_from_listing(entries, content_type=resolved_content_type, branch=resolved_branch)
+        _invalidate_list_cache(content_type=resolved_content_type, branch=resolved_branch)
+        return Response(
+            {
+                "message": "Path synced",
+                "path": normalized_path,
+                "file_count": len([row for row in entries if not row.get("is_dir")]),
+                "folder_count": len([row for row in entries if row.get("is_dir")]),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class AttachPathView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def post(self, request):
+        path = request.data.get("path")
+        content_type = request.data.get("content_type")
+        branch = request.data.get("branch")
+        is_dir = _as_bool(request.data.get("is_dir"), False)
+        if not path:
+            return Response({"error": "path is required"}, status=status.HTTP_400_BAD_REQUEST)
+        normalized_path = _normalize_dropbox_path(path)
+        if not _is_safe_path(normalized_path):
+            return Response({"error": "Invalid path"}, status=status.HTTP_400_BAD_REQUEST)
+
+        resolved_content_type = content_type or _infer_content_type_from_path(normalized_path)
+        resolved_branch = _normalize_branch(branch) if branch else _extract_branch_from_path(normalized_path)
+
+        if is_dir:
+            _ensure_folder_metadata_entry(
+                path=normalized_path,
+                content_type=resolved_content_type,
+                branch=resolved_branch,
+            )
+        else:
+            size = None
+            try:
+                meta = get_file_metadata(normalized_path)
+                size = meta.get("size") if meta else None
+            except Exception:
+                pass
+            _ensure_metadata_entry(
+                path=normalized_path,
+                content_type=resolved_content_type,
+                branch=resolved_branch,
+                size=size,
+            )
+
+        _invalidate_list_cache(content_type=resolved_content_type, branch=resolved_branch)
+        return Response({"message": "Path attached", "path": normalized_path}, status=status.HTTP_200_OK)
+
+
+class HomePageHeroImageUploadView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def post(self, request):
+        file = request.FILES.get("file")
+        target = str(request.data.get("target") or "").strip().lower()
+        if not file:
+            return Response({"error": "file is required"}, status=status.HTTP_400_BAD_REQUEST)
+        if target not in HERO_IMAGE_TARGETS:
+            return Response({"error": "target must be login or register"}, status=status.HTTP_400_BAD_REQUEST)
+
+        filename = str(file.name or "").strip()
+        extension = ""
+        if "." in filename:
+            extension = f".{filename.split('.')[-1].lower()}"
+        if extension not in {".jpg", ".jpeg", ".png", ".webp"}:
+            return Response({"error": "Only JPG, PNG, or WEBP images are allowed"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            create_folder(HERO_IMAGE_BASE_PATH)
+        except Exception:
+            # Folder may already exist; ignore errors.
+            pass
+
+        timestamp = int(time.time())
+        safe_name = f"{target}-hero-{timestamp}{extension}"
+        upload_path = _normalize_dropbox_path(f"{HERO_IMAGE_BASE_PATH}/{safe_name}")
+        if not _is_safe_path(upload_path):
+            return Response({"error": "Invalid upload path"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            upload_file(upload_path, file)
+            shareable_link = get_shareable_link(upload_path)
+        except Exception as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        metrics = _effective_metrics_row()
+        field_name = f"{target}_hero_image_url"
+        setattr(metrics, field_name, shareable_link)
+        metrics.save(update_fields=[field_name, "updated_at"])
+        return Response({"url": shareable_link, "path": upload_path}, status=status.HTTP_201_CREATED)
+
+
 class DeleteFileView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUser]
 
@@ -1210,6 +1674,8 @@ class HomePageMetricsView(APIView):
             else computed["exam_sets_available"],
             "motivational_quote": row.motivational_quote or "",
             "motivational_image_url": row.motivational_image_url or "",
+            "login_hero_image_url": row.login_hero_image_url or "",
+            "register_hero_image_url": row.register_hero_image_url or "",
             "updated_at": row.updated_at,
         }
         return Response(data)
@@ -1228,6 +1694,8 @@ class HomePageMetricsView(APIView):
         text_fields = [
             "motivational_quote",
             "motivational_image_url",
+            "login_hero_image_url",
+            "register_hero_image_url",
         ]
         dirty = []
         for field in fields:

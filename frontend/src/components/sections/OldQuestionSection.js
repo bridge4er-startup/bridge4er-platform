@@ -94,7 +94,9 @@ export default function OldQuestionsSection({ branch = "Civil Engineering", isAc
     }
 
     const filtered = files.filter((file) =>
-      file.name.toLowerCase().includes(query.toLowerCase())
+      String(file.display_name || file.name || "")
+        .toLowerCase()
+        .includes(query.toLowerCase())
     );
     setFilteredFiles(filtered);
   };
@@ -109,7 +111,7 @@ export default function OldQuestionsSection({ branch = "Civil Engineering", isAc
       const url = window.URL.createObjectURL(new Blob([res.data]));
       const link = document.createElement("a");
       link.href = url;
-      link.setAttribute("download", file.name);
+      link.setAttribute("download", file.display_name || file.name);
       document.body.appendChild(link);
       link.click();
       link.parentNode.removeChild(link);
@@ -206,10 +208,14 @@ export default function OldQuestionsSection({ branch = "Civil Engineering", isAc
               <li key={file.path} className="file-item">
                 <div className="file-info">
                   <div className="file-icon">
-                    <i className="fas fa-file-pdf"></i>
+                    {file.icon_url ? (
+                      <img src={file.icon_url} alt="" className="library-file-icon-img" />
+                    ) : (
+                      <i className="fas fa-file-pdf"></i>
+                    )}
                   </div>
-                  <div className="file-details">
-                    <h4>{file.name}</h4>
+        <div className="file-details">
+          <h4>{file.display_name || file.name}</h4>
                     <p className="file-meta">
                       Size: {formatFileSize(file.size)}
                     </p>

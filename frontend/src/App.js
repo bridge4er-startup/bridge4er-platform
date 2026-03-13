@@ -10,7 +10,7 @@ import AdminDashboard from "./pages/AdminDashboard";
 import PaymentResultPage from "./pages/PaymentResultPage";
 import { Toaster } from "react-hot-toast";
 import { useAuth } from "./context/AuthContext";
-import { startBackendHeartbeat } from "./services/api";
+import { startBackendHeartbeat, warmupBackendConnection } from "./services/api";
 import { useBranch } from "./context/BranchContext";
 import { warmInitialStudentContent } from "./services/bootstrapService";
 
@@ -33,6 +33,7 @@ function App() {
   const { isAuthenticated, loading } = useAuth();
 
   useEffect(() => {
+    warmupBackendConnection(true).catch(() => {});
     const stopHeartbeat = startBackendHeartbeat();
     return () => stopHeartbeat();
   }, []);

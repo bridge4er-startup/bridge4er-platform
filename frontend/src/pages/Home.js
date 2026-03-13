@@ -8,6 +8,7 @@ import OldQuestionsSection from "../components/sections/OldQuestionSection";
 import MCQSection from "../components/sections/MCQSectionPaginated";
 import SubjectiveSection from "../components/sections/SubjectiveSection";
 import TakeExamSection from "../components/sections/TakeExamSection";
+import ContributionsSection from "../components/sections/ContributionsSection";
 import Footer from "../components/layout/Footer";
 import { useBranch } from "../context/BranchContext";
 import { useAuth } from "../context/AuthContext";
@@ -32,11 +33,18 @@ export default function Home() {
   const { isAuthenticated } = useAuth();
   const branchTheme = useMemo(() => branch.toLowerCase().replace(/\s+/g, "-"), [branch]);
   const validSections = useMemo(
-    () => ["homepage", "syllabus", "old-questions", "objective-mcqs", "library", "exam-hall"],
+    () => ["homepage", "syllabus", "old-questions", "objective-mcqs", "library", "exam-hall", "contributions"],
     []
   );
   const [activeSection, setActiveSection] = useState("homepage");
-  const authRequiredSections = new Set(["syllabus", "old-questions", "objective-mcqs", "library", "exam-hall"]);
+  const authRequiredSections = new Set([
+    "syllabus",
+    "old-questions",
+    "objective-mcqs",
+    "library",
+    "exam-hall",
+    "contributions",
+  ]);
 
   useEffect(() => {
     const updateFromHash = () => {
@@ -90,6 +98,12 @@ export default function Home() {
           <AccessRequired title="Exam Hall" />
         ) : (
           <TakeExamSection branch={branch} isActive={activeSection === "exam-hall"} />
+        )}
+
+        {activeSection === "contributions" && authRequiredSections.has("contributions") && !isAuthenticated ? (
+          <AccessRequired title="Contributions" />
+        ) : (
+          <ContributionsSection branch={branch} isActive={activeSection === "contributions"} />
         )}
       </main>
       <Footer />

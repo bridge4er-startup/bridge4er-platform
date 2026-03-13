@@ -19,15 +19,20 @@ class FileMetadataAdmin(admin.ModelAdmin):
     list_display = (
         "id",
         "name",
+        "display_name",
         "content_type",
         "branch",
+        "sort_order",
+        "icon_url",
         "parent_folder_link",
         "is_visible",
         "file_size",
         "uploaded_at",
     )
     list_filter = ("content_type", "branch", "is_visible")
-    search_fields = ("name", "dropbox_path", "branch")
+    search_fields = ("name", "display_name", "dropbox_path", "branch")
+    list_editable = ("display_name", "sort_order", "icon_url", "is_visible")
+    ordering = ("branch", "content_type", "sort_order", "name", "id")
     readonly_fields = ("dropbox_path",)
     actions = ("mark_visible", "mark_hidden")
 
@@ -54,18 +59,20 @@ class FolderMetadataAdmin(admin.ModelAdmin):
     list_display = (
         "id",
         "name",
+        "display_name",
         "content_type",
         "branch",
         "depth",
         "sort_order",
+        "icon_url",
         "is_visible",
         "dropbox_path",
         "contents_link",
         "modified_at",
     )
     list_filter = ("content_type", "branch", "depth", "is_visible")
-    search_fields = ("name", "dropbox_path", "parent_path", "branch")
-    list_editable = ("sort_order", "is_visible")
+    search_fields = ("name", "display_name", "dropbox_path", "parent_path", "branch")
+    list_editable = ("display_name", "sort_order", "icon_url", "is_visible")
     readonly_fields = ("created_at", "modified_at")
     actions = ("mark_visible", "mark_hidden")
     ordering = ("branch", "content_type", "depth", "sort_order", "name")
@@ -110,5 +117,7 @@ class PlatformMetricsAdmin(admin.ModelAdmin):
         "objective_mcqs_available",
         "resource_files_available",
         "exam_sets_available",
+        "login_hero_image_url",
+        "register_hero_image_url",
         "updated_at",
     )
