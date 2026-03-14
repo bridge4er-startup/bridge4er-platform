@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.db.models.functions import Lower
 
 
 CONTRIBUTION_STATUS_CHOICES = [
@@ -17,6 +18,23 @@ CONTRIBUTION_CATEGORY_CHOICES = [
     ("NEA", "NEA"),
     ("Other", "Other"),
 ]
+
+
+class ContributionCategory(models.Model):
+    name = models.CharField(max_length=50)
+    is_active = models.BooleanField(default=True)
+    display_order = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["display_order", "name", "id"]
+        constraints = [
+            models.UniqueConstraint(Lower("name"), name="unique_contribution_category_name_ci"),
+        ]
+
+    def __str__(self):
+        return self.name
 
 
 class Contribution(models.Model):

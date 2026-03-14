@@ -8478,15 +8478,16 @@ body[data-branch-theme="computer-engineering"] {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  padding: 0.2rem 0.55rem;
-  border-radius: 6px;
+  padding: 0.25rem 0.6rem;
+  border-radius: 8px;
   border: 1px solid #cbd5e1;
-  background: #f8fafc;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
 }
 
 .subjective-summary-score.pending {
   color: #64748b;
-  background: #f1f5f9;
+  background: #f8fafc;
   border-color: #e2e8f0;
 }
 
@@ -8546,18 +8547,19 @@ body[data-branch-theme="computer-engineering"] {
 
 .profile-subjective-submissions .subjective-score-panel {
   gap: 0.34rem;
-  padding: 0.42rem 0.56rem;
-  border-radius: 7px;
-  background: transparent;
+  padding: 0.5rem 0.65rem;
+  border-radius: 8px;
+  background: #ffffff;
   border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
 }
 
 .profile-subjective-submissions .subjective-score-panel.pending {
-  background: transparent;
+  background: #f8fafc;
 }
 
 .profile-subjective-submissions .subjective-score-panel.scored {
-  background: transparent;
+  background: #eef2ff;
 }
 
 .profile-subjective-submissions .subjective-score-label {
@@ -8608,6 +8610,31 @@ body[data-branch-theme="computer-engineering"] {
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 0.8rem;
   margin: 0.9rem 0 1.4rem;
+}
+
+.contribution-category-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  margin: 0.6rem 0 1.2rem;
+  padding: 0.6rem 0.7rem;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.contribution-category-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.contribution-category-title i {
+  color: var(--primary-color);
 }
 
 .contribution-folder-card {
@@ -8748,22 +8775,28 @@ body[data-branch-theme="computer-engineering"] {
   flex-wrap: wrap;
 }
 
+.contribution-star-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 .contribution-star {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
-  font-size: 0.85rem;
-  font-weight: 700;
-}
-
-.contribution-star i {
+  justify-content: center;
   font-size: 0.9rem;
   line-height: 1;
 }
 
 .contribution-star-count {
-  font-size: 0.82rem;
-  font-weight: 700;
+  font-size: 0.7rem;
+  font-weight: 800;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: #f1f5f9;
+  color: #0f172a;
 }
 
 .contribution-star-badge {
@@ -8809,6 +8842,12 @@ body[data-branch-theme="computer-engineering"] {
   border-color: #fde68a;
 }
 
+.contribution-star-badge.tone-yellow {
+  background: #fef9c3;
+  color: #854d0e;
+  border-color: #fde68a;
+}
+
 .contribution-star-badge.tone-muted {
   background: #f1f5f9;
   color: #64748b;
@@ -8825,6 +8864,34 @@ body[data-branch-theme="computer-engineering"] {
 
 .contribution-star.tone-gold {
   color: #ca8a04;
+}
+
+.contribution-star.tone-yellow {
+  color: #ca8a04;
+}
+
+.contribution-star-count.tone-blue {
+  background: #dbeafe;
+  border-color: #bfdbfe;
+  color: #1e3a8a;
+}
+
+.contribution-star-count.tone-green {
+  background: #dcfce7;
+  border-color: #bbf7d0;
+  color: #166534;
+}
+
+.contribution-star-count.tone-yellow {
+  background: #fef9c3;
+  border-color: #fde68a;
+  color: #854d0e;
+}
+
+.contribution-star-count.tone-muted {
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+  color: #64748b;
 }
 
 .contribution-star.tone-muted {

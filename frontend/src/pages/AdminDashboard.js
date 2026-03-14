@@ -39,7 +39,7 @@ const BULK_SYNC_SCOPE_LABELS = {
   resources: "Resource Files",
   all: "All Dropbox Content",
 };
-const CONTRIBUTION_CATEGORIES = ["PSC", "NEC", "MSC", "GK/IQ", "NTC", "NEA", "Other"];
+const DEFAULT_CONTRIBUTION_CATEGORIES = ["PSC", "NEC", "MSC", "GK/IQ", "NTC", "NEA", "Other"];
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState("upload-files"); // upload-files, manage-mcqs, bulk-upload-mcqs, review-subjective
@@ -141,6 +141,11 @@ export default function AdminDashboard() {
   const [loadingContributions, setLoadingContributions] = useState(false);
   const [savingContributionId, setSavingContributionId] = useState(null);
   const [contributionDrafts, setContributionDrafts] = useState({});
+  const [contributionCategories, setContributionCategories] = useState([]);
+  const [loadingContributionCategories, setLoadingContributionCategories] = useState(false);
+  const [newContributionCategory, setNewContributionCategory] = useState("");
+  const [savingContributionCategory, setSavingContributionCategory] = useState(false);
+  const [deletingContributionCategory, setDeletingContributionCategory] = useState("");
 
   const statusLabel = (value) => {
     const text = String(value || "pending");
@@ -961,6 +966,61 @@ export default function AdminDashboard() {
     }
   };
 
+  const normalizeContributionCategories = (values) => {
+    const normalized = (values || [])
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
+    return Array.from(new Set(normalized));
+  };
+
+  const loadContributionCategories = async () => {
+    setLoadingContributionCategories(true);
+    try {
+      const data = await contributionService.listCategories();
+      const rows = normalizeContributionCategories(data?.categories || data || []);
+      setContributionCategories(rows.length ? rows : DEFAULT_CONTRIBUTION_CATEGORIES);
+    } catch (_error) {
+      setContributionCategories(DEFAULT_CONTRIBUTION_CATEGORIES);
+    } finally {
+      setLoadingContributionCategories(false);
+    }
+  };
+
+  const createContributionCategory = async () => {
+    const name = String(newContributionCategory || "").trim();
+    if (!name) {
+      toast.error("Enter a category name.");
+      return;
+    }
+    setSavingContributionCategory(true);
+    try {
+      await contributionService.adminCreateCategory(name);
+      toast.success("Category added.");
+      setNewContributionCategory("");
+      await loadContributionCategories();
+    } catch (error) {
+      toast.error(error?.response?.data?.error || "Failed to add category.");
+    } finally {
+      setSavingContributionCategory(false);
+    }
+  };
+
+  const deleteContributionCategory = async (name) => {
+    if (!window.confirm(`Delete category "${name}"?`)) {
+      return;
+    }
+    setDeletingContributionCategory(name);
+    try {
+      await contributionService.adminDeleteCategory({ name });
+      toast.success("Category deleted.");
+      await loadContributionCategories();
+    } catch (error) {
+      toast.error(error?.response?.data?.error || "Failed to delete category.");
+    } finally {
+      setDeletingContributionCategory("");
+    }
+  };
+
   const updateContributionDraft = (contributionId, field, value) => {
     setContributionDrafts((prev) => ({
       ...prev,
@@ -1016,6 +1076,9 @@ export default function AdminDashboard() {
       toast.error(error?.response?.data?.error || "Failed to delete comment.");
     }
   };
+
+  const contributionCategoryOptions =
+    contributionCategories.length > 0 ? contributionCategories : DEFAULT_CONTRIBUTION_CATEGORIES;
 
   const loadHomepageMetrics = async () => {
     try {
@@ -1390,6 +1453,7 @@ export default function AdminDashboard() {
             onClick={() => {
               setActiveTab("contributions");
               loadContributions();
+              loadContributionCategories();
             }}
             style={{
               padding: "0.5rem 1.5rem",
@@ -1951,9 +2015,89 @@ export default function AdminDashboard() {
                   <option value="rejected">Rejected</option>
                 </select>
               </div>
-              <button className="btn btn-secondary" onClick={() => loadContributions(contributionStatusFilter)}>
+              <button
+                className="btn btn-secondary"
+                onClick={() => {
+                  loadContributions(contributionStatusFilter);
+                  loadContributionCategories();
+                }}
+              >
                 Load Contributions
               </button>
+            </div>
+
+            <div
+              style={{
+                border: "1px solid #e2e8f0",
+                borderRadius: "10px",
+                padding: "0.85rem",
+                backgroundColor: "#f8fafc",
+                marginBottom: "1.2rem",
+              }}
+            >
+              <h4 style={{ marginBottom: "0.6rem" }}>Contribution Categories</h4>
+              {loadingContributionCategories ? (
+                <p>Loading categories...</p>
+              ) : (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "0.6rem", marginBottom: "0.7rem" }}>
+                  {contributionCategoryOptions.map((category) => (
+                    <div
+                      key={category}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "0.35rem",
+                        padding: "0.25rem 0.6rem",
+                        borderRadius: "999px",
+                        border: "1px solid #cbd5e1",
+                        backgroundColor: "#ffffff",
+                        fontSize: "0.85rem",
+                        fontWeight: 600,
+                      }}
+                    >
+                      <span>{category}</span>
+                      <button
+                        className="btn btn-secondary"
+                        type="button"
+                        style={{
+                          padding: "0.2rem 0.5rem",
+                          fontSize: "0.7rem",
+                        }}
+                        onClick={() => deleteContributionCategory(category)}
+                        disabled={deletingContributionCategory === category}
+                      >
+                        {deletingContributionCategory === category ? "Deleting..." : "Delete"}
+                      </button>
+                    </div>
+                  ))}
+                  {contributionCategoryOptions.length === 0 ? (
+                    <span style={{ color: "#64748b" }}>No categories available.</span>
+                  ) : null}
+                </div>
+              )}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.6rem" }}>
+                <input
+                  type="text"
+                  placeholder="New category name"
+                  value={newContributionCategory}
+                  onChange={(e) => setNewContributionCategory(e.target.value)}
+                  style={{
+                    flex: 1,
+                    minWidth: "220px",
+                    padding: "0.55rem",
+                    borderRadius: "6px",
+                    border: "1px solid #d4dbe6",
+                  }}
+                />
+                <button
+                  className="btn btn-secondary"
+                  type="button"
+                  onClick={createContributionCategory}
+                  disabled={savingContributionCategory}
+                >
+                  {savingContributionCategory ? "Adding..." : "Add Category"}
+                </button>
+              </div>
             </div>
 
             {loadingContributions ? (
@@ -2059,7 +2203,7 @@ export default function AdminDashboard() {
                             }}
                           >
                             <option value="">Select category</option>
-                            {CONTRIBUTION_CATEGORIES.map((category) => (
+                            {contributionCategoryOptions.map((category) => (
                               <option key={category} value={category}>
                                 {category}
                               </option>

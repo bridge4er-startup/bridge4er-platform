@@ -7,14 +7,14 @@ import API from "../../services/api";
 import { formatNepalDateTime } from "../../utils/dateTime";
 import FilePreviewModal from "../common/FilePreviewModal";
 
-const CATEGORY_OPTIONS = ["PSC", "NEC", "MSC", "GK/IQ", "NTC", "NEA"];
+const CATEGORY_OPTIONS = ["PSC", "NEC", "MSC", "GK/IQ", "NTC", "NEA", "Other"];
 
 const normalizeCategories = (values) => {
   const normalized = (values || [])
     .map((item) => String(item || "").trim())
     .filter(Boolean);
-  const filtered = normalized.filter((item) => CATEGORY_OPTIONS.includes(item));
-  return filtered.length ? filtered : CATEGORY_OPTIONS;
+  const unique = Array.from(new Set(normalized));
+  return unique.length ? unique : CATEGORY_OPTIONS;
 };
 
 const CATEGORY_ICONS = {
@@ -113,8 +113,8 @@ export default function ContributionsSection({ branch = "Civil Engineering", isA
 
   const resolveStarTone = (count) => {
     const value = Number(count || 0);
-    if (value > 15) return "gold";
-    if (value > 5) return "green";
+    if (value > 15) return "yellow";
+    if (value >= 5) return "green";
     if (value > 0) return "blue";
     return "muted";
   };
@@ -209,22 +209,34 @@ export default function ContributionsSection({ branch = "Civil Engineering", isA
       </h2>
       <p>Community-shared notes approved by admins. Read, download, and you can add one short comment per file.</p>
 
-      <div className="contribution-folder-grid">
-        {categories.map((category) => (
-          <button
-            key={category}
-            type="button"
-            className={`contribution-folder-card ${selectedCategory === category ? "active" : ""}`}
-            onClick={() => setSelectedCategory(category)}
-          >
-            <div className="contribution-folder-icon">
-              <i className={CATEGORY_ICONS[category] || "fas fa-folder"}></i>
-            </div>
-            <div className="contribution-folder-label">{category}</div>
-            <span className="contribution-folder-meta">Open Folder</span>
+      {!selectedCategory ? (
+        <div className="contribution-folder-grid">
+          {categories.map((category) => (
+            <button
+              key={category}
+              type="button"
+              className={`contribution-folder-card ${selectedCategory === category ? "active" : ""}`}
+              onClick={() => setSelectedCategory(category)}
+            >
+              <div className="contribution-folder-icon">
+                <i className={CATEGORY_ICONS[category] || "fas fa-folder"}></i>
+              </div>
+              <div className="contribution-folder-label">{category}</div>
+              <span className="contribution-folder-meta">Open Folder</span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="contribution-category-header">
+          <div className="contribution-category-title">
+            <i className={CATEGORY_ICONS[selectedCategory] || "fas fa-folder-open"}></i>
+            <span>{selectedCategory}</span>
+          </div>
+          <button className="btn btn-secondary" type="button" onClick={() => setSelectedCategory("")}>
+            Back to Categories
           </button>
-        ))}
-      </div>
+        </div>
+      )}
 
       {!selectedCategory ? (
         null
@@ -262,12 +274,14 @@ export default function ContributionsSection({ branch = "Civil Engineering", isA
                     <p className="contribution-meta">
                       <span className="contribution-user">{contributorLabel}</span>
                       <span
-                        className={`contribution-star tone-${starTone}`}
+                        className="contribution-star-wrap"
                         aria-label={`Star rating ${starCount}`}
                         title={`Star rating ${starCount}`}
                       >
-                        <i className="fas fa-star" aria-hidden="true"></i>
-                        <span className="contribution-star-count">{starCount}</span>
+                        <span className={`contribution-star tone-${starTone}`} aria-hidden="true">
+                          <i className="fas fa-star"></i>
+                        </span>
+                        <span className={`contribution-star-count tone-${starTone}`}>{starCount}</span>
                       </span>
                     </p>
                   </div>

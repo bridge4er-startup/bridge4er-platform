@@ -189,12 +189,12 @@ export default function ProfileAnalyticsPage() {
     description: "",
     file: null,
   });
-  const [unlockExamSetId, setUnlockExamSetId] = useState("");
+  const [unlockExamSetName, setUnlockExamSetName] = useState("");
   const [previewFile, setPreviewFile] = useState(null);
   const [referralModalOpen, setReferralModalOpen] = useState(false);
   const [referralForm, setReferralForm] = useState({ name: "", mobile: "" });
   const [submittingReferral, setSubmittingReferral] = useState(false);
-  const [referralUnlockId, setReferralUnlockId] = useState("");
+  const [referralUnlockName, setReferralUnlockName] = useState("");
   const [unlockingReferral, setUnlockingReferral] = useState(false);
   const [expandedSubmissionId, setExpandedSubmissionId] = useState(null);
 
@@ -339,15 +339,15 @@ export default function ProfileAnalyticsPage() {
   };
 
   const claimUnlock = async () => {
-    const examSetId = String(unlockExamSetId || "").trim();
-    if (!examSetId) {
-      toast.error("Enter an exam set ID.");
+    const examSetName = String(unlockExamSetName || "").trim();
+    if (!examSetName) {
+      toast.error("Enter an exam set name.");
       return;
     }
     try {
-      await contributionService.claimUnlock(examSetId);
+      await contributionService.claimUnlock(examSetName);
       toast.success("Exam set unlocked.");
-      setUnlockExamSetId("");
+      setUnlockExamSetName("");
     } catch (error) {
       toast.error(error?.response?.data?.error || "Failed to unlock exam set.");
     }
@@ -377,16 +377,16 @@ export default function ProfileAnalyticsPage() {
   };
 
   const claimReferralUnlock = async () => {
-    const examSetId = String(referralUnlockId || "").trim();
-    if (!examSetId) {
-      toast.error("Enter an exam set ID.");
+    const examSetName = String(referralUnlockName || "").trim();
+    if (!examSetName) {
+      toast.error("Enter an exam set name.");
       return;
     }
     setUnlockingReferral(true);
     try {
-      const result = await referralService.claimUnlock(examSetId);
+      const result = await referralService.claimUnlock(examSetName);
       toast.success(result?.message || "Exam set unlocked.");
-      setReferralUnlockId("");
+      setReferralUnlockName("");
       await refreshAnalytics();
     } catch (error) {
       toast.error(error?.response?.data?.error || "Failed to unlock exam set.");
@@ -675,9 +675,9 @@ export default function ProfileAnalyticsPage() {
                 <div className="contribution-unlock-row">
                   <input
                     type="text"
-                    placeholder="Enter Exam Set ID to unlock"
-                    value={unlockExamSetId}
-                    onChange={(e) => setUnlockExamSetId(e.target.value)}
+                    placeholder="Enter Exam Set Name to unlock"
+                    value={unlockExamSetName}
+                    onChange={(e) => setUnlockExamSetName(e.target.value)}
                   />
                   <button className="btn btn-secondary" type="button" onClick={claimUnlock}>
                     Unlock Exam Set
@@ -727,8 +727,6 @@ export default function ProfileAnalyticsPage() {
                 Close
               </button>
             </div>
-            <p className="referral-modal-note">Refer two friends to unlock a set.</p>
-
             <div className="referral-summary-grid">
               <div>
                 <span>Matched</span>
@@ -775,9 +773,9 @@ export default function ProfileAnalyticsPage() {
                 <div className="referral-unlock-row">
                   <input
                     type="text"
-                    placeholder="Enter Exam Set ID to unlock"
-                    value={referralUnlockId}
-                    onChange={(e) => setReferralUnlockId(e.target.value)}
+                    placeholder="Enter Exam Set Name to unlock"
+                    value={referralUnlockName}
+                    onChange={(e) => setReferralUnlockName(e.target.value)}
                   />
                   <button
                     className="btn btn-secondary"

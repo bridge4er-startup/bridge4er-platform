@@ -55,8 +55,18 @@ export const contributionService = {
     return res.data;
   },
 
-  claimUnlock: async (examSetId) => {
-    const res = await API.post("contributions/unlock/", { exam_set_id: examSetId });
+  adminCreateCategory: async (name) => {
+    const res = await API.post("contributions/categories/admin/", { name });
+    return res.data;
+  },
+
+  adminDeleteCategory: async (payload) => {
+    const res = await API.delete("contributions/categories/admin/", { data: payload });
+    return res.data;
+  },
+
+  claimUnlock: async (examSetName) => {
+    const res = await API.post("contributions/unlock/", { exam_set_name: examSetName });
     return res.data;
   },
 };

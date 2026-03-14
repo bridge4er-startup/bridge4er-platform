@@ -4,6 +4,7 @@ from .views import (
     ContributionAdminDetailView,
     ContributionAdminListView,
     ContributionCategoriesView,
+    ContributionCategoryAdminView,
     ContributionCommentDeleteView,
     ContributionCommentView,
     ContributionFileView,
@@ -15,6 +16,7 @@ from .views import (
 
 urlpatterns = [
     path("categories/", ContributionCategoriesView.as_view()),
+    path("categories/admin/", ContributionCategoryAdminView.as_view()),
     path("list/", ContributionListView.as_view()),
     path("me/", ContributionMyListView.as_view()),
     path("upload/", ContributionUploadView.as_view()),

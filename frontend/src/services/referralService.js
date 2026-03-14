@@ -6,8 +6,8 @@ export const referralService = {
     return res.data;
   },
 
-  claimUnlock: async (examSetId) => {
-    const res = await API.post("accounts/referrals/unlock/", { exam_set_id: examSetId });
+  claimUnlock: async (examSetName) => {
+    const res = await API.post("accounts/referrals/unlock/", { exam_set_name: examSetName });
     return res.data;
   },
 };

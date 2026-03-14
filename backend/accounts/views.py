@@ -174,13 +174,35 @@ class ReferralUnlockView(APIView):
 
     def post(self, request):
         exam_set_id = request.data.get("exam_set_id")
-        if not exam_set_id:
-            return Response({"error": "exam_set_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+        exam_set_name = request.data.get("exam_set_name")
+        exam_set = None
 
-        try:
-            exam_set = ExamSet.objects.get(id=exam_set_id)
-        except ExamSet.DoesNotExist:
-            return Response({"error": "Exam set not found"}, status=status.HTTP_404_NOT_FOUND)
+        if exam_set_id not in (None, ""):
+            try:
+                exam_set = ExamSet.objects.get(id=exam_set_id)
+            except ExamSet.DoesNotExist:
+                return Response({"error": "Exam set not found"}, status=status.HTTP_404_NOT_FOUND)
+        elif exam_set_name is not None:
+            normalized_name = str(exam_set_name or "").strip()
+            if not normalized_name:
+                return Response({"error": "exam_set_name cannot be empty"}, status=status.HTTP_400_BAD_REQUEST)
+            exam_set_qs = ExamSet.objects.filter(name__iexact=normalized_name)
+            user_branch = str(getattr(request.user, "field_of_study", "") or "").strip()
+            if user_branch:
+                exam_set_qs = exam_set_qs.filter(branch__iexact=user_branch)
+            match_count = exam_set_qs.count()
+            if match_count == 0:
+                return Response({"error": "Exam set not found"}, status=status.HTTP_404_NOT_FOUND)
+            if match_count > 1:
+                return Response(
+                    {"error": "Multiple exam sets found for that name. Use exam_set_id."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            exam_set = exam_set_qs.first()
+        else:
+            return Response(
+                {"error": "exam_set_name or exam_set_id is required"}, status=status.HTTP_400_BAD_REQUEST
+            )
 
         if exam_set.is_free or float(exam_set.fee or 0) <= 0:
             return Response({"error": "Exam set is already free"}, status=status.HTTP_400_BAD_REQUEST)

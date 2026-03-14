@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Contribution, ContributionComment, ContributionUnlock
+from .models import Contribution, ContributionComment, ContributionUnlock, ContributionCategory
 
 
 @admin.register(Contribution)
@@ -30,3 +30,11 @@ class ContributionCommentAdmin(admin.ModelAdmin):
 class ContributionUnlockAdmin(admin.ModelAdmin):
     list_display = ("id", "user", "exam_set", "created_at")
     search_fields = ("user__username", "exam_set__name")
+
+
+@admin.register(ContributionCategory)
+class ContributionCategoryAdmin(admin.ModelAdmin):
+    list_display = ("id", "name", "is_active", "display_order", "created_at")
+    list_filter = ("is_active",)
+    search_fields = ("name",)
+    list_editable = ("is_active", "display_order")
