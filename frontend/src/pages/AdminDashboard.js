@@ -141,6 +141,7 @@ export default function AdminDashboard() {
   const [loadingContributions, setLoadingContributions] = useState(false);
   const [savingContributionId, setSavingContributionId] = useState(null);
   const [contributionDrafts, setContributionDrafts] = useState({});
+  const [expandedContributionIds, setExpandedContributionIds] = useState({});
   const [contributionCategories, setContributionCategories] = useState([]);
   const [loadingContributionCategories, setLoadingContributionCategories] = useState(false);
   const [newContributionCategory, setNewContributionCategory] = useState("");
@@ -945,12 +946,13 @@ export default function AdminDashboard() {
     }
   };
 
-  const loadContributions = async (statusFilter = contributionStatusFilter) => {
+  const loadContributions = async (statusFilter = contributionStatusFilter, branchFilter = branch) => {
     setLoadingContributions(true);
     try {
-      const data = await contributionService.adminListContributions(statusFilter);
+      const data = await contributionService.adminListContributions(statusFilter, "", branchFilter);
       const rows = Array.isArray(data) ? data : data?.results || [];
       setContributions(rows);
+      setExpandedContributionIds({});
       const nextDrafts = {};
       rows.forEach((item) => {
         nextDrafts[item.id] = {
@@ -976,7 +978,7 @@ export default function AdminDashboard() {
   const loadContributionCategories = async () => {
     setLoadingContributionCategories(true);
     try {
-      const data = await contributionService.listCategories();
+      const data = await contributionService.listCategories(branch);
       const rows = normalizeContributionCategories(data?.categories || data || []);
       setContributionCategories(rows.length ? rows : DEFAULT_CONTRIBUTION_CATEGORIES);
     } catch (_error) {
@@ -994,7 +996,7 @@ export default function AdminDashboard() {
     }
     setSavingContributionCategory(true);
     try {
-      await contributionService.adminCreateCategory(name);
+      await contributionService.adminCreateCategory(name, branch);
       toast.success("Category added.");
       setNewContributionCategory("");
       await loadContributionCategories();
@@ -1011,7 +1013,7 @@ export default function AdminDashboard() {
     }
     setDeletingContributionCategory(name);
     try {
-      await contributionService.adminDeleteCategory({ name });
+      await contributionService.adminDeleteCategory({ name, branch });
       toast.success("Category deleted.");
       await loadContributionCategories();
     } catch (error) {
@@ -1031,6 +1033,13 @@ export default function AdminDashboard() {
     }));
   };
 
+  const toggleContributionDetails = (contributionId) => {
+    setExpandedContributionIds((prev) => ({
+      ...prev,
+      [contributionId]: !prev[contributionId],
+    }));
+  };
+
   const saveContribution = async (contribution) => {
     const draft = contributionDrafts[contribution.id] || {};
     setSavingContributionId(contribution.id);
@@ -1040,7 +1049,7 @@ export default function AdminDashboard() {
         category: draft.category,
       });
       toast.success("Contribution updated.");
-      await loadContributions(contributionStatusFilter);
+      await loadContributions(contributionStatusFilter, branch);
     } catch (error) {
       toast.error(error?.response?.data?.error || "Failed to update contribution.");
     } finally {
@@ -1056,7 +1065,7 @@ export default function AdminDashboard() {
     try {
       await contributionService.adminDeleteContribution(contributionId);
       toast.success("Contribution deleted.");
-      await loadContributions(contributionStatusFilter);
+      await loadContributions(contributionStatusFilter, branch);
     } catch (error) {
       toast.error(error?.response?.data?.error || "Failed to delete contribution.");
     } finally {
@@ -1071,7 +1080,7 @@ export default function AdminDashboard() {
     try {
       await contributionService.deleteComment(commentId);
       toast.success("Comment deleted.");
-      await loadContributions(contributionStatusFilter);
+      await loadContributions(contributionStatusFilter, branch);
     } catch (error) {
       toast.error(error?.response?.data?.error || "Failed to delete comment.");
     }
@@ -1988,43 +1997,62 @@ export default function AdminDashboard() {
               Approve, categorize, or delete user-submitted notes.
             </p>
 
-            <div
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: "0.75rem",
-                alignItems: "flex-end",
-                marginBottom: "1.2rem",
-              }}
-            >
-              <div style={{ minWidth: "220px" }}>
-                <label style={{ display: "block", marginBottom: "0.35rem" }}>Status Filter</label>
-                <select
-                  value={contributionStatusFilter}
-                  onChange={(e) => setContributionStatusFilter(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "0.6rem",
-                    borderRadius: "4px",
-                    border: "1px solid #ddd",
-                  }}
-                >
-                  <option value="all">All</option>
-                  <option value="pending">Pending</option>
-                  <option value="approved">Approved</option>
-                  <option value="rejected">Rejected</option>
-                </select>
-              </div>
-              <button
-                className="btn btn-secondary"
-                onClick={() => {
-                  loadContributions(contributionStatusFilter);
-                  loadContributionCategories();
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: "0.75rem",
+                  alignItems: "flex-end",
+                  marginBottom: "1.2rem",
                 }}
               >
-                Load Contributions
-              </button>
-            </div>
+                <div style={{ minWidth: "220px" }}>
+                  <label style={{ display: "block", marginBottom: "0.35rem" }}>Status Filter</label>
+                  <select
+                    value={contributionStatusFilter}
+                    onChange={(e) => setContributionStatusFilter(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "0.6rem",
+                      borderRadius: "4px",
+                      border: "1px solid #ddd",
+                    }}
+                  >
+                    <option value="all">All</option>
+                    <option value="pending">Pending</option>
+                    <option value="approved">Approved</option>
+                    <option value="rejected">Rejected</option>
+                  </select>
+                </div>
+                <div style={{ minWidth: "220px" }}>
+                  <label style={{ display: "block", marginBottom: "0.35rem" }}>Branch</label>
+                  <select
+                    value={branch}
+                    onChange={(e) => handleBranchChange(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "0.6rem",
+                      borderRadius: "4px",
+                      border: "1px solid #ddd",
+                    }}
+                  >
+                    {BRANCH_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    loadContributions(contributionStatusFilter, branch);
+                    loadContributionCategories();
+                  }}
+                >
+                  Load Contributions
+                </button>
+              </div>
 
             <div
               style={{
@@ -2035,7 +2063,7 @@ export default function AdminDashboard() {
                 marginBottom: "1.2rem",
               }}
             >
-              <h4 style={{ marginBottom: "0.6rem" }}>Contribution Categories</h4>
+                <h4 style={{ marginBottom: "0.6rem" }}>Contribution Categories - {branch}</h4>
               {loadingContributionCategories ? (
                 <p>Loading categories...</p>
               ) : (
@@ -2076,13 +2104,13 @@ export default function AdminDashboard() {
                 </div>
               )}
               <div style={{ display: "flex", flexWrap: "wrap", gap: "0.6rem" }}>
-                <input
-                  type="text"
-                  placeholder="New category name"
-                  value={newContributionCategory}
-                  onChange={(e) => setNewContributionCategory(e.target.value)}
-                  style={{
-                    flex: 1,
+                  <input
+                    type="text"
+                    placeholder={`New category for ${branch}`}
+                    value={newContributionCategory}
+                    onChange={(e) => setNewContributionCategory(e.target.value)}
+                    style={{
+                      flex: 1,
                     minWidth: "220px",
                     padding: "0.55rem",
                     borderRadius: "6px",
@@ -2112,6 +2140,7 @@ export default function AdminDashboard() {
                     category: item.category || "",
                   };
                   const isSavingCurrent = savingContributionId === item.id;
+                  const isExpanded = Boolean(expandedContributionIds[item.id]);
 
                   return (
                     <article
@@ -2123,20 +2152,66 @@ export default function AdminDashboard() {
                         backgroundColor: "#f8fbff",
                       }}
                     >
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: "1rem",
+                          flexWrap: "wrap",
+                          alignItems: "center",
+                        }}
+                      >
                         <div>
                           <h4 style={{ marginBottom: "0.35rem" }}>{item.title || item.file_name || "Contribution"}</h4>
                           <p style={{ marginBottom: "0.2rem", color: "#334155" }}>
                             <strong>User:</strong> {item.contributor_name || item.contributor_username || "Unknown"}
                           </p>
-                          <p style={{ marginBottom: "0.2rem", color: "#475569", fontSize: "0.9rem" }}>
-                            <strong>Submitted:</strong>{" "}
-                            {item.submitted_at ? formatNepalDateTime(item.submitted_at) : "N/A"}
-                          </p>
                         </div>
-                        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+                        <div style={{ display: "flex", gap: "0.6rem", alignItems: "center", flexWrap: "wrap" }}>
+                          <span
+                            style={{
+                              ...statusPillStyle(draft.status),
+                              padding: "0.2rem 0.6rem",
+                              borderRadius: "999px",
+                              fontSize: "0.8rem",
+                              fontWeight: 700,
+                            }}
+                          >
+                            {statusLabel(draft.status)}
+                          </span>
+                          <button
+                            className="btn btn-secondary"
+                            type="button"
+                            onClick={() => toggleContributionDetails(item.id)}
+                          >
+                            {isExpanded ? "Hide details" : "View details"}
+                          </button>
+                        </div>
+                      </div>
+
+                      {isExpanded ? (
+                        <>
+                          <div
+                            style={{
+                              marginTop: "0.6rem",
+                              display: "flex",
+                              flexWrap: "wrap",
+                              gap: "0.75rem",
+                              color: "#475569",
+                              fontSize: "0.9rem",
+                            }}
+                          >
+                            <span>
+                              <strong>Submitted:</strong>{" "}
+                              {item.submitted_at ? formatNepalDateTime(item.submitted_at) : "N/A"}
+                            </span>
+                            <span>
+                              <strong>Branch:</strong> {item.branch || "N/A"}
+                            </span>
+                          </div>
+
                           {item.file_url ? (
-                            <>
+                            <div style={{ marginTop: "0.6rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
                               <button
                                 type="button"
                                 className="btn btn-secondary"
@@ -2156,111 +2231,118 @@ export default function AdminDashboard() {
                               >
                                 Download
                               </button>
-                            </>
-                          ) : null}
-                        </div>
-                      </div>
-
-                      {item.description ? (
-                        <p style={{ marginTop: "0.5rem", color: "#475569" }}>{item.description}</p>
-                      ) : null}
-
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
-                          gap: "0.8rem",
-                          marginTop: "0.8rem",
-                        }}
-                      >
-                        <div>
-                          <label style={{ display: "block", marginBottom: "0.35rem" }}>Status</label>
-                          <select
-                            value={draft.status}
-                            onChange={(e) => updateContributionDraft(item.id, "status", e.target.value)}
-                            style={{
-                              width: "100%",
-                              padding: "0.55rem",
-                              borderRadius: "4px",
-                              border: "1px solid #d4dbe6",
-                            }}
-                          >
-                            <option value="pending">Pending</option>
-                            <option value="approved">Approved</option>
-                            <option value="rejected">Rejected</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label style={{ display: "block", marginBottom: "0.35rem" }}>Category</label>
-                          <select
-                            value={draft.category}
-                            onChange={(e) => updateContributionDraft(item.id, "category", e.target.value)}
-                            style={{
-                              width: "100%",
-                              padding: "0.55rem",
-                              borderRadius: "4px",
-                              border: "1px solid #d4dbe6",
-                            }}
-                          >
-                            <option value="">Select category</option>
-                            {contributionCategoryOptions.map((category) => (
-                              <option key={category} value={category}>
-                                {category}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-
-                      {Array.isArray(item.comments) && item.comments.length > 0 ? (
-                        <div style={{ marginTop: "0.8rem", display: "grid", gap: "0.4rem" }}>
-                          {item.comments.map((comment) => (
-                            <div
-                              key={comment.id || `${item.id}-${comment.user_name}`}
-                              style={{
-                                border: "1px solid #e2e8f0",
-                                borderRadius: "8px",
-                                padding: "0.45rem 0.6rem",
-                                display: "flex",
-                                justifyContent: "space-between",
-                                gap: "0.5rem",
-                                backgroundColor: "#ffffff",
-                              }}
-                            >
-                              <span>
-                                <strong>{comment.user_name || comment.user_username || "User"}:</strong>{" "}
-                                {comment.text}
-                              </span>
-                              {comment.id ? (
-                                <button
-                                  className="btn btn-secondary"
-                                  type="button"
-                                  onClick={() => deleteContributionComment(comment.id)}
-                                >
-                                  Delete
-                                </button>
-                              ) : null}
                             </div>
-                          ))}
-                        </div>
-                      ) : null}
+                          ) : null}
 
-                      <div style={{ marginTop: "0.85rem", display: "flex", gap: "0.6rem", justifyContent: "flex-end" }}>
-                        <button
-                          className="btn btn-secondary"
-                          onClick={() => deleteContribution(item.id)}
-                          disabled={isSavingCurrent}
-                        >
-                          Delete
-                        </button>
-                        <button
-                          className="btn btn-primary"
-                          onClick={() => saveContribution(item)}
-                          disabled={isSavingCurrent}
-                        >
-                          {isSavingCurrent ? "Saving..." : "Save Changes"}
-                        </button>
-                      </div>
+                          {item.description ? (
+                            <p style={{ marginTop: "0.6rem", color: "#475569" }}>{item.description}</p>
+                          ) : null}
+
+                          <div
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
+                              gap: "0.8rem",
+                              marginTop: "0.8rem",
+                            }}
+                          >
+                            <div>
+                              <label style={{ display: "block", marginBottom: "0.35rem" }}>Status</label>
+                              <select
+                                value={draft.status}
+                                onChange={(e) => updateContributionDraft(item.id, "status", e.target.value)}
+                                style={{
+                                  width: "100%",
+                                  padding: "0.55rem",
+                                  borderRadius: "4px",
+                                  border: "1px solid #d4dbe6",
+                                }}
+                              >
+                                <option value="pending">Pending</option>
+                                <option value="approved">Approved</option>
+                                <option value="rejected">Rejected</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label style={{ display: "block", marginBottom: "0.35rem" }}>Category</label>
+                              <select
+                                value={draft.category}
+                                onChange={(e) => updateContributionDraft(item.id, "category", e.target.value)}
+                                style={{
+                                  width: "100%",
+                                  padding: "0.55rem",
+                                  borderRadius: "4px",
+                                  border: "1px solid #d4dbe6",
+                                }}
+                              >
+                                <option value="">Select category</option>
+                                {contributionCategoryOptions.map((category) => (
+                                  <option key={category} value={category}>
+                                    {category}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+
+                          {Array.isArray(item.comments) && item.comments.length > 0 ? (
+                            <div style={{ marginTop: "0.8rem", display: "grid", gap: "0.4rem" }}>
+                              {item.comments.map((comment) => (
+                                <div
+                                  key={comment.id || `${item.id}-${comment.user_name}`}
+                                  style={{
+                                    border: "1px solid #e2e8f0",
+                                    borderRadius: "8px",
+                                    padding: "0.45rem 0.6rem",
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    gap: "0.5rem",
+                                    backgroundColor: "#ffffff",
+                                  }}
+                                >
+                                  <span>
+                                    <strong>{comment.user_name || comment.user_username || "User"}:</strong>{" "}
+                                    {comment.text}
+                                  </span>
+                                  {comment.id ? (
+                                    <button
+                                      className="btn btn-secondary"
+                                      type="button"
+                                      onClick={() => deleteContributionComment(comment.id)}
+                                    >
+                                      Delete
+                                    </button>
+                                  ) : null}
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
+
+                          <div
+                            style={{
+                              marginTop: "0.85rem",
+                              display: "flex",
+                              gap: "0.6rem",
+                              justifyContent: "flex-end",
+                            }}
+                          >
+                            <button
+                              className="btn btn-secondary"
+                              onClick={() => deleteContribution(item.id)}
+                              disabled={isSavingCurrent}
+                            >
+                              Delete
+                            </button>
+                            <button
+                              className="btn btn-primary"
+                              onClick={() => saveContribution(item)}
+                              disabled={isSavingCurrent}
+                            >
+                              {isSavingCurrent ? "Saving..." : "Save Changes"}
+                            </button>
+                          </div>
+                        </>
+                      ) : null}
                     </article>
                   );
                 })}

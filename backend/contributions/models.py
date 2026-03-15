@@ -22,6 +22,7 @@ CONTRIBUTION_CATEGORY_CHOICES = [
 
 class ContributionCategory(models.Model):
     name = models.CharField(max_length=50)
+    branch = models.CharField(max_length=200, default="Civil Engineering")
     is_active = models.BooleanField(default=True)
     display_order = models.IntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -30,7 +31,11 @@ class ContributionCategory(models.Model):
     class Meta:
         ordering = ["display_order", "name", "id"]
         constraints = [
-            models.UniqueConstraint(Lower("name"), name="unique_contribution_category_name_ci"),
+            models.UniqueConstraint(
+                Lower("name"),
+                Lower("branch"),
+                name="unique_contribution_category_name_branch_ci",
+            ),
         ]
 
     def __str__(self):
@@ -88,6 +93,26 @@ class ContributionComment(models.Model):
     def __str__(self):
         return f"{self.user} -> {self.contribution_id}"
 
+
+class ContributionLike(models.Model):
+    contribution = models.ForeignKey(
+        Contribution,
+        on_delete=models.CASCADE,
+        related_name="likes",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="contribution_likes",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        unique_together = ("contribution", "user")
+
+    def __str__(self):
+        return f"{self.user} liked {self.contribution_id}"
 
 class ContributionUnlock(models.Model):
     user = models.ForeignKey(

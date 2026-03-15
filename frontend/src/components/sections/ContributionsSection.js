@@ -8,6 +8,7 @@ import { formatNepalDateTime } from "../../utils/dateTime";
 import FilePreviewModal from "../common/FilePreviewModal";
 
 const CATEGORY_OPTIONS = ["PSC", "NEC", "MSC", "GK/IQ", "NTC", "NEA", "Other"];
+const PAGE_SIZE = 20;
 
 const normalizeCategories = (values) => {
   const normalized = (values || [])
@@ -50,10 +51,13 @@ export default function ContributionsSection({ branch = "Civil Engineering", isA
   const [commentDrafts, setCommentDrafts] = useState({});
   const [savingCommentId, setSavingCommentId] = useState(null);
   const [previewFile, setPreviewFile] = useState(null);
+  const [expandedComments, setExpandedComments] = useState({});
+  const [currentPage, setCurrentPage] = useState(1);
+  const [likingContributionId, setLikingContributionId] = useState(null);
 
-  const loadCategories = async () => {
+  const loadCategories = async (activeBranch = branch) => {
     try {
-      const data = await contributionService.listCategories();
+      const data = await contributionService.listCategories(activeBranch);
       const resolved = normalizeCategories(data?.categories || data || []);
       setCategories(resolved);
       if (selectedCategory && !resolved.includes(selectedCategory)) {
@@ -79,8 +83,8 @@ export default function ContributionsSection({ branch = "Civil Engineering", isA
 
   useEffect(() => {
     if (!isActive) return;
-    loadCategories().catch(() => {});
-  }, [isActive]);
+    loadCategories(branch).catch(() => {});
+  }, [isActive, branch]);
 
   useEffect(() => {
     if (!isActive) return;
@@ -91,6 +95,12 @@ export default function ContributionsSection({ branch = "Civil Engineering", isA
     }
     loadContributions(selectedCategory).catch(() => {});
   }, [branch, selectedCategory, isActive]);
+
+  useEffect(() => {
+    if (!isActive) return;
+    setExpandedComments({});
+    setCurrentPage(1);
+  }, [selectedCategory, branch, isActive]);
 
   useEffect(() => {
     return () => {
@@ -110,6 +120,13 @@ export default function ContributionsSection({ branch = "Civil Engineering", isA
       return bTime - aTime;
     });
   }, [activeContributions]);
+
+  const totalPages = Math.max(1, Math.ceil(orderedContributions.length / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedContributions = orderedContributions.slice(
+    (safePage - 1) * PAGE_SIZE,
+    safePage * PAGE_SIZE
+  );
 
   const resolveStarTone = (count) => {
     const value = Number(count || 0);
@@ -199,6 +216,38 @@ export default function ContributionsSection({ branch = "Civil Engineering", isA
     }
   };
 
+  const likeContribution = async (item) => {
+    if (!isAuthenticated) {
+      toast.error("Please log in to like a contribution.");
+      return;
+    }
+    if (item?.has_liked || likingContributionId === item.id) {
+      return;
+    }
+    setLikingContributionId(item.id);
+    try {
+      const data = await contributionService.likeContribution(item.id);
+      const nextCount =
+        data?.likes_count != null ? Number(data.likes_count) : Number(item?.likes_count || 0) + 1;
+      setContributions((prev) =>
+        prev.map((entry) =>
+          entry.id === item.id
+            ? {
+                ...entry,
+                has_liked: true,
+                likes_count: nextCount,
+              }
+            : entry
+        )
+      );
+      toast.success("Thanks for the support!");
+    } catch (error) {
+      toast.error(error?.response?.data?.error || "Unable to like this contribution.");
+    } finally {
+      setLikingContributionId(null);
+    }
+  };
+
   return (
     <section id="contributions" className={`section contributions-section ${isActive ? "active" : ""}`}>
       <h2 className="section-title">
@@ -248,8 +297,9 @@ export default function ContributionsSection({ branch = "Civil Engineering", isA
           <h4>No contributions found</h4>
         </div>
       ) : (
+        <>
         <div className="contribution-message-list">
-          {orderedContributions.map((item) => {
+          {paginatedContributions.map((item) => {
             const starCount = Number(item.star_count || 0);
             const starTone = resolveStarTone(starCount);
             const contributorLabel = item.contributor_name || item.contributor_username || "Contributor";
@@ -265,13 +315,40 @@ export default function ContributionsSection({ branch = "Civil Engineering", isA
                   );
                 })
               : false;
+            const comments = Array.isArray(item.comments) ? item.comments : [];
+            const isCommentsExpanded = Boolean(expandedComments[item.id]);
+            const visibleComments = isCommentsExpanded ? comments : comments.slice(0, 3);
+            const hasHiddenComments = comments.length > 3 && !isCommentsExpanded;
+            const likesCount = Number(item.likes_count || 0);
+            const hasLiked = Boolean(item.has_liked);
+            const isLiking = likingContributionId === item.id;
 
             return (
               <article key={item.id} className="contribution-message">
                 <div className="contribution-message-head">
-                  <div>
+                  <div className="contribution-title-row">
                     <h4>{item.title || item.file_name || "Shared Notes"}</h4>
-                    <p className="contribution-meta">
+                    <div className="contribution-actions">
+                      <button
+                        className="btn btn-secondary btn-soft-blue-action contribution-icon-btn"
+                        onClick={() => openPreview(item)}
+                        aria-label="Read"
+                        title="Read"
+                      >
+                        <i className="fas fa-book-open"></i>
+                      </button>
+                      <button
+                        className="btn btn-secondary btn-soft-blue-action contribution-icon-btn"
+                        onClick={() => downloadFile(item)}
+                        aria-label="Download"
+                        title="Download"
+                      >
+                        <i className="fas fa-arrow-down"></i>
+                      </button>
+                    </div>
+                  </div>
+                  <div className="contribution-meta-row">
+                    <div className="contribution-meta">
                       <span className="contribution-user">{contributorLabel}</span>
                       <span
                         className="contribution-star-wrap"
@@ -283,33 +360,39 @@ export default function ContributionsSection({ branch = "Civil Engineering", isA
                         </span>
                         <span className={`contribution-star-count tone-${starTone}`}>{starCount}</span>
                       </span>
-                    </p>
-                  </div>
-                  <div className="contribution-actions">
-                    <button
-                      className="btn btn-secondary btn-soft-blue-action contribution-icon-btn"
-                      onClick={() => openPreview(item)}
-                      aria-label="Read"
-                      title="Read"
-                    >
-                      <i className="fas fa-book-open"></i>
-                    </button>
-                    <button
-                      className="btn btn-secondary btn-soft-blue-action contribution-icon-btn"
-                      onClick={() => downloadFile(item)}
-                      aria-label="Download"
-                      title="Download"
-                    >
-                      <i className="fas fa-arrow-down"></i>
-                    </button>
+                    </div>
+                    <div className="contribution-meta-right">
+                      {hasHiddenComments ? (
+                        <button
+                          type="button"
+                          className="contribution-see-more"
+                          onClick={() =>
+                            setExpandedComments((prev) => ({ ...prev, [item.id]: true }))
+                          }
+                        >
+                          See more
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        className={`contribution-like-btn ${hasLiked ? "liked" : ""}`}
+                        onClick={() => likeContribution(item)}
+                        disabled={!isAuthenticated || hasLiked || isLiking}
+                        aria-pressed={hasLiked}
+                        title={hasLiked ? "Liked" : "Give a like"}
+                      >
+                        <i className="fas fa-arrow-up"></i>
+                      </button>
+                      <span className="contribution-like-count">{likesCount}</span>
+                    </div>
                   </div>
                 </div>
 
                 {item.description ? <p className="contribution-description">{item.description}</p> : null}
 
-                {Array.isArray(item.comments) && item.comments.length > 0 ? (
+                {comments.length > 0 ? (
                   <div className="contribution-comments">
-                    {item.comments.map((comment) => (
+                    {visibleComments.map((comment) => (
                       <div key={comment.id || `${item.id}-${comment.user_name}`} className="contribution-comment">
                         <div className="contribution-comment-line">
                           <strong>{comment.user_name || comment.user_username || "User"}</strong>
@@ -334,7 +417,7 @@ export default function ContributionsSection({ branch = "Civil Engineering", isA
                     <div className="contribution-comment-form">
                       <input
                         type="text"
-                        placeholder="add a comment. you can comment only once"
+                        placeholder="Add a comment (one per user)"
                         value={commentDrafts[item.id] || ""}
                         onChange={(e) =>
                           setCommentDrafts((prev) => ({ ...prev, [item.id]: e.target.value }))
@@ -355,6 +438,30 @@ export default function ContributionsSection({ branch = "Civil Engineering", isA
             );
           })}
         </div>
+        {orderedContributions.length > PAGE_SIZE ? (
+          <div className="contribution-pagination">
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+              disabled={safePage <= 1}
+            >
+              Prev
+            </button>
+            <span>
+              Page {safePage} of {totalPages}
+            </span>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+              disabled={safePage >= totalPages}
+            >
+              Next
+            </button>
+          </div>
+        ) : null}
+        </>
       )}
 
       <FilePreviewModal preview={previewFile} onClose={closePreview} />

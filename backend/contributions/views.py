@@ -14,6 +14,7 @@ from .models import (
     ContributionComment,
     ContributionUnlock,
     ContributionCategory,
+    ContributionLike,
     CONTRIBUTION_CATEGORY_CHOICES,
 )
 from .serializers import (
@@ -27,6 +28,11 @@ MAX_FILE_BYTES = 2 * 1024 * 1024
 ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg"}
 
 
+def _normalize_branch(value):
+    normalized = str(value or "").strip()
+    return normalized or "Civil Engineering"
+
+
 def _build_star_map(user_ids):
     if not user_ids:
         return {}
@@ -38,12 +44,34 @@ def _build_star_map(user_ids):
     return {row["user_id"]: int(row.get("total") or 0) for row in rows}
 
 
-def _list_contribution_categories():
+def _build_like_map(contribution_ids):
+    if not contribution_ids:
+        return {}
+    rows = (
+        ContributionLike.objects.filter(contribution_id__in=contribution_ids)
+        .values("contribution_id")
+        .annotate(total=Count("id"))
+    )
+    return {row["contribution_id"]: int(row.get("total") or 0) for row in rows}
+
+
+def _build_liked_set(contribution_ids, user):
+    if not contribution_ids or not user or not user.is_authenticated:
+        return set()
+    return set(
+        ContributionLike.objects.filter(user=user, contribution_id__in=contribution_ids).values_list(
+            "contribution_id", flat=True
+        )
+    )
+
+
+def _list_contribution_categories(branch):
+    normalized_branch = _normalize_branch(branch)
     base_qs = ContributionCategory.objects.all()
     if not base_qs.exists():
         return [label for label, _ in CONTRIBUTION_CATEGORY_CHOICES]
     return list(
-        base_qs.filter(is_active=True)
+        base_qs.filter(is_active=True, branch__iexact=normalized_branch)
         .order_by("display_order", "name", "id")
         .values_list("name", flat=True)
     )
@@ -53,7 +81,8 @@ class ContributionCategoriesView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
-        return Response({"categories": _list_contribution_categories()})
+        branch = request.query_params.get("branch")
+        return Response({"categories": _list_contribution_categories(branch)})
 
 
 class ContributionCategoryAdminView(APIView):
@@ -61,36 +90,44 @@ class ContributionCategoryAdminView(APIView):
 
     def post(self, request):
         name = str(request.data.get("name") or "").strip()
+        branch = _normalize_branch(request.data.get("branch"))
         if not name:
             return Response({"error": "name is required"}, status=status.HTTP_400_BAD_REQUEST)
         if len(name) > 50:
             return Response({"error": "name is too long"}, status=status.HTTP_400_BAD_REQUEST)
 
-        existing = ContributionCategory.objects.filter(name__iexact=name).first()
+        existing = ContributionCategory.objects.filter(name__iexact=name, branch__iexact=branch).first()
         if existing:
             if not existing.is_active:
                 existing.is_active = True
                 existing.save(update_fields=["is_active", "updated_at"])
             return Response(
-                {"message": "Category already exists", "category": {"id": existing.id, "name": existing.name}},
+                {
+                    "message": "Category already exists",
+                    "category": {"id": existing.id, "name": existing.name, "branch": existing.branch},
+                },
                 status=status.HTTP_200_OK,
             )
 
-        category = ContributionCategory.objects.create(name=name)
+        category = ContributionCategory.objects.create(name=name, branch=branch)
         return Response(
-            {"message": "Category created", "category": {"id": category.id, "name": category.name}},
+            {
+                "message": "Category created",
+                "category": {"id": category.id, "name": category.name, "branch": category.branch},
+            },
             status=status.HTTP_201_CREATED,
         )
 
     def delete(self, request):
         category_id = request.data.get("id") or request.query_params.get("id")
         name = request.data.get("name") or request.query_params.get("name")
+        branch = _normalize_branch(request.data.get("branch") or request.query_params.get("branch"))
 
         queryset = ContributionCategory.objects.all()
         if category_id:
             queryset = queryset.filter(id=category_id)
         elif name:
-            queryset = queryset.filter(name__iexact=str(name).strip())
+            queryset = queryset.filter(name__iexact=str(name).strip(), branch__iexact=branch)
         else:
             return Response({"error": "id or name is required"}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -115,12 +152,20 @@ class ContributionListView(APIView):
         if branch:
             queryset = queryset.filter(branch__iexact=branch)
 
+        contribution_ids = list(queryset.values_list("id", flat=True))
         user_ids = list(queryset.values_list("user_id", flat=True).distinct())
         star_map = _build_star_map(user_ids)
+        like_map = _build_like_map(contribution_ids)
+        liked_set = _build_liked_set(contribution_ids, request.user)
         serializer = ContributionPublicSerializer(
             queryset,
             many=True,
-            context={"request": request, "star_map": star_map},
+            context={
+                "request": request,
+                "star_map": star_map,
+                "like_map": like_map,
+                "liked_set": liked_set,
+            },
         )
         return Response(serializer.data)
 
@@ -238,18 +283,41 @@ class ContributionCommentDeleteView(APIView):
         return Response({"message": "Comment deleted"}, status=status.HTTP_200_OK)
 
 
+class ContributionLikeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, contribution_id):
+        try:
+            contribution = Contribution.objects.get(id=contribution_id, status="approved")
+        except Contribution.DoesNotExist:
+            return Response({"error": "Contribution not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        if contribution.user_id == request.user.id:
+            return Response({"error": "You cannot like your own contribution"}, status=status.HTTP_400_BAD_REQUEST)
+
+        like, created = ContributionLike.objects.get_or_create(contribution=contribution, user=request.user)
+        if not created:
+            return Response({"error": "You already liked this contribution"}, status=status.HTTP_400_BAD_REQUEST)
+
+        likes_count = ContributionLike.objects.filter(contribution=contribution).count()
+        return Response({"message": "Liked", "likes_count": likes_count}, status=status.HTTP_201_CREATED)
+
+
 class ContributionAdminListView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUser]
 
     def get(self, request):
         status_filter = str(request.query_params.get("status", "all") or "").strip().lower()
         category = str(request.query_params.get("category", "") or "").strip()
+        branch = str(request.query_params.get("branch", "") or "").strip()
 
         queryset = Contribution.objects.select_related("user").prefetch_related("comments__user").order_by("-submitted_at")
         if status_filter in {"pending", "approved", "rejected"}:
             queryset = queryset.filter(status=status_filter)
         if category:
             queryset = queryset.filter(category__iexact=category)
+        if branch:
+            queryset = queryset.filter(branch__iexact=branch)
 
         user_ids = list(queryset.values_list("user_id", flat=True).distinct())
         star_map = _build_star_map(user_ids)

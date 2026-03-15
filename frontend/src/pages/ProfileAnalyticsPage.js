@@ -197,6 +197,7 @@ export default function ProfileAnalyticsPage() {
   const [referralUnlockName, setReferralUnlockName] = useState("");
   const [unlockingReferral, setUnlockingReferral] = useState(false);
   const [expandedSubmissionId, setExpandedSubmissionId] = useState(null);
+  const [showAllAttempts, setShowAllAttempts] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -409,7 +410,8 @@ export default function ProfileAnalyticsPage() {
 
   const profile = analytics.profile || {};
   const summary = analytics.summary || {};
-  const recentAttempts = analytics.recent_attempts || [];
+    const recentAttempts = analytics.recent_attempts || [];
+    const visibleAttempts = showAllAttempts ? recentAttempts : recentAttempts.slice(0, 5);
   const paymentBreakdown = analytics.payment_gateway_breakdown || [];
   const subjectiveBreakdown = analytics.subjective_status_breakdown || [];
   const subjectiveSubmissions = analytics.subjective_submissions || [];
@@ -508,22 +510,33 @@ export default function ProfileAnalyticsPage() {
 
           <div className="profile-attempt-list-card" style={{ marginTop: 6 }}>
             <h3>Recent Attempts</h3>
-            {recentAttempts.length === 0 ? (
-              <p>No attempts yet.</p>
-            ) : (
-              <ul className="file-list">
-                {recentAttempts.map((item) => (
-                  <li key={item.id} className="file-item">
-                    <div className="file-details">
-                      <h4>{item.exam_name}</h4>
-                      <p>Score: {Number(item.score || 0).toFixed(2)}</p>
-                    </div>
-                    <small>{formatNepalDateTime(item.created_at)}</small>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+              {recentAttempts.length === 0 ? (
+                <p>No attempts yet.</p>
+              ) : (
+                <>
+                  <ul className="file-list">
+                    {visibleAttempts.map((item) => (
+                      <li key={item.id} className="file-item">
+                        <div className="file-details">
+                          <h4>{item.exam_name}</h4>
+                          <p>Score: {Number(item.score || 0).toFixed(2)}</p>
+                        </div>
+                        <small>{formatNepalDateTime(item.created_at)}</small>
+                      </li>
+                    ))}
+                  </ul>
+                  {recentAttempts.length > 5 ? (
+                    <button
+                      type="button"
+                      className="text-link-btn"
+                      onClick={() => setShowAllAttempts((prev) => !prev)}
+                    >
+                      {showAllAttempts ? "See less" : "See more"}
+                    </button>
+                  ) : null}
+                </>
+              )}
+            </div>
 
           <div className="profile-attempt-list-card profile-subjective-review-card" style={{ marginTop: 10 }}>
             <h3>Subjective Submission Reviews</h3>

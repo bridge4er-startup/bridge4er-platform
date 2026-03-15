@@ -22,6 +22,8 @@ class ContributionPublicSerializer(serializers.ModelSerializer):
     contributor_username = serializers.CharField(source="user.username", read_only=True)
     file_url = serializers.SerializerMethodField()
     star_count = serializers.SerializerMethodField()
+    likes_count = serializers.SerializerMethodField()
+    has_liked = serializers.SerializerMethodField()
     comments = ContributionCommentSerializer(many=True, read_only=True)
 
     def get_contributor_name(self, obj):
@@ -41,6 +43,14 @@ class ContributionPublicSerializer(serializers.ModelSerializer):
             return int(star_map.get(obj.user_id) or 0)
         return 0
 
+    def get_likes_count(self, obj):
+        like_map = self.context.get("like_map") or {}
+        return int(like_map.get(obj.id) or 0)
+
+    def get_has_liked(self, obj):
+        liked_set = self.context.get("liked_set") or set()
+        return obj.id in liked_set
+
     class Meta:
         model = Contribution
         fields = [
@@ -55,6 +65,8 @@ class ContributionPublicSerializer(serializers.ModelSerializer):
             "contributor_username",
             "file_url",
             "star_count",
+            "likes_count",
+            "has_liked",
             "comments",
         ]
 

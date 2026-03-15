@@ -8756,14 +8756,28 @@ body[data-branch-theme="computer-engineering"] {
 
 .contribution-message-head {
   display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.contribution-title-row {
+  display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
 }
 
 .contribution-message-head h4 {
-  margin: 0 0 0.25rem;
+  margin: 0;
+}
+
+.contribution-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
 }
 
 .contribution-meta {
@@ -8773,6 +8787,14 @@ body[data-branch-theme="computer-engineering"] {
   font-size: 0.85rem;
   color: #64748b;
   flex-wrap: wrap;
+  margin: 0;
+}
+
+.contribution-meta-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
 }
 
 .contribution-star-wrap {
@@ -8919,6 +8941,62 @@ body[data-branch-theme="computer-engineering"] {
   justify-content: flex-end;
 }
 
+.contribution-see-more,
+.text-link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--primary-color);
+  cursor: pointer;
+}
+
+.contribution-see-more:hover,
+.text-link-btn:hover {
+  text-decoration: underline;
+}
+
+.contribution-like-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #0f766e;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.contribution-like-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 12px rgba(15, 23, 42, 0.12);
+}
+
+.contribution-like-btn.liked {
+  background: color-mix(in srgb, var(--primary-color) 14%, #ffffff);
+  border-color: color-mix(in srgb, var(--primary-color) 40%, #cbd5e1);
+  color: var(--primary-color);
+}
+
+.contribution-like-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+  transform: none;
+  box-shadow: none;
+}
+
+.contribution-like-count {
+  font-size: 0.75rem;
+  color: #64748b;
+  font-weight: 600;
+  min-width: 1.2rem;
+  text-align: left;
+}
+
 .contribution-icon-btn {
   padding: 0.35rem 0.45rem;
   font-size: 0.75rem;
@@ -8986,10 +9064,21 @@ body[data-branch-theme="computer-engineering"] {
 
 .contribution-comment-form input {
   flex: 1;
-  min-width: 220px;
+  min-width: 180px;
   border: 1px solid #cbd5e1;
   border-radius: 10px;
   padding: 0.55rem 0.7rem;
+}
+
+.contribution-pagination {
+  margin-top: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  font-size: 0.9rem;
+  color: #64748b;
 }
 
 .contribution-upload-form {

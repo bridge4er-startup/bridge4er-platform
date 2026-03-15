@@ -1,8 +1,10 @@
 import API from "./api";
 
 export const contributionService = {
-  listCategories: async () => {
-    const res = await API.get("contributions/categories/");
+  listCategories: async (branch = "") => {
+    const res = await API.get("contributions/categories/", {
+      params: { branch },
+    });
     return res.data;
   },
 
@@ -38,9 +40,9 @@ export const contributionService = {
     return res.data;
   },
 
-  adminListContributions: async (status = "all", category = "") => {
+  adminListContributions: async (status = "all", category = "", branch = "") => {
     const res = await API.get("contributions/admin/list/", {
-      params: { status, category },
+      params: { status, category, branch },
     });
     return res.data;
   },
@@ -55,13 +57,18 @@ export const contributionService = {
     return res.data;
   },
 
-  adminCreateCategory: async (name) => {
-    const res = await API.post("contributions/categories/admin/", { name });
+  adminCreateCategory: async (name, branch = "") => {
+    const res = await API.post("contributions/categories/admin/", { name, branch });
     return res.data;
   },
 
   adminDeleteCategory: async (payload) => {
     const res = await API.delete("contributions/categories/admin/", { data: payload });
+    return res.data;
+  },
+
+  likeContribution: async (contributionId) => {
+    const res = await API.post(`contributions/${contributionId}/like/`);
     return res.data;
   },
 
