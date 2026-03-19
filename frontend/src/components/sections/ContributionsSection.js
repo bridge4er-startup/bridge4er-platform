@@ -327,7 +327,17 @@ export default function ContributionsSection({ branch = "Civil Engineering", isA
               <article key={item.id} className="contribution-message">
                 <div className="contribution-message-head">
                   <div className="contribution-title-row">
-                    <h4>{item.title || item.file_name || "Shared Notes"}</h4>
+                    <h4>
+                      <button
+                        type="button"
+                        className="contribution-title-btn"
+                        onClick={() => openPreview(item)}
+                        aria-label={`Read ${item.title || item.file_name || "Shared Notes"}`}
+                        title="Read"
+                      >
+                        {item.title || item.file_name || "Shared Notes"}
+                      </button>
+                    </h4>
                     <div className="contribution-actions">
                       <button
                         className="contribution-icon-btn"
