@@ -330,7 +330,7 @@ export default function ContributionsSection({ branch = "Civil Engineering", isA
                     <h4>{item.title || item.file_name || "Shared Notes"}</h4>
                     <div className="contribution-actions">
                       <button
-                        className="btn btn-secondary btn-soft-blue-action contribution-icon-btn"
+                        className="contribution-icon-btn"
                         onClick={() => openPreview(item)}
                         aria-label="Read"
                         title="Read"
@@ -338,7 +338,7 @@ export default function ContributionsSection({ branch = "Civil Engineering", isA
                         <i className="fas fa-book-open"></i>
                       </button>
                       <button
-                        className="btn btn-secondary btn-soft-blue-action contribution-icon-btn"
+                        className="contribution-icon-btn"
                         onClick={() => downloadFile(item)}
                         aria-label="Download"
                         title="Download"
@@ -381,7 +381,7 @@ export default function ContributionsSection({ branch = "Civil Engineering", isA
                         aria-pressed={hasLiked}
                         title={hasLiked ? "Liked" : "Give a like"}
                       >
-                        <i className="fas fa-arrow-up"></i>
+                        <i className="fas fa-heart"></i>
                       </button>
                       <span className="contribution-like-count">{likesCount}</span>
                     </div>

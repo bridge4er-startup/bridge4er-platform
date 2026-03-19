@@ -8763,7 +8763,6 @@ body[data-branch-theme="computer-engineering"] {
 .contribution-title-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 0.75rem;
   flex-wrap: wrap;
 }
@@ -8935,10 +8934,12 @@ body[data-branch-theme="computer-engineering"] {
 }
 
 .contribution-actions {
-  display: flex;
+  display: inline-flex;
+  align-items: center;
   gap: 0.5rem;
-  flex-wrap: wrap;
   justify-content: flex-end;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .contribution-see-more,
@@ -8998,10 +8999,24 @@ body[data-branch-theme="computer-engineering"] {
 }
 
 .contribution-icon-btn {
-  padding: 0.35rem 0.45rem;
-  font-size: 0.75rem;
-  min-width: 32px;
+  border: none;
+  background: none;
+  color: #0f172a;
+  padding: 0.2rem;
+  font-size: 0.95rem;
+  min-width: 28px;
+  height: 28px;
   line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: color 0.15s ease, transform 0.15s ease;
+}
+
+.contribution-icon-btn:hover {
+  color: var(--primary-color);
+  transform: translateY(-1px);
 }
 
 .contribution-comments {
