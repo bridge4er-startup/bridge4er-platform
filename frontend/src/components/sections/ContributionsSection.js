@@ -424,7 +424,7 @@ export default function ContributionsSection({ branch = "Civil Engineering", isA
                         }
                       />
                       <button
-                        className="btn btn-secondary"
+                        className="btn btn-secondary contribution-send-btn"
                         type="button"
                         disabled={savingCommentId === item.id}
                         onClick={() => submitComment(item)}

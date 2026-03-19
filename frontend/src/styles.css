@@ -9085,6 +9085,25 @@ body[data-branch-theme="computer-engineering"] {
   padding: 0.55rem 0.7rem;
 }
 
+.contribution-send-btn {
+  background: #ffffff;
+  color: #0f172a;
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
+}
+
+.contribution-send-btn:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+  color: #0f172a;
+}
+
+.contribution-send-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
 .contribution-pagination {
   margin-top: 1rem;
   display: flex;
