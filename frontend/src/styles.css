@@ -8964,7 +8964,7 @@ body[data-branch-theme="computer-engineering"] {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #0f766e;
+  color: #94a3b8;
   padding: 0;
   cursor: pointer;
   transition: transform 0.15s ease, color 0.15s ease;
@@ -8972,11 +8972,11 @@ body[data-branch-theme="computer-engineering"] {
 
 .contribution-like-btn:hover {
   transform: translateY(-1px);
-  color: var(--primary-color);
+  color: #64748b;
 }
 
 .contribution-like-btn.liked {
-  color: var(--primary-color);
+  color: #0f172a;
 }
 
 .contribution-like-btn:disabled {
