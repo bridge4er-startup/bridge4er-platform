@@ -8999,9 +8999,9 @@ body[data-branch-theme="computer-engineering"] {
 }
 
 .contribution-icon-btn {
-  border: none;
-  background: none;
-  color: #0f172a;
+  border: 1px solid color-mix(in srgb, var(--primary-color) 35%, #cbd5e1);
+  background: color-mix(in srgb, var(--primary-color) 12%, #ffffff);
+  color: var(--primary-color);
   padding: 0.2rem;
   font-size: 0.95rem;
   min-width: 28px;
@@ -9011,10 +9011,13 @@ body[data-branch-theme="computer-engineering"] {
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  border-radius: 999px;
   transition: color 0.15s ease, transform 0.15s ease;
 }
 
 .contribution-icon-btn:hover {
+  background: color-mix(in srgb, var(--primary-color) 20%, #ffffff);
+  border-color: color-mix(in srgb, var(--primary-color) 55%, #cbd5e1);
   color: var(--primary-color);
   transform: translateY(-1px);
 }
