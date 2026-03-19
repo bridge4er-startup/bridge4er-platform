@@ -82,8 +82,11 @@ export default function SubjectiveExamPage() {
   const [timeLeft, setTimeLeft] = useState(null);
   const [initialDuration, setInitialDuration] = useState(10800);
   const [isSubmissionWindowClosed, setIsSubmissionWindowClosed] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [previewFile, setPreviewFile] = useState(null);
+  const [expandedSubmissionId, setExpandedSubmissionId] = useState(null);
   const timerRef = useRef(null);
+  const submitLockRef = useRef(false);
 
   useEffect(() => {
     if (!user) return;
@@ -202,9 +205,20 @@ export default function SubjectiveExamPage() {
     }
   };
 
+  const toggleSubjectiveDetails = (submissionId) => {
+    setExpandedSubmissionId((current) => (current === submissionId ? null : submissionId));
+  };
+
   const submit = async () => {
+    if (submitLockRef.current || isSubmitting) return;
     if (isSubmissionWindowClosed) {
       toast.error("Submission time window has ended.");
+      return;
+    }
+    const latestSubmission = orderedSubmissions[0];
+    const latestStatus = String(latestSubmission?.status || "pending").toLowerCase();
+    if (latestSubmission && latestStatus !== "rejected") {
+      toast.error("A submission has already been recorded for this exam set.");
       return;
     }
     if (!file) return toast.error("Select a PDF to upload");
@@ -229,6 +243,8 @@ export default function SubjectiveExamPage() {
     fd.append("email", email || "");
     fd.append("mobile_number", mobile || "");
     const previousSubmissionCount = submissions.length;
+    submitLockRef.current = true;
+    setIsSubmitting(true);
     try {
       await uploadSubjective(fd);
       toast.success("Successfully submitted");
@@ -257,6 +273,9 @@ export default function SubjectiveExamPage() {
         // Fall back to primary error below.
       }
       toast.error(e?.response?.data?.error || "Upload failed");
+    } finally {
+      setIsSubmitting(false);
+      submitLockRef.current = false;
     }
   };
 
@@ -296,6 +315,18 @@ export default function SubjectiveExamPage() {
     .map((line) => line.trim())
     .filter(Boolean);
   const timerLabel = formatTimer(timeLeft || 0);
+  const orderedSubmissions = useMemo(() => {
+    const rows = [...submissions];
+    return rows.sort((a, b) => {
+      const aTime = a?.submitted_at ? new Date(a.submitted_at).getTime() : 0;
+      const bTime = b?.submitted_at ? new Date(b.submitted_at).getTime() : 0;
+      return bTime - aTime;
+    });
+  }, [submissions]);
+  const latestSubmission = orderedSubmissions[0];
+  const latestSubmissionStatus = String(latestSubmission?.status || "pending").toLowerCase();
+  const canSubmitExam =
+    !isSubmissionWindowClosed && !isSubmitting && (!latestSubmission || latestSubmissionStatus === "rejected");
 
   if (loadingExam) {
     return <div className="container" style={{ paddingTop: 20 }}>Loading exam...</div>;
@@ -394,87 +425,113 @@ export default function SubjectiveExamPage() {
         </div>
 
         <div className="form-actions">
-          <button className="btn btn-primary" onClick={submit} disabled={isSubmissionWindowClosed}>
-            <i className="fas fa-paper-plane"></i> {isSubmissionWindowClosed ? "Submission Closed" : "Submit Exam"}
+          <button className="btn btn-primary" onClick={submit} disabled={!canSubmitExam}>
+            <i className="fas fa-paper-plane"></i>{" "}
+            {isSubmissionWindowClosed ? "Submission Closed" : isSubmitting ? "Submitting..." : "Submit Exam"}
           </button>
         </div>
       </div>
 
-      <div className="profile-attempt-list-card" style={{ marginTop: 24 }}>
+      <div className="profile-attempt-list-card profile-subjective-review-card" style={{ marginTop: 24 }}>
         <h3>Your Submissions</h3>
-        {submissions.length === 0 ? (
+        {orderedSubmissions.length === 0 ? (
           <p>No submissions yet.</p>
         ) : (
-          <div className="subjective-submissions-list profile-subjective-submissions">
-            {submissions.map((item) => {
+          <div className="subjective-summary-list profile-subjective-submissions">
+            {orderedSubmissions.map((item) => {
               const hasScore = item.score !== null && item.score !== undefined && item.score !== "";
+              const isExpanded = expandedSubmissionId === item.id;
               return (
-                <article key={item.id} className="subjective-result-card">
-                  <header className="subjective-result-header">
-                    <div>
-                      <h5>{item.exam_set_name || exam?.name || "Subjective Exam"}</h5>
-                      <p className="profile-subjective-time-chip">
-                        Submitted:{" "}
-                        <strong>{item.submitted_at ? formatNepalDateTime(item.submitted_at) : "N/A"}</strong>
-                      </p>
-                      {item.reviewed_at ? (
-                        <p className="profile-subjective-time-chip">
-                          Reviewed: <strong>{formatNepalDateTime(item.reviewed_at)}</strong>
-                        </p>
+                <div key={item.id} className="subjective-summary-item">
+                  <button
+                    type="button"
+                    className={`subjective-summary-row ${isExpanded ? "expanded" : ""}`}
+                    onClick={() => toggleSubjectiveDetails(item.id)}
+                    aria-expanded={isExpanded}
+                  >
+                    <div className="subjective-summary-left">
+                      <div className="subjective-summary-title">
+                        <span className="subjective-summary-name">
+                          {item.exam_set_name || exam?.name || "Subjective Exam"}
+                        </span>
+                        <span className={`subjective-status-pill status-${item.status || "pending"}`}>
+                          {formatSubmissionStatus(item.status)}
+                        </span>
+                      </div>
+                      <div className="subjective-summary-meta">
+                        <span className={`subjective-summary-score ${hasScore ? "scored" : "pending"}`}>
+                          {hasScore ? item.score : "Pending"}
+                          {hasScore && item.max_marks != null ? ` / ${item.max_marks}` : ""}
+                        </span>
+                        <span className="subjective-summary-date">
+                          {item.submitted_at ? formatNepalDateTime(item.submitted_at) : "N/A"}
+                        </span>
+                      </div>
+                    </div>
+                    <span className="subjective-summary-toggle">{isExpanded ? "Hide" : "Details"}</span>
+                  </button>
+
+                  {isExpanded ? (
+                    <div className="subjective-summary-details">
+                      <div className="subjective-detail-times">
+                        <span>
+                          Submitted:{" "}
+                          <strong>{item.submitted_at ? formatNepalDateTime(item.submitted_at) : "N/A"}</strong>
+                        </span>
+                        {item.reviewed_at ? (
+                          <span>
+                            Reviewed: <strong>{formatNepalDateTime(item.reviewed_at)}</strong>
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <div className={`subjective-score-panel ${hasScore ? "scored" : "pending"}`}>
+                        <span className="subjective-score-label">Marks</span>
+                        <strong className="subjective-score-value">{hasScore ? item.score : "Pending"}</strong>
+                        {hasScore && item.max_marks != null ? (
+                          <span className="subjective-score-total">/ {item.max_marks}</span>
+                        ) : null}
+                      </div>
+
+                      <div className="subjective-comment-notepad">
+                        <div className="subjective-comment-title">Examiner Comments</div>
+                        <p>{item.feedback || "No comments yet. Your submission is under review."}</p>
+                      </div>
+
+                      {item.file_url ? (
+                        <div className="profile-subjective-actions">
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-soft-blue-action"
+                            onClick={() => openPreview(item.file_url, item.exam_set_name || "Submitted File")}
+                          >
+                            View Submission
+                          </button>
+                        </div>
+                      ) : null}
+                      {item.reviewed_file_url ? (
+                        <div className="profile-subjective-actions">
+                          <button
+                            type="button"
+                            className="btn btn-primary btn-soft-blue-action"
+                            onClick={() => openPreview(item.reviewed_file_url, item.exam_set_name || "Reviewed File")}
+                          >
+                            View Reviewed File
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-soft-blue-action"
+                            onClick={() =>
+                              downloadFile(item.reviewed_file_url, `${item.exam_set_name || "reviewed-file"}.pdf`)
+                            }
+                          >
+                            Download Reviewed File
+                          </button>
+                        </div>
                       ) : null}
                     </div>
-                    <span className={`subjective-status-pill status-${item.status || "pending"}`}>
-                      {formatSubmissionStatus(item.status)}
-                    </span>
-                  </header>
-
-                  <div className={`subjective-score-panel ${hasScore ? "scored" : "pending"}`}>
-                    <span className="subjective-score-label">Marks</span>
-                    <strong className="subjective-score-value">
-                      {hasScore ? item.score : "Pending"}
-                    </strong>
-                    {hasScore && item.max_marks != null ? (
-                      <span className="subjective-score-total">/ {item.max_marks}</span>
-                    ) : null}
-                  </div>
-
-                  <div className="subjective-comment-notepad">
-                    <div className="subjective-comment-title">Examiner Comments</div>
-                    <p>{item.feedback || "No comments yet. Your submission is under review."}</p>
-                  </div>
-
-                  {item.file_url ? (
-                    <div className="profile-subjective-actions">
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-soft-blue-action"
-                        onClick={() => openPreview(item.file_url, item.exam_set_name || "Submitted File")}
-                      >
-                        View Submission
-                      </button>
-                    </div>
                   ) : null}
-                  {item.reviewed_file_url ? (
-                    <div className="profile-subjective-actions">
-                      <button
-                        type="button"
-                        className="btn btn-primary btn-soft-blue-action"
-                        onClick={() => openPreview(item.reviewed_file_url, item.exam_set_name || "Reviewed File")}
-                      >
-                        View Reviewed File
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-soft-blue-action"
-                        onClick={() =>
-                          downloadFile(item.reviewed_file_url, `${item.exam_set_name || "reviewed-file"}.pdf`)
-                        }
-                      >
-                        Download Reviewed File
-                      </button>
-                    </div>
-                  ) : null}
-                </article>
+                </div>
               );
             })}
           </div>

@@ -198,6 +198,7 @@ export default function ProfileAnalyticsPage() {
   const [unlockingReferral, setUnlockingReferral] = useState(false);
   const [expandedSubmissionId, setExpandedSubmissionId] = useState(null);
   const [showAllAttempts, setShowAllAttempts] = useState(false);
+  const [showAllContributions, setShowAllContributions] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -410,8 +411,8 @@ export default function ProfileAnalyticsPage() {
 
   const profile = analytics.profile || {};
   const summary = analytics.summary || {};
-    const recentAttempts = analytics.recent_attempts || [];
-    const visibleAttempts = showAllAttempts ? recentAttempts : recentAttempts.slice(0, 5);
+  const recentAttempts = analytics.recent_attempts || [];
+  const visibleAttempts = showAllAttempts ? recentAttempts : recentAttempts.slice(0, 5);
   const paymentBreakdown = analytics.payment_gateway_breakdown || [];
   const subjectiveBreakdown = analytics.subjective_status_breakdown || [];
   const subjectiveSubmissions = analytics.subjective_submissions || [];
@@ -421,6 +422,7 @@ export default function ProfileAnalyticsPage() {
   const referralSummary = analytics.referral_summary || {};
   const availableReferralUnlocks =
     Number(referralSummary.available_unlocks ?? summary.referral_unlocks_available ?? 0) || 0;
+  const visibleContributions = showAllContributions ? myContributions : myContributions.slice(0, 5);
 
   return (
     <div className="container profile-analytics-page" style={{ paddingTop: 20, paddingBottom: 40 }}>
@@ -709,20 +711,31 @@ export default function ProfileAnalyticsPage() {
             ) : myContributions.length === 0 ? (
               <p>No contributions yet.</p>
             ) : (
-              <ul className="file-list">
-                {myContributions.map((item) => (
-                  <li key={item.id} className="file-item">
-                    <div className="file-details">
-                      <h4>{item.title || item.file_name || "Contribution"}</h4>
-                      <p>
-                        Status: {item.status || "pending"}
-                        {item.category ? ` | Category: ${item.category}` : ""}
-                      </p>
-                    </div>
-                    <small>{item.submitted_at ? formatNepalDateTime(item.submitted_at) : "N/A"}</small>
-                  </li>
-                ))}
-              </ul>
+              <>
+                <ul className="file-list">
+                  {visibleContributions.map((item) => (
+                    <li key={item.id} className="file-item">
+                      <div className="file-details">
+                        <h4>{item.title || item.file_name || "Contribution"}</h4>
+                        <p>
+                          Status: {item.status || "pending"}
+                          {item.category ? ` | Category: ${item.category}` : ""}
+                        </p>
+                      </div>
+                      <small>{item.submitted_at ? formatNepalDateTime(item.submitted_at) : "N/A"}</small>
+                    </li>
+                  ))}
+                </ul>
+                {myContributions.length > 5 ? (
+                  <button
+                    type="button"
+                    className="text-link-btn"
+                    onClick={() => setShowAllContributions((prev) => !prev)}
+                  >
+                    {showAllContributions ? "See less" : "See more"}
+                  </button>
+                ) : null}
+              </>
             )}
           </div>
         </aside>

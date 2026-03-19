@@ -53,6 +53,54 @@ function loadPdfJs() {
   return pdfJsLoadPromise;
 }
 
+function captureScrollState(viewer) {
+  if (!viewer) return null;
+  const scrollTop = viewer.scrollTop || 0;
+  const scrollHeight = viewer.scrollHeight || 1;
+  const pages = Array.from(viewer.querySelectorAll(".file-preview-pdf-page"));
+  if (!pages.length) {
+    return { scrollTopRatio: scrollTop / scrollHeight };
+  }
+  let pageIndex = 0;
+  let offsetRatio = 0;
+  let found = false;
+  for (let i = 0; i < pages.length; i += 1) {
+    const page = pages[i];
+    const pageTop = page.offsetTop;
+    const pageHeight = page.offsetHeight || 1;
+    if (pageTop + pageHeight > scrollTop + 1) {
+      pageIndex = i;
+      offsetRatio = Math.max(0, Math.min(1, (scrollTop - pageTop) / pageHeight));
+      found = true;
+      break;
+    }
+  }
+  if (!found) {
+    pageIndex = Math.max(0, pages.length - 1);
+    offsetRatio = 1;
+  }
+  return {
+    pageIndex,
+    offsetRatio,
+    scrollTopRatio: scrollTop / scrollHeight,
+  };
+}
+
+function restoreScrollState(viewer, state) {
+  if (!viewer || !state) return;
+  const pages = viewer.querySelectorAll(".file-preview-pdf-page");
+  if (pages.length && state.pageIndex != null) {
+    const safeIndex = Math.min(Math.max(state.pageIndex, 0), pages.length - 1);
+    const targetPage = pages[safeIndex];
+    const offset = (state.offsetRatio || 0) * (targetPage.offsetHeight || 0);
+    viewer.scrollTop = targetPage.offsetTop + offset;
+    return;
+  }
+  if (state.scrollTopRatio != null) {
+    viewer.scrollTop = state.scrollTopRatio * viewer.scrollHeight;
+  }
+}
+
 export default function FilePreviewModal({ preview, onClose }) {
   const bodyRef = useRef(null);
   const viewerRef = useRef(null);
@@ -174,6 +222,7 @@ export default function FilePreviewModal({ preview, onClose }) {
       try {
         const pdf = pdfRef.current;
         const viewer = viewerRef.current;
+        const previousScrollState = captureScrollState(viewer);
         viewer.innerHTML = "";
 
         const ratio = window.devicePixelRatio || 1;
@@ -209,6 +258,12 @@ export default function FilePreviewModal({ preview, onClose }) {
             canvasContext: context,
             viewport,
           }).promise;
+        }
+
+        if (!cancelled && previousScrollState) {
+          requestAnimationFrame(() => {
+            if (!cancelled) restoreScrollState(viewer, previousScrollState);
+          });
         }
       } catch (error) {
         if (!cancelled) {

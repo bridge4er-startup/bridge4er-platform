@@ -318,7 +318,7 @@ export default function ContributionsSection({ branch = "Civil Engineering", isA
             const comments = Array.isArray(item.comments) ? item.comments : [];
             const isCommentsExpanded = Boolean(expandedComments[item.id]);
             const visibleComments = isCommentsExpanded ? comments : comments.slice(0, 3);
-            const hasHiddenComments = comments.length > 3 && !isCommentsExpanded;
+            const hasExtraComments = comments.length > 3;
             const likesCount = Number(item.likes_count || 0);
             const hasLiked = Boolean(item.has_liked);
             const isLiking = likingContributionId === item.id;
@@ -362,15 +362,15 @@ export default function ContributionsSection({ branch = "Civil Engineering", isA
                       </span>
                     </div>
                     <div className="contribution-meta-right">
-                      {hasHiddenComments ? (
+                      {hasExtraComments ? (
                         <button
                           type="button"
                           className="contribution-see-more"
                           onClick={() =>
-                            setExpandedComments((prev) => ({ ...prev, [item.id]: true }))
+                            setExpandedComments((prev) => ({ ...prev, [item.id]: !isCommentsExpanded }))
                           }
                         >
-                          See more
+                          {isCommentsExpanded ? "See less" : "See more"}
                         </button>
                       ) : null}
                       <button
