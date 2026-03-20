@@ -90,12 +90,21 @@ header {
 }
 
 .logo-tagline {
-    font-size: 1rem;
+    font-size: 1.2rem;
     opacity: 0.9;
     font-weight: 400;
     display: block;
     line-height: 1.2;
     margin-top: 0.2rem;
+}
+
+.logo-subline {
+    font-size: 0.8rem;
+    opacity: 0.5;
+    font-weight: 200;
+    display: block;
+    line-height: 1.2;
+    margin-top: 0.12rem;
 }
 
 /* Field Selector */
@@ -4108,6 +4117,10 @@ footer {
     
     .logo-tagline {
         font-size: 0.9rem;
+    }
+
+    .logo-subline {
+        font-size: 0.84rem;
     }
     
     /* FIXED: Field selector - always visible */
@@ -8314,6 +8327,10 @@ body[data-branch-theme="computer-engineering"] {
   font-size: 0.9rem;
 }
 
+.main-header .logo-subline {
+  font-size: 0.82rem;
+}
+
 .main-header .field-dropdown-btn {
   padding: 0.5rem 0.95rem;
 }
@@ -9288,6 +9305,10 @@ body[data-branch-theme="computer-engineering"] {
 
   .main-header .logo-tagline {
     font-size: 0.8rem;
+  }
+
+  .main-header .logo-subline {
+    font-size: 0.75rem;
   }
 
   .exam-hall-modern .exam-type-grid {

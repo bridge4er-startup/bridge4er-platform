@@ -48,8 +48,9 @@ export default function Header() {
             />
           </div>
           <div className="logo-copy">
-            <h1>Bridge4ER Platform</h1>
-            <span className="logo-tagline">Engineering study resources, library, and exam hall</span>
+            <h1>Nepal Engineering Academy</h1>
+            <span className="logo-tagline">Bridge4ER Platform</span>
+            <span className="logo-subline"> Access All Engineering Resources, Library, and Exam Hall</span>
           </div>
         </div>
 
