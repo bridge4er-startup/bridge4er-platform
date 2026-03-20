@@ -5752,10 +5752,10 @@ footer {
    ====================================================================== */
 
 body[data-branch-theme="civil-engineering"] {
-  --primary-color: #0f766e;
-  --secondary-color: #22c55e;
-  --accent-color: #fb7185;
-  --branch-soft: #f0fdf4;
+  --primary-color: #1a5f7a;
+  --secondary-color: #2a7a9c;
+  --accent-color: #0e7490;
+  --branch-soft: #f0fdfa;
 }
 
 body[data-branch-theme="mechanical-engineering"] {
@@ -6865,12 +6865,12 @@ h4 {
 }
 
 body[data-branch-theme="civil-engineering"] {
-  --primary-color: #0f766e;
-  --secondary-color: #22c55e;
-  --accent-color: #fb7185;
-  --branch-soft: #f0fdf4;
-  --header-start: #0f766e;
-  --header-end: #22c55e;
+  --primary-color: #1a5f7a;
+  --secondary-color: #2a7a9c;
+  --accent-color: #0e7490;
+  --branch-soft: #f0fdfa;
+  --header-start: #1a5f7a;
+  --header-end: #2a7a9c;
 }
 
 body[data-branch-theme="mechanical-engineering"] {
@@ -7437,12 +7437,12 @@ body[data-branch-theme="computer-engineering"] {
    ---------------------------------------------------------------------- */
 
 body[data-branch-theme="civil-engineering"] {
-  --primary-color: #0f766e;
-  --secondary-color: #34d399;
+  --primary-color: #1a5f7a;
+  --secondary-color: #2a7a9c;
   --accent-color: #0e7490;
   --branch-soft: #f0fdfa;
-  --header-start: #0f766e;
-  --header-end: #22c55e;
+  --header-start: #1a5f7a;
+  --header-end: #2a7a9c;
 }
 
 body[data-branch-theme="mechanical-engineering"] {
