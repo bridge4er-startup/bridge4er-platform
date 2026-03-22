@@ -11,7 +11,7 @@ services:
     plan: free
     rootDir: backend
     buildCommand: pip install -r requirements.txt && python manage.py collectstatic --noinput
-    startCommand: python manage.py migrate --noinput && gunicorn bridge4er.wsgi:application --config gunicorn.conf.py
+    startCommand: python manage.py migrate --noinput && python manage.py ensure_admin && gunicorn bridge4er.wsgi:application --config gunicorn.conf.py
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
@@ -33,6 +33,18 @@ services:
         value: https://bridge4er-platform.vercel.app
       - key: BACKEND_PUBLIC_URL
         value: https://bridge4er-platform.onrender.com
+      - key: DJANGO_SUPERUSER_USERNAME
+        sync: false
+      - key: DJANGO_SUPERUSER_EMAIL
+        sync: false
+      - key: DJANGO_SUPERUSER_PASSWORD
+        sync: false
+      - key: DJANGO_SUPERUSER_FULL_NAME
+        sync: false
+      - key: DJANGO_SUPERUSER_MOBILE
+        sync: false
+      - key: DJANGO_SUPERUSER_FIELD_OF_STUDY
+        sync: false
       - key: DEFAULT_FROM_EMAIL
         value: bridge4er@gmail.com
       - key: EMAIL_BACKEND

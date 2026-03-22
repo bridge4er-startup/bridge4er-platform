@@ -41,6 +41,14 @@ ESEWA_PRODUCT_CODE=...
 ESEWA_SECRET_KEY=...
 KHALTI_ENV=sandbox
 KHALTI_SECRET_KEY=...
+
+# Optional bootstrap admin (used by manage.py ensure_admin)
+DJANGO_SUPERUSER_USERNAME=admin
+DJANGO_SUPERUSER_EMAIL=admin@example.com
+DJANGO_SUPERUSER_PASSWORD=change-me
+DJANGO_SUPERUSER_FULL_NAME=Admin User
+DJANGO_SUPERUSER_MOBILE=98XXXXXXXX
+DJANGO_SUPERUSER_FIELD_OF_STUDY=Civil Engineering
 ```
 
 ## 3. Provision infrastructure
