@@ -553,6 +553,18 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
 
   useEffect(() => {
     if (!isActive) return undefined;
+    if (locationData.latitude === null || locationData.latitude === undefined ||
+        locationData.longitude === null || locationData.longitude === undefined) {
+      if (!locationData.loading) {
+        setWeather({
+          loading: false,
+          temperatureC: null,
+          description: "Weather unavailable",
+        });
+      }
+      return undefined;
+    }
+
     const latitude = Number(locationData.latitude);
     const longitude = Number(locationData.longitude);
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
