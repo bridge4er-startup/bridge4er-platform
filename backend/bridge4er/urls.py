@@ -2,12 +2,16 @@ from django.contrib import admin
 from django.urls import path, include
 from django.http import JsonResponse
 
+from .public_views import reverse_geocode, current_weather
+
 def health(request):
     return JsonResponse({"status": "ok"})
 
 urlpatterns = [
     path('', health),
     path('admin/', admin.site.urls),
+    path('api/public/reverse-geocode/', reverse_geocode),
+    path('api/public/weather/current/', current_weather),
     # Frontend auth service uses /api/accounts/auth/* endpoints.
     path('api/accounts/', include('accounts.urls')),
     # Keep legacy auth prefix for backward compatibility.

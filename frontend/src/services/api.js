@@ -183,7 +183,6 @@ export const warmupBackendConnection = async (force = false) => {
       try {
         const response = await wakeupClient.get(healthUrl, {
           params: { wake: Date.now() },
-          headers: { "Cache-Control": "no-cache" },
         });
         if (response.status < 500) {
           backendWarmUntil = Date.now() + API_WARM_CACHE_MS;

@@ -5,6 +5,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 from dotenv import load_dotenv
+from corsheaders.defaults import default_headers
 from django.db.backends.signals import connection_created
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -140,6 +141,7 @@ if DEBUG:
     CORS_ALLOW_ALL_ORIGINS = env_bool("CORS_ALLOW_ALL_ORIGINS", not CORS_ALLOWED_ORIGINS)
 else:
     CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOW_HEADERS = list(default_headers) + ["cache-control", "pragma"]
 
 CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS")
 

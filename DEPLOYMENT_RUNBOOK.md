@@ -81,6 +81,8 @@ gunicorn bridge4er.wsgi:application --config gunicorn.conf.py
 After service is up, confirm:
 - `https://<service-name>.onrender.com/` returns health JSON.
 - OTP endpoint sends SMS from Twilio.
+- `https://<service-name>.onrender.com/api/public/reverse-geocode/` responds (proxy for Open-Meteo geocoding).
+- `https://<service-name>.onrender.com/api/public/weather/current/` responds (proxy for Open-Meteo weather).
 
 ## 5. Deploy frontend
 
@@ -91,6 +93,8 @@ Set Vercel environment variable:
 ```env
 REACT_APP_API_BASE_URL=https://<service-name>.onrender.com/api/
 ```
+
+Deploy the backend first so the new `/api/public/*` endpoints are live before the frontend requests them.
 
 Build flow:
 
@@ -126,5 +130,6 @@ Run these checks after deployment:
 6. Dropbox list/upload/download endpoints.
 7. MCQ/subjective exam availability and submission flow.
 8. Admin panel uploads/content management.
+9. Homepage location + weather load without CORS errors.
 
 If all checks pass, announce go-live and start monitoring logs, error rates, and DB health.

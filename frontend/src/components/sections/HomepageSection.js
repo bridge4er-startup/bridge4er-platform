@@ -341,23 +341,17 @@ function persistCachedNepaliDate(dayKey, value) {
 
 async function reverseGeocode(latitude, longitude) {
   try {
-    const geocodeUrl = new URL("https://geocoding-api.open-meteo.com/v1/reverse");
-    geocodeUrl.searchParams.set("latitude", String(latitude));
-    geocodeUrl.searchParams.set("longitude", String(longitude));
-    geocodeUrl.searchParams.set("language", "en");
-    geocodeUrl.searchParams.set("count", "1");
-    geocodeUrl.searchParams.set("format", "json");
-
-    const response = await fetch(geocodeUrl.toString());
-    if (!response.ok) return "";
-    const payload = await response.json();
-    const place = payload?.results?.[0];
-    if (!place) return "";
-    const city = String(place?.name || "").trim();
-    const region = String(place?.admin1 || "").trim();
-    const country = String(place?.country || "").trim();
-    const full = [city, region, country].filter(Boolean).join(", ");
-    return full || "";
+    const response = await cachedGet("public/reverse-geocode/", {
+      params: {
+        latitude,
+        longitude,
+        language: "en",
+      },
+      ttlMs: 24 * 60 * 60 * 1000,
+      staleTtlMs: 24 * 60 * 60 * 1000,
+    });
+    const label = String(response?.data?.label || "").trim();
+    return label || "";
   } catch (_error) {
     return "";
   }
@@ -575,18 +569,15 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
     let isCancelled = false;
     const loadWeather = async () => {
       try {
-        const weatherUrl = new URL("https://api.open-meteo.com/v1/forecast");
-        weatherUrl.searchParams.set("latitude", String(latitude));
-        weatherUrl.searchParams.set("longitude", String(longitude));
-        weatherUrl.searchParams.set("current", "temperature_2m,weather_code");
-        weatherUrl.searchParams.set("timezone", "auto");
-
-        const response = await fetch(weatherUrl.toString());
-        if (!response.ok) {
-          throw new Error("Weather API request failed");
-        }
-
-        const payload = await response.json();
+        const response = await cachedGet("public/weather/current/", {
+          params: {
+            latitude,
+            longitude,
+          },
+          ttlMs: WEATHER_REFRESH_INTERVAL_MS,
+          staleTtlMs: WEATHER_REFRESH_INTERVAL_MS,
+        });
+        const payload = response?.data;
         const temperature = Number(payload?.current?.temperature_2m);
         const weatherCode = Number(payload?.current?.weather_code);
 
