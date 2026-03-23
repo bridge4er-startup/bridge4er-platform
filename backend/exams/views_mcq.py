@@ -226,14 +226,13 @@ def _backup_objective_chapter_file(chapter, uploaded_file):
 
 def _maybe_sync_objective_on_read(branch, user, force_refresh=False):
     allowed_force_refresh = bool(force_refresh and _is_staff_user(user))
-    if not allowed_force_refresh and Subject.objects.filter(branch=branch).exists():
-        return {"status": "skipped", "reason": "local_data"}
+    cooldown = 5 if allowed_force_refresh else AUTO_SYNC_COOLDOWN_SECONDS
     return auto_sync_dropbox_for_branch(
         branch=branch,
         sync_objective=True,
         sync_exam_sets=False,
         replace_existing=True,
-        cooldown_seconds=5 if allowed_force_refresh else AUTO_SYNC_COOLDOWN_SECONDS,
+        cooldown_seconds=cooldown,
     )
 
 

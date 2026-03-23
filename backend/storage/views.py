@@ -127,6 +127,10 @@ def _normalize_dropbox_path(path):
     if extracted:
         value = extracted
     parts = [segment for segment in value.split("/") if segment]
+    for index, segment in enumerate(parts):
+        if segment.lower() == "bridge4er":
+            parts = parts[index:]
+            break
     if not parts:
         return "/"
     return "/" + "/".join(parts)
