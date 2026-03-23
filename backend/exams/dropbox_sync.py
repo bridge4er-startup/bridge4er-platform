@@ -404,8 +404,6 @@ def sync_objective_mcqs_from_dropbox(branch: str, replace_existing: bool = True)
                 item["reason"] = "no_valid_questions"
                 summary["skipped_files"] += 1
                 summary["processed_files"] += 1
-                summary["files"].append(item)
-                continue
 
             objective_meta = parse_objective_file_path(file_path=file_path, branch=branch)
             if not objective_meta:
@@ -454,7 +452,8 @@ def sync_objective_mcqs_from_dropbox(branch: str, replace_existing: bool = True)
             item["skipped"] += int(import_summary.get("skipped", 0))
             summary["imported_questions"] += item["imported"]
             summary["skipped_rows"] += int(import_summary.get("skipped", 0))
-            summary["processed_files"] += 1
+            if valid_questions:
+                summary["processed_files"] += 1
         except ValueError as exc:
             item["status"] = "skipped"
             item["reason"] = str(exc)

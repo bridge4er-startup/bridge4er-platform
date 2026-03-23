@@ -166,6 +166,8 @@ class SubjectiveSubmission(models.Model):
     file_path = models.CharField(max_length=500, blank=True)
     answer_pdf = models.FileField(upload_to='subjective_submissions/%Y/%m/%d/', null=True, blank=True)
     reviewed_file = models.FileField(upload_to='subjective_reviews/%Y/%m/%d/', null=True, blank=True)
+    dropbox_answer_path = models.CharField(max_length=1000, blank=True, default="")
+    dropbox_reviewed_path = models.CharField(max_length=1000, blank=True, default="")
     email = models.EmailField(blank=True)
     mobile_number = models.CharField(max_length=20, blank=True)
     status = models.CharField(

@@ -1,7 +1,7 @@
 import mimetypes
 
 from django.db.models import Count
-from django.http import FileResponse
+from django.http import FileResponse, HttpResponse
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from exams.models import ExamPurchase, ExamSet
+from storage.dropbox_backup import download_file_from_dropbox, sanitize_filename, upload_file_to_dropbox
 from .models import (
     Contribution,
     ContributionComment,
@@ -31,6 +32,31 @@ ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg"}
 def _normalize_branch(value):
     normalized = str(value or "").strip()
     return normalized or "Civil Engineering"
+
+
+def _contribution_dropbox_base(branch):
+    return f"/bridge4er/{_normalize_branch(branch)}/Contributions"
+
+
+def _build_contribution_dropbox_path(contribution, filename):
+    submitted_at = contribution.submitted_at or timezone.now()
+    safe_name = sanitize_filename(filename, fallback=f"contribution-{contribution.id}")
+    return (
+        f"{_contribution_dropbox_base(contribution.branch)}/"
+        f"{submitted_at:%Y/%m/%d}/contribution_{contribution.id}_{safe_name}"
+    )
+
+
+def _backup_contribution_file(contribution, file_obj):
+    if not file_obj:
+        raise ValueError("File is missing for Dropbox backup")
+    base_name = getattr(file_obj, "name", "") or contribution.file_name or f"contribution-{contribution.id}"
+    dropbox_path = contribution.dropbox_path or _build_contribution_dropbox_path(contribution, base_name)
+    upload_file_to_dropbox(dropbox_path, file_obj)
+    if contribution.dropbox_path != dropbox_path:
+        contribution.dropbox_path = dropbox_path
+        contribution.save(update_fields=["dropbox_path", "updated_at"])
+    return dropbox_path
 
 
 def _build_star_map(user_ids):
@@ -184,15 +210,43 @@ class ContributionFileView(APIView):
         if contribution.status != "approved" and not (is_owner or is_admin):
             return Response({"error": "Not allowed to access this file"}, status=status.HTTP_403_FORBIDDEN)
 
-        if not contribution.file:
+        if not contribution.file and not contribution.dropbox_path and not contribution.file_name:
             return Response({"error": "File not found"}, status=status.HTTP_404_NOT_FOUND)
 
         download_requested = str(request.query_params.get("download", "")).strip().lower() in {"1", "true", "yes"}
-        filename = str(contribution.file.name or f"contribution-{contribution.id}").split("/")[-1]
-        try:
-            file_handle = contribution.file.open("rb")
-        except FileNotFoundError:
-            return Response({"error": "File not found on server"}, status=status.HTTP_404_NOT_FOUND)
+        base_name = ""
+        if contribution.file:
+            base_name = contribution.file.name
+        elif contribution.dropbox_path:
+            base_name = contribution.dropbox_path
+        elif contribution.file_name:
+            base_name = contribution.file_name
+        filename = str(base_name or f"contribution-{contribution.id}").split("/")[-1]
+
+        file_handle = None
+        if contribution.file:
+            try:
+                file_handle = contribution.file.open("rb")
+            except Exception:
+                file_handle = None
+
+        if file_handle is None:
+            dropbox_path = contribution.dropbox_path or _build_contribution_dropbox_path(contribution, filename)
+            try:
+                file_content = download_file_from_dropbox(dropbox_path)
+            except Exception:
+                return Response({"error": "File not found on server"}, status=status.HTTP_404_NOT_FOUND)
+
+            if not contribution.dropbox_path:
+                contribution.dropbox_path = dropbox_path
+                contribution.save(update_fields=["dropbox_path", "updated_at"])
+
+            guessed_type, _ = mimetypes.guess_type(filename)
+            response = HttpResponse(file_content, content_type=guessed_type or "application/octet-stream")
+            content_disposition = "attachment" if download_requested else "inline"
+            response["Content-Disposition"] = f'{content_disposition}; filename="{filename}"'
+            response["Cache-Control"] = "private, max-age=300"
+            return response
 
         guessed_type, _ = mimetypes.guess_type(filename)
         response = FileResponse(file_handle, content_type=guessed_type or "application/octet-stream")
@@ -235,7 +289,18 @@ class ContributionUploadView(APIView):
             status="pending",
         )
         serializer = ContributionOwnerSerializer(contribution)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        payload = serializer.data
+        dropbox_path = ""
+        dropbox_error = ""
+        try:
+            dropbox_path = _backup_contribution_file(contribution, file_obj)
+        except Exception as exc:
+            dropbox_error = str(exc)
+        if dropbox_path:
+            payload["dropbox_backup_path"] = dropbox_path
+        if dropbox_error:
+            payload["dropbox_backup_error"] = dropbox_error
+        return Response(payload, status=status.HTTP_201_CREATED)
 
 
 class ContributionMyListView(APIView):

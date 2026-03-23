@@ -127,6 +127,22 @@ def list_folder_with_metadata(path, include_dirs=True, recursive=False):
                     "path": _entry_path(entry),
                     "is_dir": True,
                 })
+        if include_dirs and recursive:
+            try:
+                top_entries = _list_folder_entries(path, recursive=False)
+                existing_paths = {item.get("path") for item in entries if item.get("path")}
+                for entry in top_entries:
+                    if isinstance(entry, dropbox.files.FolderMetadata):
+                        entry_path = _entry_path(entry)
+                        if entry_path and entry_path not in existing_paths:
+                            entries.append({
+                                "name": entry.name,
+                                "path": entry_path,
+                                "is_dir": True,
+                            })
+                            existing_paths.add(entry_path)
+            except Exception:
+                pass
         # Sort by modified date, newest first
         entries.sort(key=lambda x: x.get('modified', ''), reverse=True)
         return entries

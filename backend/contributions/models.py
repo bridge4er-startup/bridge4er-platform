@@ -52,6 +52,7 @@ class Contribution(models.Model):
     description = models.TextField(blank=True, default="")
     file = models.FileField(upload_to="contributions/%Y/%m/%d/")
     file_name = models.CharField(max_length=255, blank=True, default="")
+    dropbox_path = models.CharField(max_length=1000, blank=True, default="")
     category = models.CharField(max_length=50, blank=True, default="")
     status = models.CharField(max_length=20, choices=CONTRIBUTION_STATUS_CHOICES, default="pending")
     branch = models.CharField(max_length=200, default="Civil Engineering")

@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
 import json
+from pathlib import Path
 
 from django.conf import settings
 from django.core.mail import send_mail
 from django.db import transaction
 from django.db.models import Avg, Count
-from django.http import FileResponse
+from django.http import FileResponse, HttpResponse
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
@@ -31,6 +32,7 @@ from .models import (
 from .question_normalizers import normalize_exam_question_payload
 from .resources import ExamQuestionResource
 from .serializers import ExamQuestionSerializer, ExamSetSerializer, SubjectiveSubmissionSerializer
+from storage.dropbox_backup import download_file_from_dropbox, sanitize_filename, upload_file_to_dropbox
 
 if DJANGO_IMPORT_EXPORT_AVAILABLE:
     from tablib import Dataset
@@ -153,6 +155,43 @@ def _maybe_sync_exam_sets_on_read(branch, user, force_refresh=False):
         replace_existing=True,
         cooldown_seconds=5 if allowed_force_refresh else AUTO_SYNC_COOLDOWN_SECONDS,
     )
+
+
+def _normalize_branch(value):
+    cleaned = str(value or "Civil Engineering").strip()
+    return cleaned or "Civil Engineering"
+
+
+def _subjective_dropbox_base(branch):
+    return f"/bridge4er/{_normalize_branch(branch)}/Exam Hall"
+
+
+def _build_subjective_dropbox_path(submission, filename, is_reviewed):
+    branch = _normalize_branch(getattr(submission.exam_set, "branch", None))
+    submitted_at = submission.submitted_at or timezone.now()
+    date_path = submitted_at.strftime("%Y/%m/%d")
+    safe_name = sanitize_filename(filename, fallback=f"submission-{submission.id}.pdf")
+    folder = "Reviews" if is_reviewed else "Submissions"
+    prefix = "reviewed" if is_reviewed else "submission"
+    return f"{_subjective_dropbox_base(branch)}/{folder}/{date_path}/{prefix}_{submission.id}_{safe_name}"
+
+
+def _backup_subjective_file(submission, file_field_name, path_field_name, is_reviewed):
+    file_field = getattr(submission, file_field_name)
+    if not file_field:
+        return "", "file_missing"
+    filename = str(file_field.name or file_field_name)
+    target_path = getattr(submission, path_field_name) or _build_subjective_dropbox_path(
+        submission,
+        filename,
+        is_reviewed,
+    )
+    with file_field.open("rb") as file_handle:
+        upload_file_to_dropbox(target_path, file_handle)
+    if getattr(submission, path_field_name) != target_path:
+        setattr(submission, path_field_name, target_path)
+        submission.save(update_fields=[path_field_name])
+    return target_path, ""
 
 
 def _ensure_demo_exam_sets(branch: str, exam_type: str | None = None):
@@ -350,6 +389,16 @@ def _replace_source_file_name(source_file_path: str, exam_set_name: str):
         extension = f".{file_name.split('.')[-1]}"
     new_file_name = f"{clean_name}{extension}"
     return f"{parent_path}/{new_file_name}" if parent_path else f"/{new_file_name}"
+
+def _build_exam_set_dropbox_path(exam_set: ExamSet, filename: str) -> str:
+    existing_path = str(getattr(exam_set, "source_file_path", "") or "").strip()
+    if existing_path.lower().startswith("/bridge4er/"):
+        return existing_path
+    exam_folder = "Multiple Choice Exam" if exam_set.exam_type == "mcq" else "Subjective Exam"
+    extension = Path(str(filename or "")).suffix or ".json"
+    safe_name = sanitize_filename(exam_set.name or "Exam Set", fallback=f"exam-set-{exam_set.id}")
+    return f"/bridge4er/{_normalize_branch(exam_set.branch)}/Take Exam/{exam_folder}/Manual Uploads/{safe_name}{extension}"
+
 
 
 def _duration_to_label(duration_seconds: int) -> str:
@@ -659,40 +708,58 @@ class ExamSetImportQuestionsView(APIView):
             if replace_existing:
                 exam_set.questions.all().delete()
 
+            summary = None
+            created = 0
             if DJANGO_IMPORT_EXPORT_AVAILABLE and ExamQuestionResource is not None:
                 summary = _import_exam_questions_with_resource(exam_set, rows)
-                return Response(
-                    {
-                        "message": f"Imported {summary['imported']} questions",
-                        "exam_set_id": exam_set.id,
-                        "summary": summary,
-                    }
-                )
+            else:
+                for row in rows:
+                    if not row["question_text"]:
+                        continue
+                    if exam_set.exam_type == "mcq" and row.get("correct_option") not in {"a", "b", "c", "d"}:
+                        continue
 
-            created = 0
-            for row in rows:
-                if not row["question_text"]:
-                    continue
-                if exam_set.exam_type == "mcq" and row.get("correct_option") not in {"a", "b", "c", "d"}:
-                    continue
+                    ExamQuestion.objects.create(
+                        exam_set=exam_set,
+                        order=max(1, row["order"]),
+                        question_header=row["question_header"],
+                        question_text=row["question_text"],
+                        question_image_url=row["question_image_url"],
+                        option_a=row.get("option_a", ""),
+                        option_b=row.get("option_b", ""),
+                        option_c=row.get("option_c", ""),
+                        option_d=row.get("option_d", ""),
+                        correct_option=row.get("correct_option") or None,
+                        explanation=row["explanation"],
+                        marks=max(1, row["marks"]),
+                    )
+                    created += 1
 
-                ExamQuestion.objects.create(
-                    exam_set=exam_set,
-                    order=max(1, row["order"]),
-                    question_header=row["question_header"],
-                    question_text=row["question_text"],
-                    question_image_url=row["question_image_url"],
-                    option_a=row.get("option_a", ""),
-                    option_b=row.get("option_b", ""),
-                    option_c=row.get("option_c", ""),
-                    option_d=row.get("option_d", ""),
-                    correct_option=row.get("correct_option") or None,
-                    explanation=row["explanation"],
-                    marks=max(1, row["marks"]),
-                )
-                created += 1
+        payload = {
+            "message": f"Imported {summary['imported']} questions" if summary else f"Imported {created} questions",
+            "exam_set_id": exam_set.id,
+        }
+        if summary is not None:
+            payload["summary"] = summary
 
-        return Response({"message": f"Imported {created} questions", "exam_set_id": exam_set.id})
+        dropbox_path = ""
+        dropbox_error = ""
+        if uploaded_file:
+            try:
+                dropbox_path = _build_exam_set_dropbox_path(exam_set, uploaded_file.name)
+                upload_file_to_dropbox(dropbox_path, uploaded_file)
+                if exam_set.source_file_path != dropbox_path:
+                    exam_set.source_file_path = dropbox_path
+                    exam_set.save(update_fields=["source_file_path", "updated_at"])
+            except Exception as exc:
+                dropbox_error = str(exc)
+
+        if dropbox_path:
+            payload["dropbox_backup_path"] = dropbox_path
+        if dropbox_error:
+            payload["dropbox_backup_error"] = dropbox_error
+
+        return Response(payload)
 
 
 class ExamSetDetailAdminView(APIView):
@@ -1144,7 +1211,23 @@ class UploadSubjective(APIView):
             status="pending",
         )
         _notify_subjective_submission(submission)
-        return Response({"message": "Uploaded", "submission_id": submission.id})
+        dropbox_path = ""
+        dropbox_error = ""
+        try:
+            dropbox_path, dropbox_error = _backup_subjective_file(
+                submission,
+                "answer_pdf",
+                "dropbox_answer_path",
+                False,
+            )
+        except Exception as exc:
+            dropbox_error = str(exc)
+        payload = {"message": "Uploaded", "submission_id": submission.id}
+        if dropbox_path:
+            payload["dropbox_backup_path"] = dropbox_path
+        if dropbox_error:
+            payload["dropbox_backup_error"] = dropbox_error
+        return Response(payload)
 
 
 class SubmitSubjective(APIView):
@@ -1200,8 +1283,24 @@ class SubjectiveSubmissionCreateView(APIView):
             status="pending",
         )
         _notify_subjective_submission(submission)
+        dropbox_path = ""
+        dropbox_error = ""
+        try:
+            dropbox_path, dropbox_error = _backup_subjective_file(
+                submission,
+                "answer_pdf",
+                "dropbox_answer_path",
+                False,
+            )
+        except Exception as exc:
+            dropbox_error = str(exc)
         serializer = SubjectiveSubmissionSerializer(submission, context={"request": request})
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        payload = serializer.data
+        if dropbox_path:
+            payload["dropbox_backup_path"] = dropbox_path
+        if dropbox_error:
+            payload["dropbox_backup_error"] = dropbox_error
+        return Response(payload, status=status.HTTP_201_CREATED)
 
 
 class MySubjectiveSubmissionsView(APIView):
@@ -1226,15 +1325,41 @@ class SubjectiveSubmissionFileView(APIView):
         if not request.user.is_staff and not is_owner:
             return Response({"error": "Not allowed to access this file"}, status=status.HTTP_403_FORBIDDEN)
 
-        if not submission.answer_pdf:
-            return Response({"error": "PDF file not found"}, status=status.HTTP_404_NOT_FOUND)
-
         download_requested = str(request.query_params.get("download", "")).strip().lower() in {"1", "true", "yes"}
-        filename = str(submission.answer_pdf.name or f"submission-{submission.id}.pdf").split("/")[-1]
-        try:
-            file_handle = submission.answer_pdf.open("rb")
-        except FileNotFoundError:
-            return Response({"error": "PDF file not found on server"}, status=status.HTTP_404_NOT_FOUND)
+        base_name = ""
+        if submission.answer_pdf:
+            base_name = submission.answer_pdf.name
+        elif submission.dropbox_answer_path:
+            base_name = submission.dropbox_answer_path
+        filename = str(base_name or f"submission-{submission.id}.pdf").split("/")[-1]
+
+        file_handle = None
+        if submission.answer_pdf:
+            try:
+                file_handle = submission.answer_pdf.open("rb")
+            except FileNotFoundError:
+                file_handle = None
+
+        if file_handle is None:
+            dropbox_path = submission.dropbox_answer_path or _build_subjective_dropbox_path(
+                submission,
+                filename,
+                False,
+            )
+            try:
+                file_content = download_file_from_dropbox(dropbox_path)
+            except Exception:
+                return Response({"error": "PDF file not found on server"}, status=status.HTTP_404_NOT_FOUND)
+
+            if not submission.dropbox_answer_path:
+                submission.dropbox_answer_path = dropbox_path
+                submission.save(update_fields=["dropbox_answer_path"])
+
+            response = HttpResponse(file_content, content_type="application/pdf")
+            content_disposition = "attachment" if download_requested else "inline"
+            response["Content-Disposition"] = f'{content_disposition}; filename="{filename}"'
+            response["Cache-Control"] = "private, max-age=300"
+            return response
 
         response = FileResponse(file_handle, content_type="application/pdf")
         content_disposition = "attachment" if download_requested else "inline"
@@ -1256,15 +1381,41 @@ class SubjectiveSubmissionReviewedFileView(APIView):
         if not request.user.is_staff and not is_owner:
             return Response({"error": "Not allowed to access this file"}, status=status.HTTP_403_FORBIDDEN)
 
-        if not submission.reviewed_file:
-            return Response({"error": "Reviewed file not found"}, status=status.HTTP_404_NOT_FOUND)
-
         download_requested = str(request.query_params.get("download", "")).strip().lower() in {"1", "true", "yes"}
-        filename = str(submission.reviewed_file.name or f"reviewed-{submission.id}.pdf").split("/")[-1]
-        try:
-            file_handle = submission.reviewed_file.open("rb")
-        except FileNotFoundError:
-            return Response({"error": "Reviewed file not found on server"}, status=status.HTTP_404_NOT_FOUND)
+        base_name = ""
+        if submission.reviewed_file:
+            base_name = submission.reviewed_file.name
+        elif submission.dropbox_reviewed_path:
+            base_name = submission.dropbox_reviewed_path
+        filename = str(base_name or f"reviewed-{submission.id}.pdf").split("/")[-1]
+
+        file_handle = None
+        if submission.reviewed_file:
+            try:
+                file_handle = submission.reviewed_file.open("rb")
+            except FileNotFoundError:
+                file_handle = None
+
+        if file_handle is None:
+            dropbox_path = submission.dropbox_reviewed_path or _build_subjective_dropbox_path(
+                submission,
+                filename,
+                True,
+            )
+            try:
+                file_content = download_file_from_dropbox(dropbox_path)
+            except Exception:
+                return Response({"error": "Reviewed file not found on server"}, status=status.HTTP_404_NOT_FOUND)
+
+            if not submission.dropbox_reviewed_path:
+                submission.dropbox_reviewed_path = dropbox_path
+                submission.save(update_fields=["dropbox_reviewed_path"])
+
+            response = HttpResponse(file_content, content_type="application/pdf")
+            content_disposition = "attachment" if download_requested else "inline"
+            response["Content-Disposition"] = f'{content_disposition}; filename="{filename}"'
+            response["Cache-Control"] = "private, max-age=300"
+            return response
 
         response = FileResponse(file_handle, content_type="application/pdf")
         content_disposition = "attachment" if download_requested else "inline"
@@ -1289,8 +1440,24 @@ class SubjectiveSubmissionReviewedFileView(APIView):
         if submission.status == "reviewed" and not submission.reviewed_at:
             submission.reviewed_at = timezone.now()
         submission.save(update_fields=["reviewed_file", "reviewed_at"])
+        dropbox_path = ""
+        dropbox_error = ""
+        try:
+            dropbox_path, dropbox_error = _backup_subjective_file(
+                submission,
+                "reviewed_file",
+                "dropbox_reviewed_path",
+                True,
+            )
+        except Exception as exc:
+            dropbox_error = str(exc)
         serializer = SubjectiveSubmissionSerializer(submission, context={"request": request})
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        payload = serializer.data
+        if dropbox_path:
+            payload["dropbox_backup_path"] = dropbox_path
+        if dropbox_error:
+            payload["dropbox_backup_error"] = dropbox_error
+        return Response(payload, status=status.HTTP_200_OK)
 
 
 class SubjectiveSubmissionAdminDetailView(APIView):

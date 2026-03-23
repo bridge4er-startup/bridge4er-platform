@@ -23,6 +23,7 @@ from .question_normalizers import normalize_mcq_payload
 from .resources import MCQQuestionResource
 from .serializers import MCQQuestionPublicSerializer, MCQQuestionSerializer
 from storage.dropbox_service import delete_file, list_folder_with_metadata
+from storage.dropbox_backup import sanitize_filename, upload_file_to_dropbox
 from storage.models import FileMetadata
 
 if DJANGO_IMPORT_EXPORT_AVAILABLE:
@@ -203,6 +204,24 @@ def _as_bool(value, default=False):
 
 def _is_staff_user(user):
     return bool(user and user.is_authenticated and user.is_staff)
+
+
+def _objective_dropbox_subject_root(branch, subject_name):
+    parsed = parse_subject_key(subject_name)
+    if parsed.get("institution_path"):
+        return f"/bridge4er/{branch}/Objective MCQs/{parsed['institution_path']}/{parsed['subject_name']}"
+    return f"/bridge4er/{branch}/Objective MCQs/Subjects/{parsed['subject_name']}"
+
+
+def _backup_objective_chapter_file(chapter, uploaded_file):
+    subject = chapter.subject
+    root = _objective_dropbox_subject_root(subject.branch, subject.name)
+    extension = Path(str(getattr(uploaded_file, "name", "") or "")).suffix or ".json"
+    safe_name = sanitize_filename(chapter.name, fallback=f"Chapter-{chapter.id}")
+    file_name = f"{safe_name}{extension}"
+    dropbox_path = f"{root}/{file_name}"
+    upload_file_to_dropbox(dropbox_path, uploaded_file)
+    return dropbox_path
 
 
 def _maybe_sync_objective_on_read(branch, user, force_refresh=False):
@@ -735,7 +754,7 @@ class BulkUploadQuestionsView(APIView):
 
     def post(self, request):
         chapter_id = request.data.get("chapter_id")
-        upload_file = request.FILES.get("questions_file")
+        uploaded_file = request.FILES.get("questions_file")
         file_path = request.data.get("file_path")
         questions_data = request.data.get("questions")
 
@@ -745,8 +764,8 @@ class BulkUploadQuestionsView(APIView):
         try:
             chapter = Chapter.objects.get(id=chapter_id)
 
-            if upload_file:
-                normalized_questions = _read_questions_from_file(upload_file)
+            if uploaded_file:
+                normalized_questions = _read_questions_from_file(uploaded_file)
             elif file_path:
                 normalized_questions = _read_questions_from_path(file_path)
             else:
@@ -759,43 +778,53 @@ class BulkUploadQuestionsView(APIView):
                     )
                 normalized_questions = [_normalize_question_payload(item) for item in questions_data]
 
+            payload = None
             if DJANGO_IMPORT_EXPORT_AVAILABLE and MCQQuestionResource is not None:
                 summary = _import_questions_with_resource(chapter, normalized_questions)
-                return Response(
-                    {
-                        "message": f"Imported {summary['imported']} questions",
-                        "summary": summary,
-                    },
-                    status=status.HTTP_201_CREATED,
-                )
+                payload = {
+                    "message": f"Imported {summary['imported']} questions",
+                    "summary": summary,
+                }
+            else:
+                created_questions = []
+                with transaction.atomic():
+                    for q_data in normalized_questions:
+                        if not q_data["question_text"] or q_data["correct_option"] not in {"a", "b", "c", "d"}:
+                            continue
 
-            created_questions = []
-            with transaction.atomic():
-                for q_data in normalized_questions:
-                    if not q_data["question_text"] or q_data["correct_option"] not in {"a", "b", "c", "d"}:
-                        continue
+                        question = MCQQuestion.objects.create(
+                            chapter=chapter,
+                            question_header=q_data["question_header"],
+                            question_text=q_data["question_text"],
+                            question_image_url=q_data["question_image_url"],
+                            option_a=q_data["option_a"],
+                            option_b=q_data["option_b"],
+                            option_c=q_data["option_c"],
+                            option_d=q_data["option_d"],
+                            correct_option=q_data["correct_option"],
+                            explanation=q_data["explanation"],
+                        )
+                        created_questions.append(MCQQuestionSerializer(question).data)
 
-                    question = MCQQuestion.objects.create(
-                        chapter=chapter,
-                        question_header=q_data["question_header"],
-                        question_text=q_data["question_text"],
-                        question_image_url=q_data["question_image_url"],
-                        option_a=q_data["option_a"],
-                        option_b=q_data["option_b"],
-                        option_c=q_data["option_c"],
-                        option_d=q_data["option_d"],
-                        correct_option=q_data["correct_option"],
-                        explanation=q_data["explanation"],
-                    )
-                    created_questions.append(MCQQuestionSerializer(question).data)
-
-            return Response(
-                {
+                payload = {
                     "message": f"Created {len(created_questions)} questions",
                     "questions": created_questions,
-                },
-                status=status.HTTP_201_CREATED,
-            )
+                }
+
+            dropbox_path = ""
+            dropbox_error = ""
+            if uploaded_file:
+                try:
+                    dropbox_path = _backup_objective_chapter_file(chapter, uploaded_file)
+                except Exception as exc:
+                    dropbox_error = str(exc)
+
+            if dropbox_path:
+                payload["dropbox_backup_path"] = dropbox_path
+            if dropbox_error:
+                payload["dropbox_backup_error"] = dropbox_error
+
+            return Response(payload, status=status.HTTP_201_CREATED)
         except Chapter.DoesNotExist:
             return Response({"error": "Chapter not found"}, status=status.HTTP_404_NOT_FOUND)
         except ValueError as exc:
