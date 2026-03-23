@@ -960,9 +960,13 @@ class ListFilesView(APIView):
         include_dirs = _as_bool(request.GET.get("include_dirs"), False)
         refresh = _as_bool(request.GET.get("refresh"), False)
         prefer_metadata = _as_bool(request.GET.get("prefer_metadata"), False)
+        metadata_only = _as_bool(request.GET.get("metadata_only"), False)
         if not is_staff:
             include_hidden = False
             refresh = False
+        allow_dropbox_listing = is_staff or bool(getattr(settings, "DROPBOX_ALLOW_PUBLIC_LISTING", False))
+        if not allow_dropbox_listing:
+            metadata_only = True
 
         try:
             if not _can_access_content_type(request.user, content_type):
@@ -973,7 +977,9 @@ class ListFilesView(APIView):
                 return Response({"error": "Invalid content type"}, status=status.HTTP_400_BAD_REQUEST)
 
             list_cache_key, stale_key = _list_cache_keys(content_type, branch, include_dirs)
-            files = None if refresh else cache.get(list_cache_key)
+            files = None
+            if not refresh and not metadata_only:
+                files = cache.get(list_cache_key)
 
             if files is None and prefer_metadata and not refresh:
                 metadata_files = _metadata_listing_fallback(
@@ -983,53 +989,59 @@ class ListFilesView(APIView):
                 )
                 if metadata_files:
                     files = metadata_files
-                    _store_list_cache_payload(
-                        content_type=content_type,
-                        branch=branch,
-                        include_dirs=include_dirs,
-                        files=files,
-                    )
-
-            if files is None:
-                try:
-                    files = list_folder_with_metadata(path, include_dirs=include_dirs, recursive=True)
-                    if is_staff and _should_sync_metadata(content_type=content_type, branch=branch, force=refresh):
-                        _sync_metadata_from_listing(files, content_type=content_type, branch=branch)
-                    _store_list_cache_payload(
-                        content_type=content_type,
-                        branch=branch,
-                        include_dirs=include_dirs,
-                        files=files,
-                    )
-                except Exception as exc:
-                    if _is_dropbox_not_found_error(exc):
-                        files = []
+                    if not metadata_only:
                         _store_list_cache_payload(
                             content_type=content_type,
                             branch=branch,
                             include_dirs=include_dirs,
                             files=files,
                         )
-                    else:
-                        stale_files = cache.get(stale_key)
-                        if stale_files is not None:
-                            files = stale_files
-                        else:
-                            metadata_files = _metadata_listing_fallback(
+                elif metadata_only:
+                    files = []
+
+            if files is None:
+                if metadata_only:
+                    files = []
+                else:
+                    try:
+                        files = list_folder_with_metadata(path, include_dirs=include_dirs, recursive=True)
+                        if is_staff and _should_sync_metadata(content_type=content_type, branch=branch, force=refresh):
+                            _sync_metadata_from_listing(files, content_type=content_type, branch=branch)
+                        _store_list_cache_payload(
+                            content_type=content_type,
+                            branch=branch,
+                            include_dirs=include_dirs,
+                            files=files,
+                        )
+                    except Exception as exc:
+                        if _is_dropbox_not_found_error(exc):
+                            files = []
+                            _store_list_cache_payload(
                                 content_type=content_type,
                                 branch=branch,
                                 include_dirs=include_dirs,
+                                files=files,
                             )
-                            if metadata_files:
-                                files = metadata_files
-                                _store_list_cache_payload(
+                        else:
+                            stale_files = cache.get(stale_key)
+                            if stale_files is not None:
+                                files = stale_files
+                            else:
+                                metadata_files = _metadata_listing_fallback(
                                     content_type=content_type,
                                     branch=branch,
                                     include_dirs=include_dirs,
-                                    files=files,
                                 )
-                            else:
-                                raise
+                                if metadata_files:
+                                    files = metadata_files
+                                    _store_list_cache_payload(
+                                        content_type=content_type,
+                                        branch=branch,
+                                        include_dirs=include_dirs,
+                                        files=files,
+                                    )
+                                else:
+                                    raise
 
             ordered_files = _sort_files_by_admin_order(files, content_type=content_type, branch=branch)
             visible_files = _filter_files_by_visibility(
@@ -1065,6 +1077,64 @@ class SyncDropboxContentView(APIView):
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as exc:
             return Response({"error": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ResetDropboxMetadataView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def post(self, request):
+        branch = request.data.get("branch")
+        content_types_input = request.data.get("content_types", None)
+
+        if content_types_input is None:
+            resolved_content_types = list(SYNCABLE_CONTENT_TYPES)
+        else:
+            resolved_content_types = _content_types_from_request(content_types_input)
+
+        if not resolved_content_types:
+            return Response(
+                {"error": "No valid content types supplied for reset."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        resolved_branch = _normalize_branch(branch) if branch else None
+        file_qs = FileMetadata.objects.filter(content_type__in=resolved_content_types)
+        folder_qs = FolderMetadata.objects.filter(content_type__in=resolved_content_types)
+
+        if resolved_branch:
+            file_qs = file_qs.filter(branch=resolved_branch)
+            folder_qs = folder_qs.filter(branch=resolved_branch)
+
+        branches_to_invalidate = set(file_qs.values_list("branch", flat=True)) | set(
+            folder_qs.values_list("branch", flat=True)
+        )
+        if resolved_branch:
+            branches_to_invalidate.add(resolved_branch)
+
+        file_count = file_qs.count()
+        folder_count = folder_qs.count()
+
+        file_qs.delete()
+        folder_qs.delete()
+
+        if resolved_branch:
+            FileSyncLog.objects.filter(branch=resolved_branch).delete()
+        else:
+            FileSyncLog.objects.all().delete()
+
+        for branch_name in branches_to_invalidate:
+            for content_type in resolved_content_types:
+                _invalidate_list_cache(content_type=content_type, branch=branch_name)
+
+        return Response(
+            {
+                "message": "Storage metadata cleared.",
+                "branch": resolved_branch or "all",
+                "content_types": resolved_content_types,
+                "deleted": {"files": file_count, "folders": folder_count},
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class SearchFilesView(APIView):

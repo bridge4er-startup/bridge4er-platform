@@ -123,6 +123,7 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
             branch,
             include_dirs: true,
             prefer_metadata: true,
+            metadata_only: true,
           },
         }),
       ]);

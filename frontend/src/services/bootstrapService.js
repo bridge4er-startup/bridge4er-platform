@@ -24,7 +24,12 @@ export async function warmInitialStudentContent(branch, isAuthenticated) {
         ttlMs: BOOTSTRAP_CACHE_TTL_MS,
       }),
       prefetchGet("storage/files/list/", {
-        params: { content_type: "notice", branch: normalizedBranch, prefer_metadata: true },
+        params: {
+          content_type: "notice",
+          branch: normalizedBranch,
+          prefer_metadata: true,
+          metadata_only: true,
+        },
         ttlMs: BOOTSTRAP_CACHE_TTL_MS,
       }),
     ];
@@ -33,11 +38,21 @@ export async function warmInitialStudentContent(branch, isAuthenticated) {
     if (isAuthenticated) {
       startupRequests.push(
         prefetchGet("storage/files/list/", {
-          params: { content_type: "syllabus", branch: normalizedBranch, prefer_metadata: true },
+          params: {
+            content_type: "syllabus",
+            branch: normalizedBranch,
+            prefer_metadata: true,
+            metadata_only: true,
+          },
           ttlMs: BOOTSTRAP_CACHE_TTL_MS,
         }),
         prefetchGet("storage/files/list/", {
-          params: { content_type: "old_question", branch: normalizedBranch, prefer_metadata: true },
+          params: {
+            content_type: "old_question",
+            branch: normalizedBranch,
+            prefer_metadata: true,
+            metadata_only: true,
+          },
           ttlMs: BOOTSTRAP_CACHE_TTL_MS,
         }),
         prefetchGet("storage/files/list/", {
@@ -46,6 +61,7 @@ export async function warmInitialStudentContent(branch, isAuthenticated) {
             branch: normalizedBranch,
             include_dirs: true,
             prefer_metadata: true,
+            metadata_only: true,
           },
           ttlMs: BOOTSTRAP_CACHE_TTL_MS,
         }),
@@ -55,6 +71,7 @@ export async function warmInitialStudentContent(branch, isAuthenticated) {
             branch: normalizedBranch,
             include_dirs: true,
             prefer_metadata: true,
+            metadata_only: true,
           },
           ttlMs: BOOTSTRAP_CACHE_TTL_MS,
         }),
@@ -64,6 +81,7 @@ export async function warmInitialStudentContent(branch, isAuthenticated) {
             branch: normalizedBranch,
             include_dirs: true,
             prefer_metadata: true,
+            metadata_only: true,
           },
           ttlMs: BOOTSTRAP_CACHE_TTL_MS,
         }),
@@ -73,6 +91,7 @@ export async function warmInitialStudentContent(branch, isAuthenticated) {
             branch: normalizedBranch,
             include_dirs: true,
             prefer_metadata: true,
+            metadata_only: true,
           },
           ttlMs: BOOTSTRAP_CACHE_TTL_MS,
         }),

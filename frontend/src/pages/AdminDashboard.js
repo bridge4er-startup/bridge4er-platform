@@ -27,6 +27,12 @@ const MANAGED_CONTENT_TYPES = [
   "take_exam_mcq",
   "take_exam_subjective",
 ];
+const MANAGED_CONTENT_TYPES_WITH_DIRS = new Set([
+  "subjective",
+  "objective_mcq",
+  "take_exam_mcq",
+  "take_exam_subjective",
+]);
 const BULK_SYNC_RESOURCE_CONTENT_TYPES = [
   "notice",
   "syllabus",
@@ -90,6 +96,7 @@ export default function AdminDashboard() {
   const [loadingManagedFiles, setLoadingManagedFiles] = useState(false);
   const [syncingManagedContent, setSyncingManagedContent] = useState(false);
   const [savingManagedFilePath, setSavingManagedFilePath] = useState("");
+  const [resettingManagedContent, setResettingManagedContent] = useState(false);
   const [manageObjectiveSubject, setManageObjectiveSubject] = useState("");
   const [manageObjectiveChapterId, setManageObjectiveChapterId] = useState("");
   const [manageObjectiveChapters, setManageObjectiveChapters] = useState([]);
@@ -558,7 +565,7 @@ export default function AdminDashboard() {
   const handleLoadManagedFiles = async () => {
     setLoadingManagedFiles(true);
     try {
-      const includeDirs = manageContentType === "objective_mcq";
+      const includeDirs = MANAGED_CONTENT_TYPES_WITH_DIRS.has(manageContentType);
       const result = await fileService.listFiles(manageContentType, branch, true, includeDirs);
       setManagedFiles(result || []);
     } catch (error) {
@@ -609,10 +616,10 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleSetManagedFileVisibility = async (path, isVisible) => {
+  const handleSetManagedFileVisibility = async (path, isVisible, isDir = false) => {
     setSavingManagedFilePath(path);
     try {
-      await fileService.setVisibility(path, isVisible);
+      await fileService.setVisibility(path, isVisible, isDir);
       toast.success(isVisible ? "File is visible on website" : "File hidden from website");
       await handleLoadManagedFiles();
     } catch (error) {
@@ -696,6 +703,26 @@ export default function AdminDashboard() {
       await handleLoadManagedFiles();
     } catch (error) {
       toast.error(error?.response?.data?.error || "Failed to attach path.");
+    }
+  };
+
+  const handleResetManagedContent = async () => {
+    const confirmed = window.confirm(
+      "This will remove all Dropbox-indexed files and folders from the website across ALL branches. Dropbox files will not be deleted. Continue?"
+    );
+    if (!confirmed) return;
+
+    setResettingManagedContent(true);
+    try {
+      const result = await fileService.resetContent();
+      const deletedFiles = Number(result?.deleted?.files || 0);
+      const deletedFolders = Number(result?.deleted?.folders || 0);
+      toast.success(`Storage index cleared. ${deletedFiles} files, ${deletedFolders} folders removed.`);
+      await handleLoadManagedFiles();
+    } catch (error) {
+      toast.error(error?.response?.data?.error || "Failed to clear storage index.");
+    } finally {
+      setResettingManagedContent(false);
     }
   };
 
@@ -2755,7 +2782,7 @@ export default function AdminDashboard() {
                 className="btn btn-primary"
                 disabled={syncingManagedContent}
               >
-                {manageContentType === "objective_mcq" ? "Load Files and Folders" : "Load Files"}
+                {MANAGED_CONTENT_TYPES_WITH_DIRS.has(manageContentType) ? "Load Files and Folders" : "Load Files"}
               </button>
               <button
                 onClick={() => handleSyncManagedContent(false)}
@@ -2770,6 +2797,13 @@ export default function AdminDashboard() {
                 disabled={syncingManagedContent}
               >
                 {syncingManagedContent ? "Syncing..." : "Sync All Content Types"}
+              </button>
+              <button
+                onClick={handleResetManagedContent}
+                className="btn btn-secondary"
+                disabled={resettingManagedContent}
+              >
+                {resettingManagedContent ? "Clearing..." : "Clear Loaded Content"}
               </button>
               <button
                 onClick={handleCreateManagedFolder}
@@ -2802,8 +2836,7 @@ export default function AdminDashboard() {
               <ul className="file-list">
                 {managedFiles.map((f) => {
                   const isDirectory = !!f.is_dir;
-                  const supportsVisibility =
-                    manageContentType !== "objective_mcq" && !isDirectory;
+                  const supportsVisibility = true;
                   const isSavingVisibility = savingManagedFilePath === f.path;
                   return (
                     <li key={f.path} className="file-item">
@@ -2823,7 +2856,9 @@ export default function AdminDashboard() {
                             }}
                           >
                             {isDirectory
-                              ? "Folder"
+                              ? f.is_visible
+                                ? "Folder (Visible on website)"
+                                : "Folder (Hidden from website)"
                               : f.is_visible
                               ? "Visible on website"
                               : "Hidden from website"}
@@ -2835,7 +2870,7 @@ export default function AdminDashboard() {
                           f.is_visible ? (
                             <button
                               className="btn btn-secondary"
-                              onClick={() => handleSetManagedFileVisibility(f.path, false)}
+                              onClick={() => handleSetManagedFileVisibility(f.path, false, isDirectory)}
                               disabled={isSavingVisibility}
                             >
                               {isSavingVisibility ? "Saving..." : "Hide"}
@@ -2843,7 +2878,7 @@ export default function AdminDashboard() {
                           ) : (
                             <button
                               className="btn btn-secondary"
-                              onClick={() => handleSetManagedFileVisibility(f.path, true)}
+                              onClick={() => handleSetManagedFileVisibility(f.path, true, isDirectory)}
                               disabled={isSavingVisibility}
                             >
                               {isSavingVisibility ? "Saving..." : "Show on Website"}

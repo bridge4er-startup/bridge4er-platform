@@ -8,7 +8,8 @@ export const fileService = {
     includeHidden = false,
     includeDirs = false,
     refresh = false,
-    preferMetadata = true
+    preferMetadata = true,
+    metadataOnly = true
   ) => {
     try {
       const response = await API.get("storage/files/list/", {
@@ -19,6 +20,7 @@ export const fileService = {
           include_dirs: includeDirs,
           refresh: !!refresh,
           prefer_metadata: !!preferMetadata && !refresh,
+          metadata_only: !!metadataOnly && !refresh,
         },
       });
       return response.data;
@@ -110,11 +112,12 @@ export const fileService = {
   },
 
   // Toggle file visibility on website (admin only)
-  setVisibility: async (path, isVisible) => {
+  setVisibility: async (path, isVisible, isDir = false) => {
     try {
       const response = await API.post("storage/files/visibility/", {
         path,
         is_visible: !!isVisible,
+        is_dir: !!isDir,
       });
       return response.data;
     } catch (error) {
@@ -207,6 +210,16 @@ export const fileService = {
       return response.data;
     } catch (error) {
       console.error("Error attaching path:", error);
+      throw error;
+    }
+  },
+
+  resetContent: async (payload = {}) => {
+    try {
+      const response = await API.post("storage/files/reset/", payload);
+      return response.data;
+    } catch (error) {
+      console.error("Error resetting Dropbox metadata:", error);
       throw error;
     }
   },
