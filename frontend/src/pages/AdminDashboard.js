@@ -674,7 +674,12 @@ export default function AdminDashboard() {
     const path = window.prompt("Dropbox path to sync");
     if (!path) return;
     try {
-      await fileService.syncPath(path, true);
+      await fileService.syncPath({
+        path,
+        include_dirs: true,
+        content_type: manageContentType,
+        branch,
+      });
       toast.success("Path synced.");
       await handleLoadManagedFiles();
     } catch (error) {

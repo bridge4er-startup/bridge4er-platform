@@ -7,7 +7,8 @@ export const fileService = {
     branch = "Civil Engineering",
     includeHidden = false,
     includeDirs = false,
-    refresh = false
+    refresh = false,
+    preferMetadata = true
   ) => {
     try {
       const response = await API.get("storage/files/list/", {
@@ -17,6 +18,7 @@ export const fileService = {
           include_hidden: includeHidden,
           include_dirs: includeDirs,
           refresh: !!refresh,
+          prefer_metadata: !!preferMetadata && !refresh,
         },
       });
       return response.data;
@@ -178,14 +180,18 @@ export const fileService = {
     }
   },
 
-  syncPath: async (path, includeDirs = true) => {
+  syncPath: async (pathOrPayload, includeDirs = true) => {
     try {
+      const payload =
+        pathOrPayload && typeof pathOrPayload === "object"
+          ? { ...pathOrPayload }
+          : { path: pathOrPayload, include_dirs: !!includeDirs };
+      if (payload.include_dirs === undefined) {
+        payload.include_dirs = !!includeDirs;
+      }
       const response = await API.post(
         "storage/files/sync-path/",
-        {
-          path,
-          include_dirs: !!includeDirs,
-        },
+        payload,
         { timeout: API_SYNC_TIMEOUT_MS }
       );
       return response.data;

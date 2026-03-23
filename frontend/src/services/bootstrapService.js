@@ -24,7 +24,7 @@ export async function warmInitialStudentContent(branch, isAuthenticated) {
         ttlMs: BOOTSTRAP_CACHE_TTL_MS,
       }),
       prefetchGet("storage/files/list/", {
-        params: { content_type: "notice", branch: normalizedBranch },
+        params: { content_type: "notice", branch: normalizedBranch, prefer_metadata: true },
         ttlMs: BOOTSTRAP_CACHE_TTL_MS,
       }),
     ];
@@ -33,11 +33,11 @@ export async function warmInitialStudentContent(branch, isAuthenticated) {
     if (isAuthenticated) {
       startupRequests.push(
         prefetchGet("storage/files/list/", {
-          params: { content_type: "syllabus", branch: normalizedBranch },
+          params: { content_type: "syllabus", branch: normalizedBranch, prefer_metadata: true },
           ttlMs: BOOTSTRAP_CACHE_TTL_MS,
         }),
         prefetchGet("storage/files/list/", {
-          params: { content_type: "old_question", branch: normalizedBranch },
+          params: { content_type: "old_question", branch: normalizedBranch, prefer_metadata: true },
           ttlMs: BOOTSTRAP_CACHE_TTL_MS,
         }),
         prefetchGet("storage/files/list/", {
@@ -45,6 +45,7 @@ export async function warmInitialStudentContent(branch, isAuthenticated) {
             content_type: "subjective",
             branch: normalizedBranch,
             include_dirs: true,
+            prefer_metadata: true,
           },
           ttlMs: BOOTSTRAP_CACHE_TTL_MS,
         }),
@@ -53,6 +54,7 @@ export async function warmInitialStudentContent(branch, isAuthenticated) {
             content_type: "objective_mcq",
             branch: normalizedBranch,
             include_dirs: true,
+            prefer_metadata: true,
           },
           ttlMs: BOOTSTRAP_CACHE_TTL_MS,
         }),
@@ -61,6 +63,7 @@ export async function warmInitialStudentContent(branch, isAuthenticated) {
             content_type: "take_exam_mcq",
             branch: normalizedBranch,
             include_dirs: true,
+            prefer_metadata: true,
           },
           ttlMs: BOOTSTRAP_CACHE_TTL_MS,
         }),
@@ -69,6 +72,7 @@ export async function warmInitialStudentContent(branch, isAuthenticated) {
             content_type: "take_exam_subjective",
             branch: normalizedBranch,
             include_dirs: true,
+            prefer_metadata: true,
           },
           ttlMs: BOOTSTRAP_CACHE_TTL_MS,
         }),

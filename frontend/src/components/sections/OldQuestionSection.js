@@ -72,6 +72,7 @@ export default function OldQuestionsSection({ branch = "Civil Engineering", isAc
         params: {
           content_type: "old_question",
           branch: branch,
+          prefer_metadata: true,
         },
       });
       setFiles(res.data || []);

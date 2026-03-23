@@ -2,6 +2,7 @@ import hashlib
 import mimetypes
 import time
 from pathlib import Path
+from urllib.parse import parse_qs, unquote, urlparse
 
 from django.conf import settings
 from rest_framework.views import APIView
@@ -96,7 +97,11 @@ OBJECTIVE_COUNT_CACHE_STALE_TTL_SECONDS = _as_positive_int(
 
 def _is_safe_path(path):
     normalized = _normalize_dropbox_path(path)
-    return bool(normalized) and normalized.lower().startswith(ALLOWED_ROOT)
+    if not normalized:
+        return False
+    lowered = normalized.lower()
+    root = ALLOWED_ROOT.rstrip("/")
+    return lowered == root or lowered.startswith(ALLOWED_ROOT)
 
 
 def _normalize_branch(branch):
@@ -114,13 +119,78 @@ def _resolve_content_path(content_type, branch):
 def _normalize_dropbox_path(path):
     if not isinstance(path, str):
         return ""
-    value = path.strip()
+    value = unquote(path).strip()
     if not value:
         return ""
+    value = value.replace("\\", "/")
+    extracted = _extract_dropbox_path_from_url(value)
+    if extracted:
+        value = extracted
     parts = [segment for segment in value.split("/") if segment]
     if not parts:
         return "/"
     return "/" + "/".join(parts)
+
+
+def _extract_dropbox_path_from_url(value):
+    if not isinstance(value, str):
+        return ""
+    raw = value.strip()
+    if not raw:
+        return ""
+    lowered = raw.lower()
+    if "dropbox.com" not in lowered:
+        return ""
+    if not lowered.startswith(("http://", "https://")):
+        raw = f"https://{raw.lstrip('/')}"
+    try:
+        parsed = urlparse(raw)
+    except Exception:
+        return ""
+    if "dropbox.com" not in (parsed.netloc or "").lower():
+        return ""
+    query_params = parse_qs(parsed.query or "")
+    for key in ("path", "preview"):
+        if query_params.get(key):
+            return str(query_params[key][0])
+    segments = [segment for segment in (parsed.path or "").split("/") if segment]
+    if not segments:
+        return ""
+    leading = segments[0].lower()
+    if leading in {"home", "preview"} and len(segments) > 1:
+        return "/" + "/".join(segments[1:])
+    return ""
+
+
+def _coerce_dropbox_path(raw_path, content_type=None, branch=None):
+    normalized = _normalize_dropbox_path(raw_path)
+    if _is_safe_path(normalized):
+        return normalized
+    if not normalized:
+        return normalized
+
+    parts = _path_parts(normalized)
+    if parts and parts[0].lower() == ALLOWED_ROOT.strip("/"):
+        return normalized
+
+    resolved_branch = _normalize_branch(branch) if branch else None
+    resolved_content_type = content_type or None
+    relative = normalized.lstrip("/")
+    root = ALLOWED_ROOT.rstrip("/")
+    candidates = []
+    if resolved_content_type and resolved_branch:
+        base = _resolve_content_path(resolved_content_type, resolved_branch)
+        if base:
+            candidates.append(f"{base}/{relative}")
+    if resolved_branch:
+        candidates.append(f"{root}/{resolved_branch}/{relative}")
+    candidates.append(f"{root}/{relative}")
+
+    for candidate in candidates:
+        candidate_path = _normalize_dropbox_path(candidate)
+        if _is_safe_path(candidate_path):
+            return candidate_path
+    return normalized
 
 
 def _path_parts(path):
@@ -885,6 +955,7 @@ class ListFilesView(APIView):
         include_hidden = _as_bool(request.GET.get("include_hidden"), False)
         include_dirs = _as_bool(request.GET.get("include_dirs"), False)
         refresh = _as_bool(request.GET.get("refresh"), False)
+        prefer_metadata = _as_bool(request.GET.get("prefer_metadata"), False)
         if not is_staff:
             include_hidden = False
             refresh = False
@@ -899,6 +970,21 @@ class ListFilesView(APIView):
 
             list_cache_key, stale_key = _list_cache_keys(content_type, branch, include_dirs)
             files = None if refresh else cache.get(list_cache_key)
+
+            if files is None and prefer_metadata and not refresh:
+                metadata_files = _metadata_listing_fallback(
+                    content_type=content_type,
+                    branch=branch,
+                    include_dirs=include_dirs,
+                )
+                if metadata_files:
+                    files = metadata_files
+                    _store_list_cache_payload(
+                        content_type=content_type,
+                        branch=branch,
+                        include_dirs=include_dirs,
+                        files=files,
+                    )
 
             if files is None:
                 try:
@@ -1488,12 +1574,17 @@ class SyncPathView(APIView):
 
     def post(self, request):
         path = request.data.get("path")
+        content_type = request.data.get("content_type")
+        branch = request.data.get("branch")
         include_dirs = _as_bool(request.data.get("include_dirs"), True)
         if not path:
             return Response({"error": "path is required"}, status=status.HTTP_400_BAD_REQUEST)
-        normalized_path = _normalize_dropbox_path(path)
+        normalized_path = _coerce_dropbox_path(path, content_type=content_type, branch=branch)
         if not _is_safe_path(normalized_path):
-            return Response({"error": "Invalid path"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "Invalid path. Provide a Dropbox path under /bridge4er/."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         try:
             file_meta = get_file_metadata(normalized_path)
@@ -1547,9 +1638,12 @@ class AttachPathView(APIView):
         is_dir = _as_bool(request.data.get("is_dir"), False)
         if not path:
             return Response({"error": "path is required"}, status=status.HTTP_400_BAD_REQUEST)
-        normalized_path = _normalize_dropbox_path(path)
+        normalized_path = _coerce_dropbox_path(path, content_type=content_type, branch=branch)
         if not _is_safe_path(normalized_path):
-            return Response({"error": "Invalid path"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "Invalid path. Provide a Dropbox path under /bridge4er/."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         resolved_content_type = content_type or _infer_content_type_from_path(normalized_path)
         resolved_branch = _normalize_branch(branch) if branch else _extract_branch_from_path(normalized_path)

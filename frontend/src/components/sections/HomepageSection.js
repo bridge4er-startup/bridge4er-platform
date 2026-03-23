@@ -681,6 +681,7 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
             params: {
               content_type: "notice",
               branch,
+              prefer_metadata: true,
             },
           }),
         ]);
