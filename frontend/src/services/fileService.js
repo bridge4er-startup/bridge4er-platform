@@ -1,4 +1,4 @@
-import API from "./api";
+import API, { API_SYNC_TIMEOUT_MS } from "./api";
 
 export const fileService = {
   // List files by content type
@@ -131,7 +131,9 @@ export const fileService = {
       if (Array.isArray(contentTypes) && contentTypes.length > 0) {
         payload.content_types = contentTypes;
       }
-      const response = await API.post("storage/files/sync/", payload);
+      const response = await API.post("storage/files/sync/", payload, {
+        timeout: API_SYNC_TIMEOUT_MS,
+      });
       return response.data;
     } catch (error) {
       console.error("Error syncing Dropbox content:", error);
@@ -178,10 +180,14 @@ export const fileService = {
 
   syncPath: async (path, includeDirs = true) => {
     try {
-      const response = await API.post("storage/files/sync-path/", {
-        path,
-        include_dirs: !!includeDirs,
-      });
+      const response = await API.post(
+        "storage/files/sync-path/",
+        {
+          path,
+          include_dirs: !!includeDirs,
+        },
+        { timeout: API_SYNC_TIMEOUT_MS }
+      );
       return response.data;
     } catch (error) {
       console.error("Error syncing path:", error);

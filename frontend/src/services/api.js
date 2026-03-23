@@ -15,6 +15,11 @@ const parsePositiveInt = (value, fallback, minValue = 1) => {
 };
 
 const API_TIMEOUT_MS = parsePositiveInt(process.env.REACT_APP_API_TIMEOUT_MS, 30000, 5000);
+export const API_SYNC_TIMEOUT_MS = parsePositiveInt(
+  process.env.REACT_APP_API_SYNC_TIMEOUT_MS,
+  180000,
+  API_TIMEOUT_MS
+);
 const API_COLD_START_TIMEOUT_MS = parsePositiveInt(
   process.env.REACT_APP_API_COLD_START_TIMEOUT_MS,
   120000,

@@ -1,4 +1,4 @@
-import API from "./api";
+import API, { API_SYNC_TIMEOUT_MS } from "./api";
 
 export const mcqService = {
   // Get all subjects for a branch
@@ -221,12 +221,16 @@ export const mcqService = {
     syncExamSets = true
   ) => {
     try {
-      const response = await API.post("exams/sync/dropbox/", {
-        branch,
-        replace_existing: replaceExisting,
-        sync_objective: syncObjective,
-        sync_exam_sets: syncExamSets,
-      });
+      const response = await API.post(
+        "exams/sync/dropbox/",
+        {
+          branch,
+          replace_existing: replaceExisting,
+          sync_objective: syncObjective,
+          sync_exam_sets: syncExamSets,
+        },
+        { timeout: API_SYNC_TIMEOUT_MS }
+      );
       return response.data;
     } catch (error) {
       console.error("Error syncing Dropbox question bank:", error);
