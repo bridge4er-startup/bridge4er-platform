@@ -127,6 +127,7 @@ if importlib.util.find_spec("import_export"):
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
+    "django.middleware.gzip.GZipMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -166,6 +167,22 @@ TEMPLATES = [
 WSGI_APPLICATION = "bridge4er.wsgi.application"
 
 DATABASES = {"default": build_database_config()}
+
+# Cache (shared across gunicorn workers when using file-based cache)
+CACHE_BACKEND = os.getenv("CACHE_BACKEND", "django.core.cache.backends.filebased.FileBasedCache")
+CACHE_LOCATION = os.getenv("CACHE_LOCATION", str(BASE_DIR / "cache"))
+CACHES = {
+    "default": {
+        "BACKEND": CACHE_BACKEND,
+        "LOCATION": CACHE_LOCATION,
+    }
+}
+if CACHE_BACKEND.endswith("FileBasedCache"):
+    try:
+        Path(CACHE_LOCATION).mkdir(parents=True, exist_ok=True)
+    except Exception:
+        # Avoid crashing startup if the cache directory cannot be created.
+        pass
 
 
 def _configure_sqlite_connection(sender, connection, **kwargs):

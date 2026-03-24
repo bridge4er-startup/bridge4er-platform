@@ -72,6 +72,7 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
     try {
       const subjectsRes = await cachedGet("exams/subjects/", {
         params: { branch },
+        persistCache: true,
       });
 
       const normalizedSubjects = (subjectsRes.data || []).map(normalizeSubjectRecord);
@@ -116,6 +117,7 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
     try {
       const res = await cachedGet(`exams/subjects/${encodeURIComponent(subjectName)}/chapters/`, {
         params: { branch },
+        persistCache: true,
       });
       setChapters(res.data || []);
       setView("chapters");
@@ -138,6 +140,7 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
             page: nextPage,
             page_size: Math.max(5, nextPageSize),
           },
+          persistCache: true,
         }
       );
       setQuestions(res.data?.results || []);

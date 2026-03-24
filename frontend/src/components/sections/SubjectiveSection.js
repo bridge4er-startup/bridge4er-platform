@@ -101,6 +101,7 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
             prefer_metadata: true,
             metadata_only: true,
           },
+          persistCache: true,
         });
         setEntries(res.data || []);
         setCurrentFolderParts([]);

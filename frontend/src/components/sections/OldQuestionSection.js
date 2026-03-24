@@ -75,6 +75,7 @@ export default function OldQuestionsSection({ branch = "Civil Engineering", isAc
           prefer_metadata: true,
           metadata_only: true,
         },
+        persistCache: true,
       });
       setFiles(res.data || []);
       setFilteredFiles(res.data || []);

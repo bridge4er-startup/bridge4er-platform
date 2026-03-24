@@ -676,6 +676,7 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
         const [metricsRes, filesRes] = await Promise.allSettled([
           cachedGet("storage/homepage/stats/", {
             params: { branch },
+            persistCache: true,
           }),
           cachedGet("storage/files/list/", {
             params: {
@@ -684,6 +685,7 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
               prefer_metadata: true,
               metadata_only: true,
             },
+            persistCache: true,
           }),
         ]);
 

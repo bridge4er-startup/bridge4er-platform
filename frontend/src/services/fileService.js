@@ -1,4 +1,4 @@
-import API, { API_SYNC_TIMEOUT_MS } from "./api";
+import API, { API_SYNC_TIMEOUT_MS, cachedGet } from "./api";
 
 export const fileService = {
   // List files by content type
@@ -12,7 +12,7 @@ export const fileService = {
     metadataOnly = true
   ) => {
     try {
-      const response = await API.get("storage/files/list/", {
+      const response = await cachedGet("storage/files/list/", {
         params: {
           content_type: contentType,
           branch,
@@ -22,6 +22,8 @@ export const fileService = {
           prefer_metadata: !!preferMetadata && !refresh,
           metadata_only: !!metadataOnly && !refresh,
         },
+        forceRefresh: !!refresh,
+        persistCache: true,
       });
       return response.data;
     } catch (error) {

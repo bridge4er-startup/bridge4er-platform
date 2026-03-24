@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
 from django.conf import settings
+from django.core.cache import cache
 from django.db import transaction
 from django.db.models import Max
 from rest_framework import status
@@ -98,6 +100,20 @@ def _auto_sync_cooldown_seconds():
 
 
 AUTO_SYNC_COOLDOWN_SECONDS = _auto_sync_cooldown_seconds()
+
+def _objective_cache_ttl_seconds():
+    value = getattr(settings, "OBJECTIVE_LIST_CACHE_TTL_SECONDS", 300)
+    try:
+        return max(60, int(value))
+    except (TypeError, ValueError):
+        return 300
+
+OBJECTIVE_LIST_CACHE_TTL_SECONDS = _objective_cache_ttl_seconds()
+
+def _objective_cache_key(prefix, *parts):
+    seed = "|".join([str(part or "") for part in parts])
+    digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()
+    return f"exams:objective:{prefix}:{digest}"
 
 
 def _normalize_question_payload(raw):
@@ -225,6 +241,8 @@ def _backup_objective_chapter_file(chapter, uploaded_file):
 
 
 def _maybe_sync_objective_on_read(branch, user, force_refresh=False):
+    if not _is_staff_user(user) and not force_refresh:
+        return {"status": "skipped", "reason": "non_staff"}
     allowed_force_refresh = bool(force_refresh and _is_staff_user(user))
     cooldown = 5 if allowed_force_refresh else AUTO_SYNC_COOLDOWN_SECONDS
     return auto_sync_dropbox_for_branch(
@@ -293,6 +311,15 @@ class SubjectListView(APIView):
     def get(self, request):
         branch = request.GET.get("branch", "Civil Engineering")
         force_refresh = _as_bool(request.GET.get("refresh"), False)
+        if not _is_staff_user(request.user):
+            force_refresh = False
+
+        cache_key = _objective_cache_key("subjects", branch)
+        if not force_refresh:
+            cached = cache.get(cache_key)
+            if cached is not None:
+                return Response(cached)
+
         _maybe_sync_objective_on_read(branch=branch, user=request.user, force_refresh=force_refresh)
         folder_rows = (
             InstitutionFolder.objects.filter(
@@ -340,6 +367,7 @@ class SubjectListView(APIView):
                 int(item.get("id") or 0),
             )
         )
+        cache.set(cache_key, records, timeout=OBJECTIVE_LIST_CACHE_TTL_SECONDS)
         return Response(records)
 
 
@@ -349,6 +377,15 @@ class ChapterListView(APIView):
     def get(self, request, subject):
         branch = request.GET.get("branch", "Civil Engineering")
         force_refresh = _as_bool(request.GET.get("refresh"), False)
+        if not _is_staff_user(request.user):
+            force_refresh = False
+
+        cache_key = _objective_cache_key("chapters", branch, subject)
+        if not force_refresh:
+            cached = cache.get(cache_key)
+            if cached is not None:
+                return Response(cached)
+
         _maybe_sync_objective_on_read(branch=branch, user=request.user, force_refresh=force_refresh)
         try:
             subject_obj = Subject.objects.get(name=subject, branch=branch)
@@ -357,7 +394,9 @@ class ChapterListView(APIView):
                 .order_by("order", "name", "id")
                 .values("id", "name", "small_note", "order")
             )
-            return Response(list(chapters))
+            payload = list(chapters)
+            cache.set(cache_key, payload, timeout=OBJECTIVE_LIST_CACHE_TTL_SECONDS)
+            return Response(payload)
         except Subject.DoesNotExist:
             return Response({"error": "Subject not found"}, status=status.HTTP_404_NOT_FOUND)
 
@@ -368,7 +407,8 @@ class QuestionListView(APIView):
     def get(self, request, subject, chapter):
         branch = request.GET.get("branch", "Civil Engineering")
         force_refresh = _as_bool(request.GET.get("refresh"), False)
-        _maybe_sync_objective_on_read(branch=branch, user=request.user, force_refresh=force_refresh)
+        if not _is_staff_user(request.user):
+            force_refresh = False
 
         try:
             page = max(1, int(request.GET.get("page", 1)))
@@ -381,6 +421,14 @@ class QuestionListView(APIView):
             requested_page_size = 5
 
         page_size = max(5, min(requested_page_size, 50))
+
+        cache_key = _objective_cache_key("questions", branch, subject, chapter, page, page_size)
+        if not force_refresh:
+            cached = cache.get(cache_key)
+            if cached is not None:
+                return Response(cached)
+
+        _maybe_sync_objective_on_read(branch=branch, user=request.user, force_refresh=force_refresh)
 
         try:
             subject_obj = Subject.objects.get(name=subject, branch=branch)
@@ -396,15 +444,15 @@ class QuestionListView(APIView):
             serializer = MCQQuestionPublicSerializer(question_items, many=True)
 
             total_pages = (total + page_size - 1) // page_size if total else 1
-            return Response(
-                {
-                    "count": total,
-                    "page": page,
-                    "page_size": page_size,
-                    "total_pages": total_pages,
-                    "results": serializer.data,
-                }
-            )
+            payload = {
+                "count": total,
+                "page": page,
+                "page_size": page_size,
+                "total_pages": total_pages,
+                "results": serializer.data,
+            }
+            cache.set(cache_key, payload, timeout=OBJECTIVE_LIST_CACHE_TTL_SECONDS)
+            return Response(payload)
         except Subject.DoesNotExist:
             return Response({"error": "Subject not found"}, status=status.HTTP_404_NOT_FOUND)
         except Chapter.DoesNotExist:

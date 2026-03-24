@@ -24,7 +24,9 @@ export default function LoginPage() {
 
   useEffect(() => {
     let mounted = true;
-    cachedGet("storage/homepage/stats/")
+    cachedGet("storage/homepage/stats/", {
+      persistCache: true,
+    })
       .then((res) => {
         if (!mounted) return;
         const url = res?.data?.login_hero_image_url || res?.data?.motivational_image_url || "";

@@ -125,6 +125,7 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
             prefer_metadata: true,
             metadata_only: true,
           },
+          persistCache: true,
         }),
       ]);
       const normalized = (data || []).map((setItem) => ({

@@ -61,6 +61,7 @@ export default function NoticeSection({ branch = "Civil Engineering", isActive =
           prefer_metadata: true,
           metadata_only: true,
         },
+        persistCache: true,
       });
       setFiles(res.data || []);
       setFilteredFiles(res.data || []);

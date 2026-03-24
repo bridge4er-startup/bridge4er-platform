@@ -239,18 +239,18 @@ def _list_cache_token(content_type, branch):
     return str(token)
 
 
-def _list_cache_keys(content_type, branch, include_dirs):
+def _list_cache_keys(content_type, branch, include_dirs, metadata_only=False):
     normalized_branch = _normalize_branch(branch).lower()
     token = _list_cache_token(content_type, normalized_branch)
-    seed = f"{content_type}|{normalized_branch}|{int(bool(include_dirs))}|{token}"
+    seed = f"{content_type}|{normalized_branch}|{int(bool(include_dirs))}|{int(bool(metadata_only))}|{token}"
     digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()
     payload_key = f"{FILE_LIST_CACHE_KEY_PREFIX}:payload:{digest}"
     stale_key = f"{payload_key}:stale"
     return payload_key, stale_key
 
 
-def _store_list_cache_payload(content_type, branch, include_dirs, files):
-    cache_key, stale_key = _list_cache_keys(content_type, branch, include_dirs)
+def _store_list_cache_payload(content_type, branch, include_dirs, files, metadata_only=False):
+    cache_key, stale_key = _list_cache_keys(content_type, branch, include_dirs, metadata_only=metadata_only)
     cache.set(cache_key, files, timeout=FILE_LIST_CACHE_TTL_SECONDS)
     cache.set(stale_key, files, timeout=FILE_LIST_CACHE_STALE_TTL_SECONDS)
 
@@ -976,12 +976,17 @@ class ListFilesView(APIView):
             if not path:
                 return Response({"error": "Invalid content type"}, status=status.HTTP_400_BAD_REQUEST)
 
-            list_cache_key, stale_key = _list_cache_keys(content_type, branch, include_dirs)
+            list_cache_key, stale_key = _list_cache_keys(
+                content_type,
+                branch,
+                include_dirs,
+                metadata_only=metadata_only,
+            )
             files = None
-            if not refresh and not metadata_only:
+            if not refresh:
                 files = cache.get(list_cache_key)
 
-            if files is None and prefer_metadata and not refresh:
+            if files is None and (prefer_metadata or metadata_only) and not refresh:
                 metadata_files = _metadata_listing_fallback(
                     content_type=content_type,
                     branch=branch,
@@ -989,19 +994,31 @@ class ListFilesView(APIView):
                 )
                 if metadata_files:
                     files = metadata_files
-                    if not metadata_only:
-                        _store_list_cache_payload(
-                            content_type=content_type,
-                            branch=branch,
-                            include_dirs=include_dirs,
-                            files=files,
-                        )
                 elif metadata_only:
                     files = []
+                if files is not None:
+                    _store_list_cache_payload(
+                        content_type=content_type,
+                        branch=branch,
+                        include_dirs=include_dirs,
+                        metadata_only=metadata_only,
+                        files=files,
+                    )
 
             if files is None:
                 if metadata_only:
-                    files = []
+                    files = _metadata_listing_fallback(
+                        content_type=content_type,
+                        branch=branch,
+                        include_dirs=include_dirs,
+                    ) or []
+                    _store_list_cache_payload(
+                        content_type=content_type,
+                        branch=branch,
+                        include_dirs=include_dirs,
+                        metadata_only=metadata_only,
+                        files=files,
+                    )
                 else:
                     try:
                         files = list_folder_with_metadata(path, include_dirs=include_dirs, recursive=True)
@@ -1011,6 +1028,7 @@ class ListFilesView(APIView):
                             content_type=content_type,
                             branch=branch,
                             include_dirs=include_dirs,
+                            metadata_only=metadata_only,
                             files=files,
                         )
                     except Exception as exc:
@@ -1020,6 +1038,7 @@ class ListFilesView(APIView):
                                 content_type=content_type,
                                 branch=branch,
                                 include_dirs=include_dirs,
+                                metadata_only=metadata_only,
                                 files=files,
                             )
                         else:
@@ -1038,6 +1057,7 @@ class ListFilesView(APIView):
                                         content_type=content_type,
                                         branch=branch,
                                         include_dirs=include_dirs,
+                                        metadata_only=metadata_only,
                                         files=files,
                                     )
                                 else:

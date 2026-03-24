@@ -43,10 +43,26 @@ const API_GET_CACHE_STALE_TTL_MS = parsePositiveInt(
   60 * 60 * 1000,
   1000
 );
+const API_PERSIST_CACHE_TTL_MS = parsePositiveInt(
+  process.env.REACT_APP_API_PERSIST_CACHE_TTL_MS,
+  10 * 60 * 1000,
+  1000
+);
+const API_PERSIST_CACHE_STALE_TTL_MS = parsePositiveInt(
+  process.env.REACT_APP_API_PERSIST_CACHE_STALE_TTL_MS,
+  24 * 60 * 60 * 1000,
+  1000
+);
+const API_PERSIST_CACHE_MAX_CHARS = parsePositiveInt(
+  process.env.REACT_APP_API_PERSIST_CACHE_MAX_CHARS,
+  2_000_000,
+  10000
+);
 
 const isBrowser = typeof window !== "undefined";
 const getResponseCache = new Map();
 const inFlightGetRequests = new Map();
+const PERSISTED_CACHE_PREFIX = "bridge4er_get_cache_v1:";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -107,6 +123,83 @@ const writeCachedGetResponse = (cacheKey, response, ttlMs, staleTtlMs) => {
   });
 };
 
+const buildPersistedKey = (cacheKey) => `${PERSISTED_CACHE_PREFIX}${cacheKey}`;
+
+const readPersistedGetResponse = (cacheKey) => {
+  if (!isBrowser) return null;
+  try {
+    const raw = window.localStorage.getItem(buildPersistedKey(cacheKey));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || Date.now() >= Number(parsed.expiresAt || 0)) {
+      return null;
+    }
+    return parsed.response || null;
+  } catch (_error) {
+    return null;
+  }
+};
+
+const readPersistedStaleGetResponse = (cacheKey) => {
+  if (!isBrowser) return null;
+  const key = buildPersistedKey(cacheKey);
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || Date.now() >= Number(parsed.staleUntil || 0)) {
+      window.localStorage.removeItem(key);
+      return null;
+    }
+    return parsed.response || null;
+  } catch (_error) {
+    return null;
+  }
+};
+
+const writePersistedGetResponse = (cacheKey, response, ttlMs, staleTtlMs) => {
+  if (!isBrowser) return;
+  try {
+    const safeTtl = Math.max(1000, Number(ttlMs) || API_PERSIST_CACHE_TTL_MS);
+    const safeStaleTtl = Math.max(1000, Number(staleTtlMs) || API_PERSIST_CACHE_STALE_TTL_MS);
+    const expiresAt = Date.now() + safeTtl;
+    const payload = {
+      expiresAt,
+      staleUntil: expiresAt + safeStaleTtl,
+      response: {
+        data: response?.data,
+        status: response?.status ?? 200,
+        statusText: response?.statusText || "OK",
+        headers: response?.headers || {},
+        config: response?.config || {},
+      },
+    };
+    const raw = JSON.stringify(payload);
+    if (raw.length > API_PERSIST_CACHE_MAX_CHARS) {
+      return;
+    }
+    window.localStorage.setItem(buildPersistedKey(cacheKey), raw);
+  } catch (_error) {
+    // Ignore storage errors (quota, privacy mode, etc.).
+  }
+};
+
+export const clearPersistedGetCache = () => {
+  if (!isBrowser) return;
+  try {
+    const keys = [];
+    for (let i = 0; i < window.localStorage.length; i += 1) {
+      const key = window.localStorage.key(i);
+      if (key && key.startsWith(PERSISTED_CACHE_PREFIX)) {
+        keys.push(key);
+      }
+    }
+    keys.forEach((key) => window.localStorage.removeItem(key));
+  } catch (_error) {
+    // Ignore storage errors.
+  }
+};
+
 export const clearGetResponseCache = () => {
   getResponseCache.clear();
   inFlightGetRequests.clear();
@@ -138,6 +231,7 @@ let backendWarmupPromise = null;
 
 export const storeTokens = ({ access, refresh }) => {
   clearGetResponseCache();
+  clearPersistedGetCache();
   if (access) {
     localStorage.setItem(ACCESS_TOKEN_KEY, access);
   }
@@ -148,6 +242,7 @@ export const storeTokens = ({ access, refresh }) => {
 
 export const clearTokens = () => {
   clearGetResponseCache();
+  clearPersistedGetCache();
   localStorage.removeItem(ACCESS_TOKEN_KEY);
   localStorage.removeItem(REFRESH_TOKEN_KEY);
 };
@@ -240,6 +335,9 @@ export const cachedGet = async (url, options = {}) => {
     staleTtlMs = API_GET_CACHE_STALE_TTL_MS,
     forceRefresh = false,
     allowStaleOnError = true,
+    persistCache = false,
+    persistTtlMs = API_PERSIST_CACHE_TTL_MS,
+    persistStaleTtlMs = API_PERSIST_CACHE_STALE_TTL_MS,
     ...requestConfig
   } = options || {};
   const cacheKey = buildGetCacheKey(url, params);
@@ -259,6 +357,15 @@ export const cachedGet = async (url, options = {}) => {
     if (cached) {
       return applyRequestConfig(cached);
     }
+    if (persistCache) {
+      const persisted = readPersistedGetResponse(cacheKey);
+      if (persisted) {
+        if ((ttlMs || 0) > 0) {
+          writeCachedGetResponse(cacheKey, persisted, ttlMs, staleTtlMs);
+        }
+        return applyRequestConfig(persisted);
+      }
+    }
     const inFlight = inFlightGetRequests.get(cacheKey);
     if (inFlight) {
       return inFlight;
@@ -266,6 +373,8 @@ export const cachedGet = async (url, options = {}) => {
   }
 
   const staleFallback = allowStaleOnError ? readStaleGetResponse(cacheKey) : null;
+  const persistedStaleFallback =
+    allowStaleOnError && persistCache ? readPersistedStaleGetResponse(cacheKey) : null;
   const requestPromise = API.get(url, {
     ...requestConfig,
     params,
@@ -274,11 +383,19 @@ export const cachedGet = async (url, options = {}) => {
       if ((ttlMs || 0) > 0) {
         writeCachedGetResponse(cacheKey, response, ttlMs, staleTtlMs);
       }
+      if (persistCache) {
+        writePersistedGetResponse(cacheKey, response, persistTtlMs, persistStaleTtlMs);
+      }
       return response;
     })
     .catch((error) => {
-      if (staleFallback && isTransientBackendError(error)) {
-        return applyRequestConfig(staleFallback);
+      if (isTransientBackendError(error)) {
+        if (staleFallback) {
+          return applyRequestConfig(staleFallback);
+        }
+        if (persistedStaleFallback) {
+          return applyRequestConfig(persistedStaleFallback);
+        }
       }
       throw error;
     })

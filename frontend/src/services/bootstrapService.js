@@ -22,6 +22,8 @@ export async function warmInitialStudentContent(branch, isAuthenticated) {
       prefetchGet("storage/homepage/stats/", {
         params: { branch: normalizedBranch },
         ttlMs: BOOTSTRAP_CACHE_TTL_MS,
+        persistCache: true,
+        persistTtlMs: BOOTSTRAP_CACHE_TTL_MS,
       }),
       prefetchGet("storage/files/list/", {
         params: {
@@ -31,6 +33,8 @@ export async function warmInitialStudentContent(branch, isAuthenticated) {
           metadata_only: true,
         },
         ttlMs: BOOTSTRAP_CACHE_TTL_MS,
+        persistCache: true,
+        persistTtlMs: BOOTSTRAP_CACHE_TTL_MS,
       }),
     ];
 
@@ -45,6 +49,8 @@ export async function warmInitialStudentContent(branch, isAuthenticated) {
             metadata_only: true,
           },
           ttlMs: BOOTSTRAP_CACHE_TTL_MS,
+          persistCache: true,
+          persistTtlMs: BOOTSTRAP_CACHE_TTL_MS,
         }),
         prefetchGet("storage/files/list/", {
           params: {
@@ -54,6 +60,8 @@ export async function warmInitialStudentContent(branch, isAuthenticated) {
             metadata_only: true,
           },
           ttlMs: BOOTSTRAP_CACHE_TTL_MS,
+          persistCache: true,
+          persistTtlMs: BOOTSTRAP_CACHE_TTL_MS,
         }),
         prefetchGet("storage/files/list/", {
           params: {
@@ -64,6 +72,8 @@ export async function warmInitialStudentContent(branch, isAuthenticated) {
             metadata_only: true,
           },
           ttlMs: BOOTSTRAP_CACHE_TTL_MS,
+          persistCache: true,
+          persistTtlMs: BOOTSTRAP_CACHE_TTL_MS,
         }),
         prefetchGet("storage/files/list/", {
           params: {
@@ -74,6 +84,8 @@ export async function warmInitialStudentContent(branch, isAuthenticated) {
             metadata_only: true,
           },
           ttlMs: BOOTSTRAP_CACHE_TTL_MS,
+          persistCache: true,
+          persistTtlMs: BOOTSTRAP_CACHE_TTL_MS,
         }),
         prefetchGet("storage/files/list/", {
           params: {
@@ -84,6 +96,8 @@ export async function warmInitialStudentContent(branch, isAuthenticated) {
             metadata_only: true,
           },
           ttlMs: BOOTSTRAP_CACHE_TTL_MS,
+          persistCache: true,
+          persistTtlMs: BOOTSTRAP_CACHE_TTL_MS,
         }),
         prefetchGet("storage/files/list/", {
           params: {
@@ -94,14 +108,20 @@ export async function warmInitialStudentContent(branch, isAuthenticated) {
             metadata_only: true,
           },
           ttlMs: BOOTSTRAP_CACHE_TTL_MS,
+          persistCache: true,
+          persistTtlMs: BOOTSTRAP_CACHE_TTL_MS,
         }),
         prefetchGet("exams/sets/", {
           params: { branch: normalizedBranch, exam_type: "mcq" },
           ttlMs: BOOTSTRAP_CACHE_TTL_MS,
+          persistCache: true,
+          persistTtlMs: BOOTSTRAP_CACHE_TTL_MS,
         }),
         prefetchGet("exams/sets/", {
           params: { branch: normalizedBranch, exam_type: "subjective" },
           ttlMs: BOOTSTRAP_CACHE_TTL_MS,
+          persistCache: true,
+          persistTtlMs: BOOTSTRAP_CACHE_TTL_MS,
         })
       );
 
@@ -109,6 +129,8 @@ export async function warmInitialStudentContent(branch, isAuthenticated) {
         const subjectsRes = await cachedGet("exams/subjects/", {
           params: { branch: normalizedBranch },
           ttlMs: BOOTSTRAP_CACHE_TTL_MS,
+          persistCache: true,
+          persistTtlMs: BOOTSTRAP_CACHE_TTL_MS,
         });
         subjects = Array.isArray(subjectsRes?.data) ? subjectsRes.data : [];
       } catch (_error) {
@@ -129,6 +151,8 @@ export async function warmInitialStudentContent(branch, isAuthenticated) {
         prefetchGet(`exams/subjects/${encodeURIComponent(subjectName)}/chapters/`, {
           params: { branch: normalizedBranch },
           ttlMs: BOOTSTRAP_CACHE_TTL_MS,
+          persistCache: true,
+          persistTtlMs: BOOTSTRAP_CACHE_TTL_MS,
         })
       );
     await Promise.allSettled(chapterPrefetches);
