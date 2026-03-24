@@ -168,22 +168,42 @@ WSGI_APPLICATION = "bridge4er.wsgi.application"
 
 DATABASES = {"default": build_database_config()}
 
-# Cache (shared across gunicorn workers when using file-based cache)
-CACHE_BACKEND = os.getenv("CACHE_BACKEND", "django.core.cache.backends.filebased.FileBasedCache")
-CACHE_LOCATION = os.getenv("CACHE_LOCATION", str(BASE_DIR / "cache"))
+# Cache (shared across gunicorn workers when using Redis/file-based cache)
+REDIS_URL = os.getenv("REDIS_URL", "").strip()
+CACHE_BACKEND = os.getenv("CACHE_BACKEND", "").strip()
+CACHE_LOCATION = os.getenv("CACHE_LOCATION", "").strip()
+CACHE_KEY_PREFIX = os.getenv("CACHE_KEY_PREFIX", "bridge4er")
+
+if not CACHE_BACKEND:
+    if REDIS_URL:
+        CACHE_BACKEND = "django_redis.cache.RedisCache"
+    else:
+        CACHE_BACKEND = "django.core.cache.backends.filebased.FileBasedCache"
+
+if not CACHE_LOCATION:
+    if CACHE_BACKEND == "django_redis.cache.RedisCache" and REDIS_URL:
+        CACHE_LOCATION = REDIS_URL
+    else:
+        CACHE_LOCATION = str(BASE_DIR / "cache")
+
 CACHES = {
     "default": {
         "BACKEND": CACHE_BACKEND,
         "LOCATION": CACHE_LOCATION,
+        "KEY_PREFIX": CACHE_KEY_PREFIX,
     }
 }
-if CACHE_BACKEND.endswith("FileBasedCache"):
+if CACHE_BACKEND == "django_redis.cache.RedisCache":
+    CACHES["default"]["OPTIONS"] = {
+        "CLIENT_CLASS": "django_redis.client.DefaultClient",
+        "IGNORE_EXCEPTIONS": True,
+    }
+elif CACHE_BACKEND.endswith("FileBasedCache"):
     try:
         Path(CACHE_LOCATION).mkdir(parents=True, exist_ok=True)
     except Exception:
         # Avoid crashing startup if the cache directory cannot be created.
         pass
-
 
 def _configure_sqlite_connection(sender, connection, **kwargs):
     if connection.vendor != "sqlite":
