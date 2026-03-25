@@ -101,6 +101,9 @@ def _auto_sync_cooldown_seconds():
 
 AUTO_SYNC_COOLDOWN_SECONDS = _auto_sync_cooldown_seconds()
 
+def _dropbox_auto_sync_enabled():
+    return bool(getattr(settings, "DROPBOX_AUTO_SYNC_ENABLED", False))
+
 def _objective_cache_ttl_seconds():
     value = getattr(settings, "OBJECTIVE_LIST_CACHE_TTL_SECONDS", 300)
     try:
@@ -241,6 +244,8 @@ def _backup_objective_chapter_file(chapter, uploaded_file):
 
 
 def _maybe_sync_objective_on_read(branch, user, force_refresh=False):
+    if not _dropbox_auto_sync_enabled():
+        return {"status": "skipped", "reason": "disabled"}
     if not _is_staff_user(user) and not force_refresh:
         return {"status": "skipped", "reason": "non_staff"}
     allowed_force_refresh = bool(force_refresh and _is_staff_user(user))

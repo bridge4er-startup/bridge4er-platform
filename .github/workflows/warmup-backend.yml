@@ -11,7 +11,7 @@ jobs:
     steps:
       - name: Ping Render backend root
         run: |
-          curl -sSf "https://bridge4er-api.onrender.com/" > /dev/null
+          curl -sSf "https://bridge4er-platform.onrender.com/" > /dev/null
       - name: Ping Render API stats
         run: |
-          curl -sSf "https://bridge4er-api.onrender.com/api/storage/homepage/stats/" > /dev/null
+          curl -sSf "https://bridge4er-platform.onrender.com/api/storage/homepage/stats/" > /dev/null

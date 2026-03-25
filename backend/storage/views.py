@@ -95,6 +95,10 @@ OBJECTIVE_COUNT_CACHE_STALE_TTL_SECONDS = _as_positive_int(
 )
 
 
+def _dropbox_auto_sync_enabled():
+    return bool(getattr(settings, "DROPBOX_AUTO_SYNC_ENABLED", False))
+
+
 def _is_safe_path(path):
     normalized = _normalize_dropbox_path(path)
     if not normalized:
@@ -523,6 +527,50 @@ def _metadata_listing_fallback(content_type, branch, include_dirs):
     return entries
 
 
+def _metadata_search_files(content_type, branch, query):
+    resolved_content_type = str(content_type or "").strip()
+    resolved_branch = _normalize_branch(branch)
+    cleaned_query = str(query or "").strip()
+    if not resolved_content_type or not cleaned_query:
+        return []
+
+    rows = (
+        FileMetadata.objects.filter(content_type=resolved_content_type, branch=resolved_branch)
+        .filter(
+            Q(name__icontains=cleaned_query)
+            | Q(display_name__icontains=cleaned_query)
+            | Q(dropbox_path__icontains=cleaned_query)
+        )
+        .values("name", "display_name", "icon_url", "sort_order", "dropbox_path", "file_size", "modified_at")
+    )
+    entries = []
+    for row in rows:
+        path = _normalize_dropbox_path(row.get("dropbox_path"))
+        if not path:
+            continue
+        entries.append(
+            {
+                "name": row.get("name") or (path.split("/")[-1] or "file"),
+                "display_name": row.get("display_name") or row.get("name") or (path.split("/")[-1] or "file"),
+                "icon_url": row.get("icon_url") or "",
+                "sort_order": int(row.get("sort_order") or 0),
+                "path": path,
+                "size": int(row.get("file_size") or 0),
+                "modified": row.get("modified_at").isoformat() if row.get("modified_at") else "",
+                "is_dir": False,
+            }
+        )
+
+    entries.sort(
+        key=lambda item: (
+            str(item.get("modified") or ""),
+            str(item.get("name") or "").lower(),
+        ),
+        reverse=True,
+    )
+    return entries
+
+
 def _visibility_map_for_paths(paths):
     normalized_paths = []
     for path in paths:
@@ -759,11 +807,12 @@ def _computed_platform_metrics(branch=None):
         | Q(name__iendswith=".webp")
     ).count()
     db_objective_count = mcq_qs.count()
-    objective_count = (
-        _cached_objective_question_count_from_source(resolved_branch, db_fallback=db_objective_count)
-        if resolved_branch
-        else db_objective_count
-    )
+    objective_count = db_objective_count
+    if resolved_branch and _dropbox_auto_sync_enabled():
+        objective_count = _cached_objective_question_count_from_source(
+            resolved_branch,
+            db_fallback=db_objective_count,
+        )
     return {
         "enrolled_students": user_qs.count(),
         "objective_mcqs_available": objective_count,
@@ -964,7 +1013,12 @@ class ListFilesView(APIView):
         if not is_staff:
             include_hidden = False
             refresh = False
-        allow_dropbox_listing = is_staff or bool(getattr(settings, "DROPBOX_ALLOW_PUBLIC_LISTING", False))
+        live_reads_enabled = _dropbox_auto_sync_enabled()
+        allow_dropbox_listing = (is_staff or bool(getattr(settings, "DROPBOX_ALLOW_PUBLIC_LISTING", False))) and live_reads_enabled
+        if not live_reads_enabled:
+            refresh = False
+            prefer_metadata = True
+            metadata_only = True
         if not allow_dropbox_listing:
             metadata_only = True
 
@@ -1181,9 +1235,12 @@ class SearchFilesView(APIView):
             if not path:
                 return Response({"error": "Invalid content type"}, status=status.HTTP_400_BAD_REQUEST)
 
-            results = search_files(path, query)
-            if is_staff and _should_sync_metadata(content_type=content_type, branch=branch, force=False):
-                _sync_metadata_from_listing(results, content_type=content_type, branch=branch)
+            if not _dropbox_auto_sync_enabled():
+                results = _metadata_search_files(content_type=content_type, branch=branch, query=query)
+            else:
+                results = search_files(path, query)
+                if is_staff and _should_sync_metadata(content_type=content_type, branch=branch, force=False):
+                    _sync_metadata_from_listing(results, content_type=content_type, branch=branch)
             ordered_results = _sort_files_by_admin_order(results, content_type=content_type, branch=branch)
             visible_results = _filter_files_by_visibility(
                 ordered_results,

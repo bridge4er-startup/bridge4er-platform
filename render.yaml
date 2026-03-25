@@ -79,6 +79,8 @@ services:
         sync: true
       - key: DROPBOX_APP_SECRET
         sync: true
+      - key: DROPBOX_AUTO_SYNC_ENABLED
+        value: "0"
       - key: DROPBOX_AUTO_SYNC_COOLDOWN_SECONDS
         value: "600"
       - key: DROPBOX_LIST_CACHE_TTL_SECONDS

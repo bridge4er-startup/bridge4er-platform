@@ -134,6 +134,10 @@ def _auto_sync_cooldown_seconds():
 AUTO_SYNC_COOLDOWN_SECONDS = _auto_sync_cooldown_seconds()
 
 
+def _dropbox_auto_sync_enabled():
+    return bool(getattr(settings, "DROPBOX_AUTO_SYNC_ENABLED", False))
+
+
 def _as_bool(value, default=False):
     if value is None:
         return default
@@ -145,6 +149,8 @@ def _is_staff_user(user):
 
 
 def _maybe_sync_exam_sets_on_read(branch, user, force_refresh=False):
+    if not _dropbox_auto_sync_enabled():
+        return {"status": "skipped", "reason": "disabled"}
     allowed_force_refresh = bool(force_refresh and _is_staff_user(user))
     if not allowed_force_refresh and ExamSet.objects.filter(branch=branch, is_active=True).exists():
         return {"status": "skipped", "reason": "local_data"}
