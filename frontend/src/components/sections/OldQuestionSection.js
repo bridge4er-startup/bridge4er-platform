@@ -31,6 +31,7 @@ export default function OldQuestionsSection({ branch = "Civil Engineering", isAc
   const [searchQuery, setSearchQuery] = useState("");
   const [preview, setPreview] = useState(null);
   const [page, setPage] = useState(1);
+  const [openingPath, setOpeningPath] = useState("");
 
   const closePreview = () => {
     setPreview((current) => {
@@ -126,6 +127,8 @@ export default function OldQuestionsSection({ branch = "Civil Engineering", isAc
   };
 
   const handleView = async (file) => {
+    if (openingPath === file.path) return;
+    setOpeningPath(file.path);
     try {
       const res = await API.get("storage/files/preview/", {
         params: { path: file.path },
@@ -150,6 +153,8 @@ export default function OldQuestionsSection({ branch = "Civil Engineering", isAc
       const message = error?.response?.data?.error || "Failed to view file";
       toast.error(message);
       console.error(error);
+    } finally {
+      setOpeningPath((current) => (current === file.path ? "" : current));
     }
   };
 
@@ -207,7 +212,9 @@ export default function OldQuestionsSection({ branch = "Civil Engineering", isAc
       ) : (
         <>
           <ul className="file-list">
-            {paginatedFiles.map((file) => (
+            {paginatedFiles.map((file) => {
+              const isOpening = openingPath === file.path;
+              return (
               <li key={file.path} className="file-item">
                 <div className="file-info">
                   <div className="file-icon">
@@ -229,8 +236,17 @@ export default function OldQuestionsSection({ branch = "Civil Engineering", isAc
                     className="btn btn-secondary btn-soft-blue-action"
                     onClick={() => handleView(file)}
                     title="View file"
+                    disabled={isOpening}
                   >
-                    <i className="fas fa-eye"></i> View
+                    {isOpening ? (
+                      <>
+                        Opening<span className="loading-dots">...</span>
+                      </>
+                    ) : (
+                      <>
+                        <i className="fas fa-eye"></i> View
+                      </>
+                    )}
                   </button>
                   <button
                     className="btn btn-primary btn-soft-blue-action"
@@ -241,7 +257,8 @@ export default function OldQuestionsSection({ branch = "Civil Engineering", isAc
                   </button>
                 </div>
               </li>
-            ))}
+            );
+            })}
           </ul>
           {totalPages > 1 ? (
             <div className="notice-pagination-wrap">

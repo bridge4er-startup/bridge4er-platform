@@ -28,6 +28,7 @@ export default function NoticeSection({ branch = "Civil Engineering", isActive =
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [preview, setPreview] = useState(null);
+  const [openingPath, setOpeningPath] = useState("");
 
   const closePreview = () => {
     setPreview((current) => {
@@ -110,6 +111,8 @@ export default function NoticeSection({ branch = "Civil Engineering", isActive =
   };
 
   const handleView = async (file) => {
+    if (openingPath === file.path) return;
+    setOpeningPath(file.path);
     try {
       const res = await API.get("storage/files/preview/", {
         params: { path: file.path },
@@ -136,6 +139,8 @@ export default function NoticeSection({ branch = "Civil Engineering", isActive =
     } catch (error) {
       toast.error("Failed to view file");
       console.error(error);
+    } finally {
+      setOpeningPath((current) => (current === file.path ? "" : current));
     }
   };
 
@@ -185,7 +190,9 @@ export default function NoticeSection({ branch = "Civil Engineering", isActive =
         </div>
       ) : (
         <ul className={`file-list ${shouldScrollNoticeList ? "file-list-scroll file-list-scroll-notice" : ""}`}>
-          {filteredFiles.map((file, idx) => (
+          {filteredFiles.map((file, idx) => {
+            const isOpening = openingPath === file.path;
+            return (
             <li key={idx} className="file-item">
               <div className="file-info">
                 <div className="file-icon">
@@ -207,8 +214,17 @@ export default function NoticeSection({ branch = "Civil Engineering", isActive =
                   className="btn btn-secondary btn-soft-blue-action"
                   onClick={() => handleView(file)}
                   title="View file"
+                  disabled={isOpening}
                 >
-                  <i className="fas fa-eye"></i> View
+                  {isOpening ? (
+                    <>
+                      Opening<span className="loading-dots">...</span>
+                    </>
+                  ) : (
+                    <>
+                      <i className="fas fa-eye"></i> View
+                    </>
+                  )}
                 </button>
                 <button
                   className="btn btn-primary btn-soft-blue-action"
@@ -219,7 +235,8 @@ export default function NoticeSection({ branch = "Civil Engineering", isActive =
                 </button>
               </div>
             </li>
-          ))}
+          );
+          })}
         </ul>
       )}
 

@@ -386,6 +386,7 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
   const [files, setFiles] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [preview, setPreview] = useState(null);
+  const [openingPath, setOpeningPath] = useState("");
   const [loading, setLoading] = useState(false);
   const [noticePage, setNoticePage] = useState(1);
   const [syncedClockHeight, setSyncedClockHeight] = useState(null);
@@ -765,6 +766,8 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
       toast.error("This file type cannot be previewed inline. Use download.");
       return;
     }
+    if (openingPath === file.path) return;
+    setOpeningPath(file.path);
 
     try {
       const res = await API.get("storage/files/preview/", {
@@ -788,6 +791,8 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
     } catch (error) {
       const message = error?.response?.data?.error || "Unable to preview this file.";
       toast.error(message);
+    } finally {
+      setOpeningPath((current) => (current === file.path ? "" : current));
     }
   };
 
@@ -943,7 +948,9 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
             ) : (
               <>
                 <ul className="file-list compact-list">
-                  {paginatedFiles.map((file) => (
+                  {paginatedFiles.map((file) => {
+                    const isOpening = openingPath === file.path;
+                    return (
                     <li key={file.path} className="file-item">
                       <div className="file-info">
                         <div className="file-icon">
@@ -966,8 +973,17 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
                           className="btn btn-secondary btn-soft-blue-action noticeboard-action-btn"
                           onClick={() => openPreview(file)}
                           title="View file"
+                          disabled={isOpening}
                         >
-                          <i className="fas fa-eye"></i> View
+                          {isOpening ? (
+                            <>
+                              Opening<span className="loading-dots">...</span>
+                            </>
+                          ) : (
+                            <>
+                              <i className="fas fa-eye"></i> View
+                            </>
+                          )}
                         </button>
                         <button
                           className="btn btn-primary btn-soft-blue-action noticeboard-action-btn"
@@ -978,7 +994,8 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
                         </button>
                       </div>
                     </li>
-                  ))}
+                  );
+                  })}
                 </ul>
                 {totalNoticePages > 1 ? (
                   <div className="notice-pagination-wrap">

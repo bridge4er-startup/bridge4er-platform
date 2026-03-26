@@ -54,6 +54,7 @@ export default function ContributionsSection({ branch = "Civil Engineering", isA
   const [expandedComments, setExpandedComments] = useState({});
   const [currentPage, setCurrentPage] = useState(1);
   const [likingContributionId, setLikingContributionId] = useState(null);
+  const [openingContributionId, setOpeningContributionId] = useState(null);
 
   const loadCategories = async (activeBranch = branch) => {
     try {
@@ -151,6 +152,8 @@ export default function ContributionsSection({ branch = "Civil Engineering", isA
       toast.error("File unavailable.");
       return;
     }
+    if (openingContributionId === item.id) return;
+    setOpeningContributionId(item.id);
     try {
       const response = await API.get(url, { responseType: "blob" });
       const contentType = String(response?.headers?.["content-type"] || "");
@@ -170,6 +173,8 @@ export default function ContributionsSection({ branch = "Civil Engineering", isA
       });
     } catch (_error) {
       toast.error("Unable to open file.");
+    } finally {
+      setOpeningContributionId((current) => (current === item.id ? null : current));
     }
   };
 
@@ -322,6 +327,7 @@ export default function ContributionsSection({ branch = "Civil Engineering", isA
             const likesCount = Number(item.likes_count || 0);
             const hasLiked = Boolean(item.has_liked);
             const isLiking = likingContributionId === item.id;
+            const isOpening = openingContributionId === item.id;
 
             return (
               <article key={item.id} className="contribution-message">
@@ -334,18 +340,26 @@ export default function ContributionsSection({ branch = "Civil Engineering", isA
                         onClick={() => openPreview(item)}
                         aria-label={`Read ${item.title || item.file_name || "Shared Notes"}`}
                         title="Read"
+                        disabled={isOpening}
                       >
                         {item.title || item.file_name || "Shared Notes"}
                       </button>
                     </h4>
                     <div className="contribution-actions">
                       <button
-                        className="contribution-icon-btn"
+                        className={`contribution-icon-btn ${isOpening ? "is-opening" : ""}`}
                         onClick={() => openPreview(item)}
                         aria-label="Read"
                         title="Read"
+                        disabled={isOpening}
                       >
-                        <i className="fas fa-book-open"></i>
+                        {isOpening ? (
+                          <>
+                            Opening<span className="loading-dots">...</span>
+                          </>
+                        ) : (
+                          <i className="fas fa-book-open"></i>
+                        )}
                       </button>
                       <button
                         className="contribution-icon-btn"

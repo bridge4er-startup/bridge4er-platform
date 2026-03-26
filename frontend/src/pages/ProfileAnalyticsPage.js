@@ -192,6 +192,7 @@ export default function ProfileAnalyticsPage() {
   const [unlockExamSetName, setUnlockExamSetName] = useState("");
   const [previewFile, setPreviewFile] = useState(null);
   const [referralModalOpen, setReferralModalOpen] = useState(false);
+  const [openingFileUrl, setOpeningFileUrl] = useState("");
   const [referralForm, setReferralForm] = useState({ name: "", mobile: "" });
   const [submittingReferral, setSubmittingReferral] = useState(false);
   const [referralUnlockName, setReferralUnlockName] = useState("");
@@ -235,6 +236,8 @@ export default function ProfileAnalyticsPage() {
   const openPreview = async (fileUrl, nameFallback) => {
     const safeUrl = String(fileUrl || "").trim();
     if (!safeUrl) return;
+    if (openingFileUrl === safeUrl) return;
+    setOpeningFileUrl(safeUrl);
     try {
       const response = await API.get(safeUrl, { responseType: "blob" });
       const contentType = String(response?.headers?.["content-type"] || "");
@@ -253,6 +256,8 @@ export default function ProfileAnalyticsPage() {
       });
     } catch (_error) {
       toast.error("Unable to open file.");
+    } finally {
+      setOpeningFileUrl((current) => (current === safeUrl ? "" : current));
     }
   };
 
@@ -610,8 +615,15 @@ export default function ProfileAnalyticsPage() {
                                 type="button"
                                 className="btn btn-secondary btn-soft-blue-action"
                                 onClick={() => openPreview(item.file_url, item.exam_set_name || "Submitted File")}
+                                disabled={openingFileUrl === item.file_url}
                               >
-                                View Submission
+                                {openingFileUrl === item.file_url ? (
+                                  <>
+                                    Opening<span className="loading-dots">...</span>
+                                  </>
+                                ) : (
+                                  "View Submission"
+                                )}
                               </button>
                             </div>
                           ) : null}
@@ -621,8 +633,15 @@ export default function ProfileAnalyticsPage() {
                                 type="button"
                                 className="btn btn-primary btn-soft-blue-action"
                                 onClick={() => openPreview(item.reviewed_file_url, item.exam_set_name || "Reviewed File")}
+                                disabled={openingFileUrl === item.reviewed_file_url}
                               >
-                                View Reviewed File
+                                {openingFileUrl === item.reviewed_file_url ? (
+                                  <>
+                                    Opening<span className="loading-dots">...</span>
+                                  </>
+                                ) : (
+                                  "View Reviewed File"
+                                )}
                               </button>
                               <button
                                 type="button"

@@ -76,6 +76,7 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
   const [searchQuery, setSearchQuery] = useState("");
   const [previewFile, setPreviewFile] = useState(null);
   const [currentFolderParts, setCurrentFolderParts] = useState([]);
+  const [openingPath, setOpeningPath] = useState("");
   const deferredQuery = useDeferredValue(searchQuery);
 
   const closePreview = () => {
@@ -285,6 +286,8 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
   };
 
   const handleViewPDF = async (file) => {
+    if (openingPath === file.path) return;
+    setOpeningPath(file.path);
     try {
       const res = await API.get("storage/files/preview/", {
         params: { path: file.path },
@@ -309,6 +312,8 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
     } catch (error) {
       const message = error?.response?.data?.error || "Failed to open file";
       toast.error(message);
+    } finally {
+      setOpeningPath((current) => (current === file.path ? "" : current));
     }
   };
 
@@ -406,7 +411,9 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
               </div>
 
               <div className="library-book-list">
-                {folderView.files.map((file) => (
+                {folderView.files.map((file) => {
+                  const isOpening = openingPath === file.path;
+                  return (
                   <article key={file.path} className="library-book-item">
                     <div className="library-book-icon">
                       {file.__iconUrl ? (
@@ -421,11 +428,24 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
                         {formatFileSize(file.size)} | Updated: {formatDate(file.modified)}
                       </p>
                     </div>
-                    <button className="btn btn-primary btn-soft-blue-action" onClick={() => handleViewPDF(file)}>
-                      <i className="fas fa-book-reader"></i> Read
+                    <button
+                      className="btn btn-primary btn-soft-blue-action"
+                      onClick={() => handleViewPDF(file)}
+                      disabled={isOpening}
+                    >
+                      {isOpening ? (
+                        <>
+                          Opening<span className="loading-dots">...</span>
+                        </>
+                      ) : (
+                        <>
+                          <i className="fas fa-book-reader"></i> Read
+                        </>
+                      )}
                     </button>
                   </article>
-                ))}
+                );
+                })}
               </div>
             </div>
           ) : null}
