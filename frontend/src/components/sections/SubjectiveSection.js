@@ -435,7 +435,7 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
                     >
                       {isOpening ? (
                         <>
-                          Opening<span className="loading-dots">...</span>
+                          Opening ...
                         </>
                       ) : (
                         <>
@@ -456,3 +456,4 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
     </section>
   );
 }
+

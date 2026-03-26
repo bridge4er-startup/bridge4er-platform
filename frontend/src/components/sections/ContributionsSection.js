@@ -355,7 +355,7 @@ export default function ContributionsSection({ branch = "Civil Engineering", isA
                       >
                         {isOpening ? (
                           <>
-                            Opening<span className="loading-dots">...</span>
+                            Opening ...
                           </>
                         ) : (
                           <i className="fas fa-book-open"></i>
@@ -405,7 +405,7 @@ export default function ContributionsSection({ branch = "Civil Engineering", isA
                         aria-pressed={hasLiked}
                         title={hasLiked ? "Liked" : "Give a like"}
                       >
-                        <i className="fas fa-heart"></i>
+                        <i className={hasLiked ? "fas fa-heart" : "far fa-heart"}></i>
                       </button>
                       <span className="contribution-like-count">{likesCount}</span>
                     </div>
@@ -492,3 +492,4 @@ export default function ContributionsSection({ branch = "Civil Engineering", isA
     </section>
   );
 }
+

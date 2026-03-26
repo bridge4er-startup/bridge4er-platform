@@ -619,7 +619,7 @@ export default function ProfileAnalyticsPage() {
                               >
                                 {openingFileUrl === item.file_url ? (
                                   <>
-                                    Opening<span className="loading-dots">...</span>
+                                    Opening ...
                                   </>
                                 ) : (
                                   "View Submission"
@@ -637,7 +637,7 @@ export default function ProfileAnalyticsPage() {
                               >
                                 {openingFileUrl === item.reviewed_file_url ? (
                                   <>
-                                    Opening<span className="loading-dots">...</span>
+                                    Opening ...
                                   </>
                                 ) : (
                                   "View Reviewed File"
@@ -845,3 +845,4 @@ export default function ProfileAnalyticsPage() {
     </div>
   );
 }
+

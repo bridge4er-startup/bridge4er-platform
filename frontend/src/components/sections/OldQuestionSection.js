@@ -240,7 +240,7 @@ export default function OldQuestionsSection({ branch = "Civil Engineering", isAc
                   >
                     {isOpening ? (
                       <>
-                        Opening<span className="loading-dots">...</span>
+                        Opening ...
                       </>
                     ) : (
                       <>
@@ -290,3 +290,4 @@ export default function OldQuestionsSection({ branch = "Civil Engineering", isAc
     </section>
   );
 }
+

@@ -218,7 +218,7 @@ export default function NoticeSection({ branch = "Civil Engineering", isActive =
                 >
                   {isOpening ? (
                     <>
-                      Opening<span className="loading-dots">...</span>
+                      Opening ...
                     </>
                   ) : (
                     <>
@@ -244,3 +244,4 @@ export default function NoticeSection({ branch = "Civil Engineering", isActive =
     </section>
   );
 }
+
