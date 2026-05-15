@@ -10,9 +10,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from .dropbox_sync import _sync_exam_set_type
-from .models import ExamPurchase, ExamSet, SubjectiveSubmission
-from .views_exam import _dropbox_auto_sync_enabled as exam_sync_enabled
-from .views_mcq import _dropbox_auto_sync_enabled as mcq_sync_enabled
+from .models import Chapter, ExamPurchase, ExamSet, Subject, SubjectiveSubmission
 
 User = get_user_model()
 TEST_MEDIA_ROOT = os.path.join(os.getcwd(), "tmp_test_media")
@@ -91,14 +89,6 @@ class DropboxExamSetSyncTests(TestCase):
         self.assertFalse(stale_set.is_active)
 
 
-class SupabaseAutoSyncToggleTests(TestCase):
-    @override_settings(STORAGE_PROVIDER="supabase", DROPBOX_AUTO_SYNC_ENABLED=False)
-    def test_mcq_sync_enabled_in_supabase_mode(self):
-        self.assertTrue(mcq_sync_enabled())
-
-    @override_settings(STORAGE_PROVIDER="supabase", DROPBOX_AUTO_SYNC_ENABLED=False)
-    def test_exam_sync_enabled_in_supabase_mode(self):
-        self.assertTrue(exam_sync_enabled())
 
     def test_sync_does_not_prune_when_errors_exist(self):
         branch = "Civil Engineering"
@@ -152,6 +142,47 @@ class SupabaseAutoSyncToggleTests(TestCase):
         manual.refresh_from_db()
         self.assertFalse(managed.is_active)
         self.assertTrue(manual.is_active)
+
+
+class SubjectLookupApiTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            username="subject_lookup_user",
+            password="secret123",
+            email="subject_lookup_user@example.com",
+            full_name="Subject Lookup User",
+            mobile_number="9800000001",
+            field_of_study="Civil Engineering",
+        )
+        self.client.force_authenticate(user=self.user)
+        self.subject = Subject.objects.create(
+            name="Nepal Engineering Council (NEC) :: 1. Basic Civil Engineering",
+            branch="Civil Engineering",
+        )
+        self.chapter = Chapter.objects.create(
+            subject=self.subject,
+            name="Chapter 1",
+            order=1,
+        )
+
+    def test_chapter_endpoint_accepts_display_name(self):
+        response = self.client.get(
+            "/api/exams/subjects/1.%20Basic%20Civil%20Engineering/chapters/",
+            {"branch": "Civil Engineering"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["name"], "Chapter 1")
+
+    def test_chapter_endpoint_accepts_full_subject_name(self):
+        response = self.client.get(
+            "/api/exams/subjects/Nepal%20Engineering%20Council%20(NEC)%20%3A%3A%201.%20Basic%20Civil%20Engineering/chapters/",
+            {"branch": "Civil Engineering"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["name"], "Chapter 1")
 
 
 @override_settings(MEDIA_ROOT=TEST_MEDIA_ROOT)

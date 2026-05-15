@@ -102,8 +102,7 @@ def _auto_sync_cooldown_seconds():
 AUTO_SYNC_COOLDOWN_SECONDS = _auto_sync_cooldown_seconds()
 
 def _dropbox_auto_sync_enabled():
-    provider = str(getattr(settings, "STORAGE_PROVIDER", "dropbox") or "dropbox").strip().lower()
-    return bool(getattr(settings, "DROPBOX_AUTO_SYNC_ENABLED", False)) or provider == "supabase"
+    return bool(getattr(settings, "DROPBOX_AUTO_SYNC_ENABLED", False))
 
 def _objective_cache_ttl_seconds():
     value = getattr(settings, "OBJECTIVE_LIST_CACHE_TTL_SECONDS", 300)
@@ -247,11 +246,8 @@ def _backup_objective_chapter_file(chapter, uploaded_file):
 def _maybe_sync_objective_on_read(branch, user, force_refresh=False):
     if not _dropbox_auto_sync_enabled():
         return {"status": "skipped", "reason": "disabled"}
-
-    has_local_subjects = Subject.objects.filter(branch=branch).exists()
-    if not _is_staff_user(user) and not force_refresh and has_local_subjects:
+    if not _is_staff_user(user) and not force_refresh:
         return {"status": "skipped", "reason": "non_staff"}
-
     allowed_force_refresh = bool(force_refresh and _is_staff_user(user))
     cooldown = 5 if allowed_force_refresh else AUTO_SYNC_COOLDOWN_SECONDS
     return auto_sync_dropbox_for_branch(
@@ -270,6 +266,39 @@ def _is_not_found_error(exc):
 
 def _objective_subject_root_paths(branch, subject_name):
     return objective_subject_roots(branch, subject_name)
+
+
+def _normalized_lookup_token(value):
+    return " ".join(str(value or "").strip().split()).lower()
+
+
+def _resolve_subject_record(branch, subject_value):
+    token = str(subject_value or "").strip()
+    if not token:
+        return None
+
+    queryset = Subject.objects.filter(branch=branch)
+
+    if token.isdigit():
+        by_id = queryset.filter(id=int(token)).first()
+        if by_id:
+            return by_id
+
+    by_exact = queryset.filter(name=token).first() or queryset.filter(name__iexact=token).first()
+    if by_exact:
+        return by_exact
+
+    normalized_token = _normalized_lookup_token(token)
+    for row in queryset.values("id", "name"):
+        row_name = str(row.get("name") or "")
+        if _normalized_lookup_token(row_name) == normalized_token:
+            return Subject.objects.filter(id=row["id"]).first()
+
+        parsed = parse_subject_key(row_name)
+        if _normalized_lookup_token(parsed.get("subject_name")) == normalized_token:
+            return Subject.objects.filter(id=row["id"]).first()
+
+    return None
 
 
 def _list_matching_chapter_paths(branch, subject_name, chapter_name):
@@ -396,18 +425,18 @@ class ChapterListView(APIView):
                 return Response(cached)
 
         _maybe_sync_objective_on_read(branch=branch, user=request.user, force_refresh=force_refresh)
-        try:
-            subject_obj = Subject.objects.get(name=subject, branch=branch)
-            chapters = (
-                Chapter.objects.filter(subject=subject_obj)
-                .order_by("order", "name", "id")
-                .values("id", "name", "small_note", "order")
-            )
-            payload = list(chapters)
-            cache.set(cache_key, payload, timeout=OBJECTIVE_LIST_CACHE_TTL_SECONDS)
-            return Response(payload)
-        except Subject.DoesNotExist:
+        subject_obj = _resolve_subject_record(branch=branch, subject_value=subject)
+        if not subject_obj:
             return Response({"error": "Subject not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        chapters = (
+            Chapter.objects.filter(subject=subject_obj)
+            .order_by("order", "name", "id")
+            .values("id", "name", "small_note", "order")
+        )
+        payload = list(chapters)
+        cache.set(cache_key, payload, timeout=OBJECTIVE_LIST_CACHE_TTL_SECONDS)
+        return Response(payload)
 
 
 class QuestionListView(APIView):
@@ -439,33 +468,34 @@ class QuestionListView(APIView):
 
         _maybe_sync_objective_on_read(branch=branch, user=request.user, force_refresh=force_refresh)
 
-        try:
-            subject_obj = Subject.objects.get(name=subject, branch=branch)
-            chapter_obj = Chapter.objects.get(name=chapter, subject=subject_obj)
-
-            _ensure_demo_questions(chapter_obj)
-            questions_qs = MCQQuestion.objects.filter(chapter=chapter_obj).order_by("id")
-
-            total = questions_qs.count()
-            start = (page - 1) * page_size
-            end = start + page_size
-            question_items = questions_qs[start:end]
-            serializer = MCQQuestionPublicSerializer(question_items, many=True)
-
-            total_pages = (total + page_size - 1) // page_size if total else 1
-            payload = {
-                "count": total,
-                "page": page,
-                "page_size": page_size,
-                "total_pages": total_pages,
-                "results": serializer.data,
-            }
-            cache.set(cache_key, payload, timeout=OBJECTIVE_LIST_CACHE_TTL_SECONDS)
-            return Response(payload)
-        except Subject.DoesNotExist:
+        subject_obj = _resolve_subject_record(branch=branch, subject_value=subject)
+        if not subject_obj:
             return Response({"error": "Subject not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            chapter_obj = Chapter.objects.get(name=chapter, subject=subject_obj)
         except Chapter.DoesNotExist:
             return Response({"error": "Chapter not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        _ensure_demo_questions(chapter_obj)
+        questions_qs = MCQQuestion.objects.filter(chapter=chapter_obj).order_by("id")
+
+        total = questions_qs.count()
+        start = (page - 1) * page_size
+        end = start + page_size
+        question_items = questions_qs[start:end]
+        serializer = MCQQuestionPublicSerializer(question_items, many=True)
+
+        total_pages = (total + page_size - 1) // page_size if total else 1
+        payload = {
+            "count": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+            "results": serializer.data,
+        }
+        cache.set(cache_key, payload, timeout=OBJECTIVE_LIST_CACHE_TTL_SECONDS)
+        return Response(payload)
 
 
 class QuestionDetailView(APIView):

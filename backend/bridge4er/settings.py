@@ -75,6 +75,7 @@ def build_database_config():
     scheme = parsed.scheme.lower()
 
     if scheme in {"postgres", "postgresql", "pgsql"}:
+        conn_max_age = env_int("CONN_MAX_AGE", 0, minimum=0)
         return {
             "ENGINE": "django.db.backends.postgresql",
             "NAME": unquote(parsed.path.lstrip("/")),
@@ -82,7 +83,7 @@ def build_database_config():
             "PASSWORD": unquote(parsed.password or ""),
             "HOST": parsed.hostname or "",
             "PORT": str(parsed.port or ""),
-            "CONN_MAX_AGE": int(os.getenv("CONN_MAX_AGE", "60")),
+            "CONN_MAX_AGE": conn_max_age,
         }
 
     if scheme in {"sqlite", "sqlite3"}:
