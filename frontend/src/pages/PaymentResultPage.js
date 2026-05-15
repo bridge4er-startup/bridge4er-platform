@@ -13,11 +13,11 @@ export default function PaymentResultPage() {
   const referenceId = query.get("reference_id") || "";
   const message = query.get("message") || "";
 
-  const isSuccess = status === "success";
-  const title = isSuccess ? "Payment Successful" : "Payment Failed";
+  const isSuccess = status === "success" || status === "approved";
+  const title = isSuccess ? "Payment Approved" : "Payment Update";
   const description = isSuccess
-    ? "Your exam set has been unlocked. You can now start the exam from Exam Hall."
-    : message || "The payment could not be verified. Please try again.";
+    ? "Your exam set is unlocked. You can now start the exam from Exam Hall."
+    : message || "Payment gateways are disabled. Use QR payment request from Exam Hall.";
 
   return (
     <div className="auth-page register-theme">

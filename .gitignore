@@ -48,3 +48,5 @@ write_test_root.txt
 frontend/perm_test_tmp.txt
 frontend/src/perm_test_tmp.txt
 frontend/write_test_front.txt
+
+.vercel

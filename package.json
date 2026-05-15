@@ -1,0 +1,10 @@
+{
+  "name": "bbdmp",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@vercel/blob": "2.3.3",
+    "@vercel/kv": "3.0.0",
+    "@vercel/postgres": "0.10.0"
+  }
+}

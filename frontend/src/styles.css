@@ -6400,6 +6400,14 @@ body[data-branch-theme="computer-engineering"] {
   font-size: 0.92rem;
 }
 
+.payment-form-grid textarea {
+  border: 1px solid #d1dbe8;
+  border-radius: 8px;
+  padding: 0.56rem 0.62rem;
+  font-size: 0.92rem;
+  resize: vertical;
+}
+
 .payment-form-grid .full-width {
   grid-column: 1 / -1;
 }
@@ -6421,6 +6429,13 @@ body[data-branch-theme="computer-engineering"] {
   color: #64748b;
 }
 
+.payment-qr-image {
+  width: min(220px, 100%);
+  border-radius: 10px;
+  border: 1px solid #cfd8e3;
+  background: #ffffff;
+}
+
 .qr-pattern {
   width: 120px;
   height: 120px;
@@ -6433,6 +6448,26 @@ body[data-branch-theme="computer-engineering"] {
   background-color: #fff;
   border: 8px solid #fff;
   box-shadow: 0 0 0 1px #cbd5e1;
+}
+
+.payment-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem 0.7rem;
+  font-size: 0.82rem;
+  color: #334155;
+}
+
+.payment-request-status-banner {
+  margin-top: 0.75rem;
+  border: 1px solid #dbeafe;
+  background: #eff6ff;
+  border-radius: 10px;
+  padding: 0.65rem 0.75rem;
+  display: grid;
+  gap: 0.28rem;
+  color: #1e3a8a;
+  font-size: 0.84rem;
 }
 
 .payment-modal-actions {
@@ -6821,6 +6856,10 @@ body[data-branch-theme="computer-engineering"] {
   }
 
   .payment-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .payment-meta-grid {
     grid-template-columns: 1fr;
   }
 

@@ -99,6 +99,14 @@ def _dropbox_auto_sync_enabled():
     return bool(getattr(settings, "DROPBOX_AUTO_SYNC_ENABLED", False))
 
 
+def _storage_provider():
+    return str(getattr(settings, "STORAGE_PROVIDER", "dropbox") or "dropbox").strip().lower()
+
+
+def _uses_supabase_storage():
+    return _storage_provider() == "supabase"
+
+
 def _is_safe_path(path):
     normalized = _normalize_dropbox_path(path)
     if not normalized:
@@ -1004,6 +1012,7 @@ class ListFilesView(APIView):
         """Get files by content type and branch"""
         content_type = request.GET.get("content_type")  # notice, syllabus, old_question, subjective
         branch = _normalize_branch(request.GET.get("branch", "Civil Engineering"))
+        supabase_mode = _uses_supabase_storage()
         is_staff = bool(request.user and request.user.is_authenticated and request.user.is_staff)
         include_hidden = _as_bool(request.GET.get("include_hidden"), False)
         include_dirs = _as_bool(request.GET.get("include_dirs"), False)
@@ -1013,14 +1022,22 @@ class ListFilesView(APIView):
         if not is_staff:
             include_hidden = False
             refresh = False
-        live_reads_enabled = _dropbox_auto_sync_enabled()
-        allow_dropbox_listing = (is_staff or bool(getattr(settings, "DROPBOX_ALLOW_PUBLIC_LISTING", False))) and live_reads_enabled
+        live_reads_enabled = True if supabase_mode else _dropbox_auto_sync_enabled()
+        allow_dropbox_listing = (
+            True
+            if supabase_mode
+            else (is_staff or bool(getattr(settings, "DROPBOX_ALLOW_PUBLIC_LISTING", False))) and live_reads_enabled
+        )
         if not live_reads_enabled:
             refresh = False
             prefer_metadata = True
             metadata_only = True
         if not allow_dropbox_listing:
             metadata_only = True
+        if supabase_mode and metadata_only:
+            # Supabase listing is already fast via storage.objects metadata table.
+            metadata_only = False
+            prefer_metadata = False
 
         try:
             if not _can_access_content_type(request.user, content_type):
@@ -1076,7 +1093,11 @@ class ListFilesView(APIView):
                 else:
                     try:
                         files = list_folder_with_metadata(path, include_dirs=include_dirs, recursive=True)
-                        if is_staff and _should_sync_metadata(content_type=content_type, branch=branch, force=refresh):
+                        if (
+                            is_staff
+                            and not supabase_mode
+                            and _should_sync_metadata(content_type=content_type, branch=branch, force=refresh)
+                        ):
                             _sync_metadata_from_listing(files, content_type=content_type, branch=branch)
                         _store_list_cache_payload(
                             content_type=content_type,
@@ -1235,7 +1256,9 @@ class SearchFilesView(APIView):
             if not path:
                 return Response({"error": "Invalid content type"}, status=status.HTTP_400_BAD_REQUEST)
 
-            if not _dropbox_auto_sync_enabled():
+            if _uses_supabase_storage():
+                results = search_files(path, query)
+            elif not _dropbox_auto_sync_enabled():
                 results = _metadata_search_files(content_type=content_type, branch=branch, query=query)
             else:
                 results = search_files(path, query)

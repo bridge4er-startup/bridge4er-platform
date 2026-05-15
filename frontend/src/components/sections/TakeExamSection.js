@@ -1,8 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { listExamSets } from "../../services/examService";
-import API, { cachedGet } from "../../services/api";
-import { initiateEsewaPayment, initiateKhaltiPayment } from "../../services/paymentService";
+import { cachedGet } from "../../services/api";
+import {
+  getMyPaymentRequests,
+  getQRCodePaymentConfig,
+  submitManualPaymentRequest,
+} from "../../services/paymentService";
 import { useAuth } from "../../context/AuthContext";
 import toast from "react-hot-toast";
 import TimedLoadingState from "../common/TimedLoadingState";
@@ -93,6 +97,25 @@ function normalizeMobile(value) {
   return digits;
 }
 
+function getLatestRequestBySet(paymentRequests = [], setId) {
+  const rows = (paymentRequests || []).filter((row) => Number(row?.exam_set_id) === Number(setId));
+  if (!rows.length) return null;
+  return rows[0];
+}
+
+function labelFromPaymentStatus(statusText) {
+  const normalized = String(statusText || "").trim().toLowerCase();
+  if (!normalized) return "Unknown";
+  if (normalized === "pending_approval") return "Pending Approval";
+  if (normalized === "approved") return "Approved";
+  if (normalized === "rejected") return "Rejected";
+  return normalized
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 export default function TakeExamSection({ branch = "Civil Engineering", isActive = false }) {
   const { user } = useAuth();
   const [setsByType, setSetsByType] = useState({ mcq: [], subjective: [] });
@@ -103,10 +126,15 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
   const [selectedExamType, setSelectedExamType] = useState("");
   const [paying, setPaying] = useState(false);
   const [selectedSet, setSelectedSet] = useState(null);
-  const [paymentGateway, setPaymentGateway] = useState("esewa");
+  const [paymentConfig, setPaymentConfig] = useState(null);
+  const [loadingPaymentConfig, setLoadingPaymentConfig] = useState(false);
+  const [myPaymentRequests, setMyPaymentRequests] = useState([]);
   const [paymentForm, setPaymentForm] = useState({
     mobile_number: "",
     email: "",
+    transaction_reference: "",
+    payment_screenshot_url: "",
+    payer_note: "",
   });
 
   const loadSetType = async (type, force = false) => {
@@ -165,7 +193,22 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
     setFolderPathByType({ mcq: [], subjective: [] });
     setSelectedExamType("");
     setSelectedSet(null);
+    setPaymentConfig(null);
+    setMyPaymentRequests([]);
   }, [branch, isActive]);
+
+  useEffect(() => {
+    if (!isActive || !user) return;
+    const bootstrapRequests = async () => {
+      try {
+        const rows = await getMyPaymentRequests("all");
+        setMyPaymentRequests(Array.isArray(rows) ? rows : []);
+      } catch (_error) {
+        // Ignore background refresh errors.
+      }
+    };
+    bootstrapRequests();
+  }, [isActive, user]);
 
   const selectType = async (type) => {
     setSelectedExamType(type);
@@ -179,35 +222,36 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
   const closePayment = () => {
     if (paying) return;
     setSelectedSet(null);
-    setPaymentGateway("esewa");
+    setPaymentConfig(null);
     setPaymentForm({
       mobile_number: "",
       email: "",
+      transaction_reference: "",
+      payment_screenshot_url: "",
+      payer_note: "",
     });
   };
 
-  const openPayment = (setItem, type) => {
+  const openPayment = async (setItem, type) => {
     setSelectedSet({ ...setItem, exam_type: type, display_name: getSetDisplayName(setItem) });
     setPaymentForm({
       email: String(user?.email || "").trim(),
       mobile_number: String(user?.mobile_number || "").trim(),
+      transaction_reference: "",
+      payment_screenshot_url: "",
+      payer_note: "",
     });
-  };
-
-  const submitGatewayPostForm = (url, fields) => {
-    const form = document.createElement("form");
-    form.method = "POST";
-    form.action = url;
-    form.style.display = "none";
-    Object.entries(fields || {}).forEach(([key, value]) => {
-      const input = document.createElement("input");
-      input.type = "hidden";
-      input.name = key;
-      input.value = String(value ?? "");
-      form.appendChild(input);
-    });
-    document.body.appendChild(form);
-    form.submit();
+    setLoadingPaymentConfig(true);
+    try {
+      const [config, myRequests] = await Promise.all([getQRCodePaymentConfig(), getMyPaymentRequests("all")]);
+      setPaymentConfig(config || null);
+      setMyPaymentRequests(Array.isArray(myRequests) ? myRequests : []);
+    } catch (error) {
+      const message = error?.response?.data?.error || "Failed to load payment instructions.";
+      toast.error(message);
+    } finally {
+      setLoadingPaymentConfig(false);
+    }
   };
 
   const unlockSet = async () => {
@@ -215,6 +259,7 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
 
     const email = paymentForm.email.trim();
     const mobile = paymentForm.mobile_number.trim();
+    const transactionReference = paymentForm.transaction_reference.trim();
 
     if (!email) {
       toast.error("Enter email address for payment");
@@ -236,41 +281,39 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
       toast.error("Email and mobile number must match your profile details.");
       return;
     }
+    if (!transactionReference) {
+      toast.error("Enter payment transaction/reference ID.");
+      return;
+    }
 
     const payload = {
       exam_set_id: selectedSet.id,
       email,
       mobile_number: mobile,
+      transaction_reference: transactionReference,
+      payment_screenshot_url: paymentForm.payment_screenshot_url.trim(),
+      payer_note: paymentForm.payer_note.trim(),
     };
 
     try {
       setPaying(true);
-      let paymentSession;
-      if (paymentGateway === "esewa") {
-        paymentSession = await initiateEsewaPayment(payload);
-      } else if (paymentGateway === "khalti") {
-        paymentSession = await initiateKhaltiPayment(payload);
-      } else {
-        toast.error("Unsupported payment gateway.");
-        return;
-      }
-
-      if (paymentSession?.method === "POST" && paymentSession?.payment_url && paymentSession?.form_fields) {
-        toast.success("Redirecting to eSewa...");
-        submitGatewayPostForm(paymentSession.payment_url, paymentSession.form_fields);
-        return;
-      }
-
-      if (paymentSession?.payment_url) {
-        toast.success("Redirecting to payment gateway...");
-        window.location.assign(paymentSession.payment_url);
-        return;
-      }
-
-      toast.error("Payment session creation failed.");
+      const response = await submitManualPaymentRequest(payload);
+      toast.success(response?.message || "Payment request submitted.");
+      const myRequests = await getMyPaymentRequests("all");
+      setMyPaymentRequests(Array.isArray(myRequests) ? myRequests : []);
+      setPaymentForm((prev) => ({
+        ...prev,
+        transaction_reference: "",
+        payment_screenshot_url: "",
+        payer_note: "",
+      }));
     } catch (error) {
-      const message = error?.response?.data?.error || "Payment initialization failed.";
+      const message = error?.response?.data?.error || "Payment request submission failed.";
       toast.error(message);
+      const requestRow = error?.response?.data?.request;
+      if (requestRow?.status === "pending_approval") {
+        setMyPaymentRequests((prev) => [requestRow, ...(prev || []).filter((row) => row.reference_id !== requestRow.reference_id)]);
+      }
     } finally {
       setPaying(false);
     }
@@ -282,6 +325,9 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
     const totalMarks = Number(setItem.total_marks || setItem.question_count || 0);
     const feeLabel = setItem.is_free ? "FREE" : `NPR ${setItem.fee}`;
     const displayName = getSetDisplayName(setItem);
+    const latestRequest = getLatestRequestBySet(myPaymentRequests, setItem.id);
+    const hasPendingRequest = latestRequest?.status === "pending_approval";
+    const isRejectedRequest = latestRequest?.status === "rejected";
 
     return (
       <article
@@ -304,6 +350,11 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
             Time: {toMinutes(setItem.duration_seconds)} min | Total Marks: {totalMarks}
           </small>
         </p>
+        {latestRequest ? (
+          <p className="set-meta-inline">
+            <small>Latest payment request: {labelFromPaymentStatus(latestRequest.status)}</small>
+          </p>
+        ) : null}
 
         <div className="set-actions">
           {isUnlocked ? (
@@ -313,9 +364,11 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
           ) : (
             <button
               className="btn btn-secondary"
-              onClick={() => openPayment(setItem, type)}
+              onClick={() => {
+                void openPayment(setItem, type);
+              }}
             >
-              Unlock by Payment
+              {hasPendingRequest ? "View Payment Status" : isRejectedRequest ? "Retry Payment Request" : "Unlock by QR Payment"}
             </button>
           )}
         </div>
@@ -452,6 +505,8 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
     }
     breadcrumbParts.push(part);
   });
+  const selectedSetPaymentRequest = getLatestRequestBySet(myPaymentRequests, selectedSet?.id);
+  const isSelectedSetPendingApproval = selectedSetPaymentRequest?.status === "pending_approval";
 
   return (
     <section id="exam-hall" className={`section exam-hall-modern ${isActive ? "active" : ""}`}>
@@ -607,24 +662,39 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
               </div>
             </div>
 
-            <div className="gateway-options-grid">
-              <button
-                className={`gateway-option ${paymentGateway === "esewa" ? "selected" : ""}`}
-                onClick={() => setPaymentGateway("esewa")}
-                type="button"
-              >
-                <i className="fas fa-wallet"></i>
-                <span>eSewa</span>
-              </button>
-              <button
-                className={`gateway-option ${paymentGateway === "khalti" ? "selected" : ""}`}
-                onClick={() => setPaymentGateway("khalti")}
-                type="button"
-              >
-                <i className="fas fa-money-check-dollar"></i>
-                <span>Khalti</span>
-              </button>
-            </div>
+            {loadingPaymentConfig ? (
+              <div className="payment-form-grid">
+                <div className="full-width">Loading QR payment instructions...</div>
+              </div>
+            ) : (
+              <div className="payment-form-grid">
+                <div className="full-width qr-visual">
+                  <strong>{paymentConfig?.title || "Bridge4ER Official Payment QR"}</strong>
+                  {paymentConfig?.qr_image_url ? (
+                    <img src={paymentConfig.qr_image_url} alt="Payment QR" className="payment-qr-image" />
+                  ) : (
+                    <div className="qr-pattern" aria-label="QR placeholder"></div>
+                  )}
+                  <p>{paymentConfig?.instructions || "Contact admin for payment instructions."}</p>
+                </div>
+                <div className="full-width payment-meta-grid">
+                  <span><strong>Account Name:</strong> {paymentConfig?.account_name || "-"}</span>
+                  <span><strong>Account Number:</strong> {paymentConfig?.account_number || "-"}</span>
+                  <span><strong>Support Email:</strong> {paymentConfig?.contact_email || "-"}</span>
+                  <span><strong>Support Phone:</strong> {paymentConfig?.contact_phone || "-"}</span>
+                </div>
+              </div>
+            )}
+
+            {selectedSetPaymentRequest ? (
+              <div className="payment-request-status-banner">
+                <strong>Latest Request: {labelFromPaymentStatus(selectedSetPaymentRequest.status)}</strong>
+                <span>Reference: {selectedSetPaymentRequest.transaction_reference || selectedSetPaymentRequest.reference_id}</span>
+                {selectedSetPaymentRequest.admin_note ? (
+                  <span>Admin Note: {selectedSetPaymentRequest.admin_note}</span>
+                ) : null}
+              </div>
+            ) : null}
 
             <div className="payment-form-grid">
               <label>
@@ -645,8 +715,35 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
                   onChange={(e) => updatePaymentField("mobile_number", e.target.value)}
                 />
               </label>
+              <label>
+                Transaction / UTR ID
+                <input
+                  type="text"
+                  placeholder="eg. 4C9F82X1"
+                  value={paymentForm.transaction_reference}
+                  onChange={(e) => updatePaymentField("transaction_reference", e.target.value)}
+                />
+              </label>
+              <label>
+                Screenshot URL (Optional)
+                <input
+                  type="url"
+                  placeholder="https://..."
+                  value={paymentForm.payment_screenshot_url}
+                  onChange={(e) => updatePaymentField("payment_screenshot_url", e.target.value)}
+                />
+              </label>
+              <label className="full-width">
+                Note (Optional)
+                <textarea
+                  placeholder="Any extra payment detail for admin verification"
+                  value={paymentForm.payer_note}
+                  onChange={(e) => updatePaymentField("payer_note", e.target.value)}
+                  rows={3}
+                />
+              </label>
               <div className="full-width">
-                Enter the same email and mobile number as your profile. You will then be redirected to the selected payment gateway.
+                Enter profile-matching email/mobile and your payment reference. Admin approval unlocks this set permanently.
               </div>
             </div>
 
@@ -654,8 +751,16 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
               <button className="btn btn-secondary" onClick={closePayment} disabled={paying}>
                 Cancel
               </button>
-              <button className="btn btn-primary" onClick={unlockSet} disabled={paying}>
-                {paying ? "Preparing Payment..." : "Proceed to Payment"}
+              <button
+                className="btn btn-primary"
+                onClick={unlockSet}
+                disabled={paying || loadingPaymentConfig || !paymentConfig?.has_config || isSelectedSetPendingApproval}
+              >
+                {isSelectedSetPendingApproval
+                  ? "Awaiting Admin Approval"
+                  : paying
+                    ? "Submitting Request..."
+                    : "Submit Payment Request"}
               </button>
             </div>
           </div>

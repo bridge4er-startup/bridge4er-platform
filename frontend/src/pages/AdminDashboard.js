@@ -8,6 +8,12 @@ import {
 import { reportService } from "../services/reportService";
 import { contributionService } from "../services/contributionService";
 import API from "../services/api";
+import {
+  getQRCodePaymentConfig,
+  listManualPaymentRequestsForAdmin,
+  reviewManualPaymentRequest,
+  saveQRCodePaymentConfig,
+} from "../services/paymentService";
 import toast from "react-hot-toast";
 import { formatNepalDateTime } from "../utils/dateTime";
 
@@ -48,7 +54,7 @@ const BULK_SYNC_SCOPE_LABELS = {
 const DEFAULT_CONTRIBUTION_CATEGORIES = ["PSC", "NEC", "MSC", "GK/IQ", "NTC", "NEA", "Other"];
 
 export default function AdminDashboard() {
-  const [activeTab, setActiveTab] = useState("upload-files"); // upload-files, manage-mcqs, bulk-upload-mcqs, review-subjective
+  const [activeTab, setActiveTab] = useState("upload-files"); // upload-files, manage-mcqs, bulk-upload-mcqs, review-subjective, payment-operations
 
   // File Upload State
   const [file, setFile] = useState(null);
@@ -155,8 +161,27 @@ export default function AdminDashboard() {
   const [savingContributionCategory, setSavingContributionCategory] = useState(false);
   const [deletingContributionCategory, setDeletingContributionCategory] = useState("");
 
+  // Payment Operations State
+  const [paymentConfigForm, setPaymentConfigForm] = useState({
+    title: "Bridge4ER Official Payment QR",
+    account_name: "",
+    account_number: "",
+    contact_email: "",
+    contact_phone: "",
+    qr_image_url: "",
+    instructions: "",
+    is_active: true,
+  });
+  const [loadingPaymentConfig, setLoadingPaymentConfig] = useState(false);
+  const [savingPaymentConfig, setSavingPaymentConfig] = useState(false);
+  const [paymentRequests, setPaymentRequests] = useState([]);
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState("pending_approval");
+  const [loadingPaymentRequests, setLoadingPaymentRequests] = useState(false);
+  const [reviewingPaymentReference, setReviewingPaymentReference] = useState("");
+  const [paymentReviewDrafts, setPaymentReviewDrafts] = useState({});
+
   const statusLabel = (value) => {
-    const text = String(value || "pending");
+    const text = String(value || "pending").replace(/_/g, " ");
     return text.charAt(0).toUpperCase() + text.slice(1);
   };
 
@@ -213,6 +238,103 @@ export default function AdminDashboard() {
     const input = document.getElementById("bulk-questions-input");
     if (input) {
       input.value = "";
+    }
+  };
+
+  const loadPaymentConfig = async () => {
+    setLoadingPaymentConfig(true);
+    try {
+      const config = await getQRCodePaymentConfig();
+      setPaymentConfigForm({
+        title: config?.title || "Bridge4ER Official Payment QR",
+        account_name: config?.account_name || "",
+        account_number: config?.account_number || "",
+        contact_email: config?.contact_email || "",
+        contact_phone: config?.contact_phone || "",
+        qr_image_url: config?.qr_image_url || "",
+        instructions: config?.instructions || "",
+        is_active: config?.is_active !== false,
+      });
+    } catch (error) {
+      toast.error(error?.response?.data?.error || "Failed to load payment QR configuration.");
+    } finally {
+      setLoadingPaymentConfig(false);
+    }
+  };
+
+  const loadPaymentRequests = async (statusFilter = paymentStatusFilter) => {
+    setLoadingPaymentRequests(true);
+    try {
+      const rows = await listManualPaymentRequestsForAdmin(statusFilter);
+      setPaymentRequests(Array.isArray(rows) ? rows : []);
+    } catch (error) {
+      toast.error(error?.response?.data?.error || "Failed to load payment requests.");
+    } finally {
+      setLoadingPaymentRequests(false);
+    }
+  };
+
+  const openPaymentOperationsTab = () => {
+    setActiveTab("payment-operations");
+    void loadPaymentConfig();
+    void loadPaymentRequests(paymentStatusFilter);
+  };
+
+  const handlePaymentConfigFieldChange = (field, value) => {
+    setPaymentConfigForm((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
+  const handleSavePaymentConfig = async () => {
+    setSavingPaymentConfig(true);
+    try {
+      const payload = {
+        ...paymentConfigForm,
+        is_active: !!paymentConfigForm.is_active,
+      };
+      const saved = await saveQRCodePaymentConfig(payload);
+      setPaymentConfigForm({
+        title: saved?.title || "",
+        account_name: saved?.account_name || "",
+        account_number: saved?.account_number || "",
+        contact_email: saved?.contact_email || "",
+        contact_phone: saved?.contact_phone || "",
+        qr_image_url: saved?.qr_image_url || "",
+        instructions: saved?.instructions || "",
+        is_active: saved?.is_active !== false,
+      });
+      toast.success("Payment QR configuration saved.");
+    } catch (error) {
+      toast.error(error?.response?.data?.error || "Failed to save payment QR configuration.");
+    } finally {
+      setSavingPaymentConfig(false);
+    }
+  };
+
+  const handlePaymentReviewDraftChange = (referenceId, value) => {
+    setPaymentReviewDrafts((prev) => ({
+      ...prev,
+      [referenceId]: value,
+    }));
+  };
+
+  const handleReviewPaymentRequest = async (referenceId, action) => {
+    setReviewingPaymentReference(referenceId);
+    try {
+      const adminNote = String(paymentReviewDrafts?.[referenceId] || "").trim();
+      const result = await reviewManualPaymentRequest(referenceId, {
+        action,
+        admin_note: adminNote,
+      });
+      toast.success(result?.message || "Payment request updated.");
+      setPaymentReviewDrafts((prev) => ({ ...prev, [referenceId]: "" }));
+      await loadPaymentRequests(paymentStatusFilter);
+    } catch (error) {
+      toast.error(error?.response?.data?.error || "Failed to update payment request.");
+    } finally {
+      setReviewingPaymentReference("");
     }
   };
 
@@ -1491,6 +1613,22 @@ export default function AdminDashboard() {
             Review Subjective
           </button>
           <button
+            onClick={openPaymentOperationsTab}
+            style={{
+              padding: "0.5rem 1.5rem",
+              backgroundColor:
+                activeTab === "payment-operations" ? "#007bff" : "transparent",
+              color: activeTab === "payment-operations" ? "white" : "#333",
+              border: "none",
+              cursor: "pointer",
+              borderBottom:
+                activeTab === "payment-operations" ? "3px solid #007bff" : "none",
+              marginBottom: "-2px",
+            }}
+          >
+            Payment Ops
+          </button>
+          <button
             onClick={() => {
               setActiveTab("contributions");
               loadContributions();
@@ -2012,6 +2150,214 @@ export default function AdminDashboard() {
                 })}
               </div>
             )}
+          </div>
+        )}
+
+        {activeTab === "payment-operations" && (
+          <div
+            style={{
+              backgroundColor: "white",
+              padding: "2rem",
+              borderRadius: "8px",
+              boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+            }}
+          >
+            <h2>Payment Operations</h2>
+            <p style={{ color: "#666", marginBottom: "1rem" }}>
+              Publish payment QR details and approve/reject exam unlock requests.
+            </p>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+                gap: "1.2rem",
+              }}
+            >
+              <section
+                style={{
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "8px",
+                  padding: "1rem",
+                  backgroundColor: "#f8fafc",
+                }}
+              >
+                <h3 style={{ marginTop: 0 }}>QR Configuration</h3>
+                {loadingPaymentConfig ? <p>Loading configuration...</p> : null}
+                <div style={{ display: "grid", gap: "0.7rem" }}>
+                  <input
+                    type="text"
+                    value={paymentConfigForm.title}
+                    placeholder="Title"
+                    onChange={(e) => handlePaymentConfigFieldChange("title", e.target.value)}
+                    style={{ padding: "0.6rem", borderRadius: "4px", border: "1px solid #d1d5db" }}
+                  />
+                  <input
+                    type="text"
+                    value={paymentConfigForm.account_name}
+                    placeholder="Account Name"
+                    onChange={(e) => handlePaymentConfigFieldChange("account_name", e.target.value)}
+                    style={{ padding: "0.6rem", borderRadius: "4px", border: "1px solid #d1d5db" }}
+                  />
+                  <input
+                    type="text"
+                    value={paymentConfigForm.account_number}
+                    placeholder="Account Number / Wallet ID"
+                    onChange={(e) => handlePaymentConfigFieldChange("account_number", e.target.value)}
+                    style={{ padding: "0.6rem", borderRadius: "4px", border: "1px solid #d1d5db" }}
+                  />
+                  <input
+                    type="email"
+                    value={paymentConfigForm.contact_email}
+                    placeholder="Support Email"
+                    onChange={(e) => handlePaymentConfigFieldChange("contact_email", e.target.value)}
+                    style={{ padding: "0.6rem", borderRadius: "4px", border: "1px solid #d1d5db" }}
+                  />
+                  <input
+                    type="text"
+                    value={paymentConfigForm.contact_phone}
+                    placeholder="Support Phone"
+                    onChange={(e) => handlePaymentConfigFieldChange("contact_phone", e.target.value)}
+                    style={{ padding: "0.6rem", borderRadius: "4px", border: "1px solid #d1d5db" }}
+                  />
+                  <input
+                    type="url"
+                    value={paymentConfigForm.qr_image_url}
+                    placeholder="QR Image URL"
+                    onChange={(e) => handlePaymentConfigFieldChange("qr_image_url", e.target.value)}
+                    style={{ padding: "0.6rem", borderRadius: "4px", border: "1px solid #d1d5db" }}
+                  />
+                  <textarea
+                    rows={4}
+                    value={paymentConfigForm.instructions}
+                    placeholder="Instructions shown to students"
+                    onChange={(e) => handlePaymentConfigFieldChange("instructions", e.target.value)}
+                    style={{ padding: "0.6rem", borderRadius: "4px", border: "1px solid #d1d5db", resize: "vertical" }}
+                  />
+                  <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", fontSize: "0.92rem" }}>
+                    <input
+                      type="checkbox"
+                      checked={!!paymentConfigForm.is_active}
+                      onChange={(e) => handlePaymentConfigFieldChange("is_active", !!e.target.checked)}
+                    />
+                    Active configuration
+                  </label>
+                  <div style={{ display: "flex", gap: "0.6rem" }}>
+                    <button className="btn btn-primary" onClick={handleSavePaymentConfig} disabled={savingPaymentConfig}>
+                      {savingPaymentConfig ? "Saving..." : "Save QR Config"}
+                    </button>
+                    <button className="btn btn-secondary" onClick={() => void loadPaymentConfig()} disabled={loadingPaymentConfig}>
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+              </section>
+
+              <section
+                style={{
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "8px",
+                  padding: "1rem",
+                }}
+              >
+                <h3 style={{ marginTop: 0 }}>Payment Approval Queue</h3>
+                <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", marginBottom: "0.9rem" }}>
+                  <select
+                    value={paymentStatusFilter}
+                    onChange={(e) => {
+                      const nextValue = e.target.value;
+                      setPaymentStatusFilter(nextValue);
+                      void loadPaymentRequests(nextValue);
+                    }}
+                    style={{ padding: "0.5rem", borderRadius: "4px", border: "1px solid #d1d5db" }}
+                  >
+                    <option value="pending_approval">Pending Approval</option>
+                    <option value="approved">Approved</option>
+                    <option value="rejected">Rejected</option>
+                    <option value="all">All</option>
+                  </select>
+                  <button className="btn btn-secondary" onClick={() => void loadPaymentRequests(paymentStatusFilter)} disabled={loadingPaymentRequests}>
+                    {loadingPaymentRequests ? "Loading..." : "Refresh Requests"}
+                  </button>
+                </div>
+
+                {loadingPaymentRequests ? (
+                  <p>Loading requests...</p>
+                ) : paymentRequests.length === 0 ? (
+                  <p style={{ color: "#64748b" }}>No requests found for selected filter.</p>
+                ) : (
+                  <div style={{ display: "grid", gap: "0.8rem" }}>
+                    {paymentRequests.map((row) => {
+                      const referenceId = row.reference_id;
+                      const reviewingCurrent = reviewingPaymentReference === referenceId;
+                      return (
+                        <article
+                          key={referenceId}
+                          style={{
+                            border: "1px solid #e2e8f0",
+                            borderRadius: "8px",
+                            padding: "0.85rem",
+                            backgroundColor: "#f8fafc",
+                          }}
+                        >
+                          <div style={{ display: "grid", gap: "0.35rem" }}>
+                            <strong>{row?.exam_set_name || "Exam Set"}</strong>
+                            <span>Student: {row?.student?.full_name || row?.student?.username || "-"}</span>
+                            <span>Email: {row?.email || "-"}</span>
+                            <span>Mobile: {row?.mobile_number || "-"}</span>
+                            <span>Amount: NPR {row?.amount || "0.00"}</span>
+                            <span>Status: {statusLabel(row?.status || "pending_approval")}</span>
+                            <span>Reference: {row?.transaction_reference || referenceId}</span>
+                            <span>Submitted: {formatNepalDateTime(row?.created_at)}</span>
+                            {row?.payment_screenshot_url ? (
+                              <a href={row.payment_screenshot_url} target="_blank" rel="noreferrer">
+                                Open Screenshot Link
+                              </a>
+                            ) : null}
+                            {row?.payer_note ? <span>Student Note: {row.payer_note}</span> : null}
+                            {row?.admin_note ? <span>Admin Note: {row.admin_note}</span> : null}
+                          </div>
+
+                          {row?.status === "pending_approval" ? (
+                            <div style={{ marginTop: "0.75rem", display: "grid", gap: "0.5rem" }}>
+                              <textarea
+                                rows={2}
+                                value={paymentReviewDrafts?.[referenceId] || ""}
+                                onChange={(e) => handlePaymentReviewDraftChange(referenceId, e.target.value)}
+                                placeholder="Optional admin note"
+                                style={{
+                                  width: "100%",
+                                  padding: "0.55rem",
+                                  borderRadius: "4px",
+                                  border: "1px solid #d1d5db",
+                                  resize: "vertical",
+                                }}
+                              />
+                              <div style={{ display: "flex", gap: "0.6rem" }}>
+                                <button
+                                  className="btn btn-primary"
+                                  onClick={() => void handleReviewPaymentRequest(referenceId, "approve")}
+                                  disabled={reviewingCurrent}
+                                >
+                                  {reviewingCurrent ? "Processing..." : "Approve"}
+                                </button>
+                                <button
+                                  className="btn btn-secondary"
+                                  onClick={() => void handleReviewPaymentRequest(referenceId, "reject")}
+                                  disabled={reviewingCurrent}
+                                >
+                                  Reject
+                                </button>
+                              </div>
+                            </div>
+                          ) : null}
+                        </article>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            </div>
           </div>
         )}
 

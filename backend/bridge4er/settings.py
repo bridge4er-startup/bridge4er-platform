@@ -105,6 +105,18 @@ DROPBOX_REFRESH_TOKEN = os.getenv("DROPBOX_REFRESH_TOKEN", "")
 DROPBOX_APP_KEY = os.getenv("DROPBOX_APP_KEY", "")
 DROPBOX_APP_SECRET = os.getenv("DROPBOX_APP_SECRET", "")
 
+# Storage provider
+STORAGE_PROVIDER = (os.getenv("STORAGE_PROVIDER", "dropbox") or "dropbox").strip().lower() or "dropbox"
+SUPABASE_URL = (os.getenv("SUPABASE_URL", "") or "").strip().rstrip("/")
+SUPABASE_STORAGE_BUCKET = (os.getenv("SUPABASE_STORAGE_BUCKET", "bridge4ER") or "bridge4ER").strip() or "bridge4ER"
+SUPABASE_STORAGE_ROOT_PREFIX = (
+    (os.getenv("SUPABASE_STORAGE_ROOT_PREFIX", "bridge4er") or "bridge4er").strip() or "bridge4er"
+)
+SUPABASE_STORAGE_PUBLIC = env_bool("SUPABASE_STORAGE_PUBLIC", False)
+SUPABASE_SERVICE_ROLE_KEY = (os.getenv("SUPABASE_SERVICE_ROLE_KEY", "") or "").strip()
+SUPABASE_SIGNED_URL_TTL_SECONDS = env_int("SUPABASE_SIGNED_URL_TTL_SECONDS", 3600, minimum=60)
+SUPABASE_REQUEST_TIMEOUT_SECONDS = env_int("SUPABASE_REQUEST_TIMEOUT_SECONDS", 45, minimum=5)
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -289,18 +301,9 @@ DROPBOX_OBJECTIVE_COUNT_CACHE_STALE_TTL_SECONDS = env_int(
     minimum=DROPBOX_OBJECTIVE_COUNT_CACHE_TTL_SECONDS,
 )
 
-# Public URLs used in payment callbacks
+# Public URLs used in API responses
 FRONTEND_PUBLIC_URL = os.getenv("FRONTEND_PUBLIC_URL", "http://localhost:3000").rstrip("/")
 BACKEND_PUBLIC_URL = os.getenv("BACKEND_PUBLIC_URL", "http://127.0.0.1:8000").rstrip("/")
-PAYMENT_RESULT_PATH = os.getenv("PAYMENT_RESULT_PATH", "/payment/result")
-
-# Payment gateway configuration
-ESEWA_ENV = os.getenv("ESEWA_ENV", "sandbox").strip().lower()
-ESEWA_PRODUCT_CODE = os.getenv("ESEWA_PRODUCT_CODE", os.getenv("ESEWA_MERCHANT_ID", "")).strip()
-ESEWA_SECRET_KEY = os.getenv("ESEWA_SECRET_KEY", "")
-
-KHALTI_ENV = os.getenv("KHALTI_ENV", "sandbox").strip().lower()
-KHALTI_SECRET_KEY = os.getenv("KHALTI_SECRET_KEY", "")
 
 # Email settings for notifications
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "bridge4er@gmail.com")

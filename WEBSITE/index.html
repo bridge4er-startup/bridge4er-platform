@@ -1,0 +1,632 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BBDMP Construction Management</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Spectral:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="bg-mesh"></div>
+  <div class="bg-orb orb-1"></div>
+  <div class="bg-orb orb-2"></div>
+
+  <header class="site-header">
+    <div class="brand">
+      <div class="logo">B</div>
+      <div>
+        <h1>BBDMP Construction Management</h1>
+        <p class="tagline">Daily reporting, lab tracking, and construction visibility in one place.</p>
+      </div>
+    </div>
+    <nav class="nav">
+      <button class="nav-btn active" data-target="home">Homepage</button>
+      <button class="nav-btn" data-target="daily">Daily Report</button>
+      <button class="nav-btn" data-target="structures">Structures</button>
+      <button class="nav-btn" data-target="summary">Summary (Report)</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="home" class="section active">
+      <div class="section-header">
+        <div>
+          <h2>Homepage</h2>
+          <p>See what needs attention today, responses pending, and lab work that is due.</p>
+        </div>
+        <div class="date-chip" id="todayChip"></div>
+      </div>
+
+      <div class="card-grid">
+        <div class="card">
+          <h3>Pending Responses</h3>
+          <div class="metric" id="pendingResponsesCount">0</div>
+          <p class="muted">Letters awaiting replies or responses.</p>
+        </div>
+        <div class="card">
+          <h3>Concrete Casts This Month</h3>
+          <div class="metric" id="monthlyCastsCount">0</div>
+          <p class="muted">Structures logged with concrete works.</p>
+        </div>
+        <div class="card">
+          <h3>Lab Tests Due Today</h3>
+          <div class="metric" id="testsDueCount">0</div>
+          <p class="muted">3, 7, and 28 day tests matching today.</p>
+        </div>
+      </div>
+
+      <div class="split">
+        <div class="panel">
+          <div class="panel-header">
+            <h3>Responses To Be Sent</h3>
+            <p class="muted">Oldest first. Derived from letters received.</p>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>To</th>
+                  <th>Ref. No.</th>
+                  <th>Subject</th>
+                  <th>Previous Reference</th>
+                  <th>Delay Days</th>
+                </tr>
+              </thead>
+              <tbody id="responsesToSend"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header">
+            <h3>Responses To Be Received</h3>
+            <p class="muted">Oldest first. Derived from letters sent.</p>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>To</th>
+                  <th>Ref. No.</th>
+                  <th>Subject</th>
+                  <th>Previous Reference</th>
+                  <th>Delay Days</th>
+                </tr>
+              </thead>
+              <tbody id="responsesToReceive"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <h3>Lab Works Due Today</h3>
+          <p class="muted">Lab codes that should be tested today based on casting dates.</p>
+        </div>
+        <div class="lab-grid">
+          <div class="lab-card">
+            <h4>3 Days Test</h4>
+            <ul id="lab3List" class="chip-list"></ul>
+          </div>
+          <div class="lab-card">
+            <h4>7 Days Test</h4>
+            <ul id="lab7List" class="chip-list"></ul>
+          </div>
+          <div class="lab-card">
+            <h4>28 Days Test</h4>
+            <ul id="lab28List" class="chip-list"></ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="daily" class="section">
+      <div class="section-header">
+        <div>
+          <h2>Daily Report</h2>
+          <p>Capture construction data, letters, lab results, and reminders.</p>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <h3>Construction Data</h3>
+          <p class="muted">Select a date and add or edit construction works. Civil entries can include structure details.</p>
+        </div>
+        <div class="form-row">
+          <div class="input-group">
+            <label for="reportDate">Report Date</label>
+            <input type="date" id="reportDate" />
+          </div>
+          <button class="btn" id="loadReport">Load / Start Date</button>
+          <div class="helper" id="reportStatus">No date loaded.</div>
+        </div>
+
+        <div class="form-grid">
+          <div class="input-group">
+            <label for="fieldInput">Field</label>
+            <input list="fieldOptions" id="fieldInput" placeholder="Civil, HM, EM..." />
+            <datalist id="fieldOptions"></datalist>
+          </div>
+          <div class="input-group">
+            <label for="workInput">Work</label>
+            <input id="workInput" placeholder="Concrete, Excavation, Drilling..." />
+          </div>
+          <div class="input-group">
+            <label for="majorWorkInput">Major Works</label>
+            <div class="tag-input">
+              <input list="majorWorkOptions" id="majorWorkInput" placeholder="Add a major work" />
+              <button class="btn ghost" id="addMajorWork">Add</button>
+            </div>
+            <datalist id="majorWorkOptions"></datalist>
+            <div class="tag-list" id="majorWorksList"></div>
+          </div>
+          <div class="input-group">
+            <label for="structureSummary">Structure (Civil only)</label>
+            <div class="inline">
+              <input id="structureSummary" placeholder="Add structure details" readonly />
+              <button class="btn ghost" id="openStructureModal">Details</button>
+            </div>
+          </div>
+          <div class="input-group">
+            <label for="headworksLabour">Headworks Labours</label>
+            <input type="number" min="0" id="headworksLabour" placeholder="0" />
+          </div>
+          <div class="input-group">
+            <label for="powerhouseLabour">Powerhouse Labours</label>
+            <input type="number" min="0" id="powerhouseLabour" placeholder="0" />
+          </div>
+          <div class="input-group">
+            <label for="equipmentsUsed">Equipments Used</label>
+            <input id="equipmentsUsed" placeholder="Excavator, Mixer" />
+          </div>
+          <div class="input-group">
+            <label for="equipmentNumber">Equipment Number</label>
+            <input id="equipmentNumber" placeholder="EX-12" />
+          </div>
+          <div class="input-group">
+            <label for="remarksInput">Remarks</label>
+            <input id="remarksInput" placeholder="Weather, issues, notes" />
+          </div>
+          <div class="input-group">
+            <label for="sitePhoto">Site Photo</label>
+            <input type="file" id="sitePhoto" accept="image/*" />
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn primary" id="saveConstruction">Save Entry</button>
+          <button class="btn ghost" id="resetConstruction">Clear Form</button>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Field</th>
+                <th>Major Works</th>
+                <th>Work</th>
+                <th>Structure</th>
+                <th>Headworks</th>
+                <th>Powerhouse</th>
+                <th>Equipments</th>
+                <th>Equipment No.</th>
+                <th>Remarks</th>
+                <th>Site Photo</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="constructionTable"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <h3>Letters Sent</h3>
+          <p class="muted">Track outgoing communication and responses required.</p>
+        </div>
+        <div class="form-grid">
+          <div class="input-group">
+            <label for="sentDate">Date</label>
+            <input type="date" id="sentDate" />
+          </div>
+          <div class="input-group">
+            <label for="sentTo">To</label>
+            <input list="toOptions" id="sentTo" />
+          </div>
+          <div class="input-group">
+            <label for="sentRef">Ref No.</label>
+            <input id="sentRef" />
+          </div>
+          <div class="input-group">
+            <label for="sentSubject">Subject</label>
+            <input list="subjectOptions" id="sentSubject" />
+          </div>
+          <div class="input-group">
+            <label for="sentFile">Pdf / Image</label>
+            <input type="file" id="sentFile" accept="application/pdf,image/*" />
+          </div>
+          <div class="input-group">
+            <label for="sentKeywords">Keywords</label>
+            <input id="sentKeywords" placeholder="Comma separated" />
+          </div>
+          <div class="input-group">
+            <label for="sentPrevRef">Previous Reference To</label>
+            <input id="sentPrevRef" />
+          </div>
+          <div class="input-group">
+            <label for="sentResponse">Response Required?</label>
+            <select id="sentResponse">
+              <option value="no">No</option>
+              <option value="yes">Yes</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn primary" id="saveSent">Save Letter</button>
+          <button class="btn ghost" id="resetSent">Clear</button>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>To</th>
+                <th>Ref No.</th>
+                <th>Subject</th>
+                <th>File</th>
+                <th>Keywords</th>
+                <th>Prev Ref</th>
+                <th>Response Required</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="lettersSentTable"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <h3>Letters Received</h3>
+          <p class="muted">Track incoming communication and pending responses.</p>
+        </div>
+        <div class="form-grid">
+          <div class="input-group">
+            <label for="receivedDate">Date</label>
+            <input type="date" id="receivedDate" />
+          </div>
+          <div class="input-group">
+            <label for="receivedTo">To</label>
+            <input list="toOptions" id="receivedTo" />
+          </div>
+          <div class="input-group">
+            <label for="receivedRef">Ref No.</label>
+            <input id="receivedRef" />
+          </div>
+          <div class="input-group">
+            <label for="receivedSubject">Subject</label>
+            <input list="subjectOptions" id="receivedSubject" />
+          </div>
+          <div class="input-group">
+            <label for="receivedFile">Pdf / Image</label>
+            <input type="file" id="receivedFile" accept="application/pdf,image/*" />
+          </div>
+          <div class="input-group">
+            <label for="receivedKeywords">Keywords</label>
+            <input id="receivedKeywords" placeholder="Comma separated" />
+          </div>
+          <div class="input-group">
+            <label for="receivedPrevRef">Previous Reference To</label>
+            <input id="receivedPrevRef" />
+          </div>
+          <div class="input-group">
+            <label for="receivedResponse">Response Required?</label>
+            <select id="receivedResponse">
+              <option value="no">No</option>
+              <option value="yes">Yes</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn primary" id="saveReceived">Save Letter</button>
+          <button class="btn ghost" id="resetReceived">Clear</button>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>To</th>
+                <th>Ref No.</th>
+                <th>Subject</th>
+                <th>File</th>
+                <th>Keywords</th>
+                <th>Prev Ref</th>
+                <th>Response Required</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="lettersReceivedTable"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <h3>Lab Data</h3>
+          <p class="muted">Record strengths for 3, 7, and 28 day tests. Averages are calculated automatically.</p>
+        </div>
+        <div class="form-grid">
+          <div class="input-group">
+            <label for="labCode">Lab Code</label>
+            <input id="labCode" placeholder="C-123" />
+          </div>
+          <div class="input-group">
+            <label for="labTestType">Test Type</label>
+            <select id="labTestType">
+              <option value="3">3 Days</option>
+              <option value="7">7 Days</option>
+              <option value="28">28 Days</option>
+            </select>
+          </div>
+          <div class="input-group">
+            <label for="labValue1">Value 1</label>
+            <input type="number" step="0.01" id="labValue1" />
+          </div>
+          <div class="input-group">
+            <label for="labValue2">Value 2</label>
+            <input type="number" step="0.01" id="labValue2" />
+          </div>
+          <div class="input-group">
+            <label for="labValue3">Value 3</label>
+            <input type="number" step="0.01" id="labValue3" />
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn primary" id="saveLab">Save Lab Data</button>
+          <button class="btn ghost" id="resetLab">Clear</button>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Lab Code</th>
+                <th>3 Days Strengths</th>
+                <th>3 Days Avg</th>
+                <th>7 Days Strengths</th>
+                <th>7 Days Avg</th>
+                <th>28 Days Strengths</th>
+                <th>28 Days Avg</th>
+              </tr>
+            </thead>
+            <tbody id="labTable"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <h3>Reminder</h3>
+          <p class="muted">Keep track of reminders or follow-ups.</p>
+        </div>
+        <div class="form-grid">
+          <div class="input-group">
+            <label for="reminderDate">Date</label>
+            <input type="date" id="reminderDate" />
+          </div>
+          <div class="input-group">
+            <label for="reminderNote">Reminder Note</label>
+            <input id="reminderNote" placeholder="Inspection, meeting, follow-up" />
+          </div>
+          <div class="input-group">
+            <label for="reminderFile">Reference Upload</label>
+            <input type="file" id="reminderFile" accept="application/pdf,image/*" />
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn primary" id="saveReminder">Save Reminder</button>
+          <button class="btn ghost" id="resetReminder">Clear</button>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Note</th>
+                <th>File</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="reminderTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="structures" class="section">
+      <div class="section-header">
+        <div>
+          <h2>Structures</h2>
+          <p>Concrete works logged from daily reports. Use filters to find entries quickly.</p>
+        </div>
+        <div class="inline">
+          <input id="structureSearch" class="search" placeholder="Search all columns" />
+          <button class="btn ghost" id="clearStructureFilters">Clear Filters</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="table-wrap">
+          <table class="data-table" id="structuresTable">
+            <thead>
+              <tr>
+                <th>Site</th>
+                <th>Structure</th>
+                <th>Sub-Structure</th>
+                <th>Elevation</th>
+                <th>Date of Casting</th>
+                <th>Concrete Grade</th>
+                <th>Lab Codes</th>
+                <th>7 Days Test Date</th>
+                <th>7 Days Strength</th>
+                <th>28 Days Test Date</th>
+                <th>28 Days Strength</th>
+              </tr>
+              <tr class="filter-row">
+                <th><input data-filter="site" placeholder="Filter" /></th>
+                <th><input data-filter="structure" placeholder="Filter" /></th>
+                <th><input data-filter="subStructure" placeholder="Filter" /></th>
+                <th><input data-filter="elevation" placeholder="Filter" /></th>
+                <th><input data-filter="dateOfCasting" placeholder="Filter" /></th>
+                <th><input data-filter="concreteGrade" placeholder="Filter" /></th>
+                <th><input data-filter="labCodes" placeholder="Filter" /></th>
+                <th><input data-filter="test7" placeholder="Filter" /></th>
+                <th><input data-filter="strength7" placeholder="Filter" /></th>
+                <th><input data-filter="test28" placeholder="Filter" /></th>
+                <th><input data-filter="strength28" placeholder="Filter" /></th>
+              </tr>
+            </thead>
+            <tbody id="structuresBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="summary" class="section">
+      <div class="section-header">
+        <div>
+          <h2>Summary (Report)</h2>
+          <p>Review a specific date or generate monthly summaries.</p>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <h3>Daily Report Viewer</h3>
+          <p class="muted">Choose a date to review the daily report entries.</p>
+        </div>
+        <div class="form-row">
+          <div class="input-group">
+            <label for="summaryDate">Date</label>
+            <input type="date" id="summaryDate" />
+          </div>
+          <button class="btn" id="loadSummaryDate">Load Date</button>
+        </div>
+        <div class="summary-grid">
+          <div>
+            <h4>Construction Entries</h4>
+            <div id="summaryConstruction" class="summary-list"></div>
+          </div>
+          <div>
+            <h4>Letters Sent</h4>
+            <div id="summaryLettersSent" class="summary-list"></div>
+          </div>
+          <div>
+            <h4>Letters Received</h4>
+            <div id="summaryLettersReceived" class="summary-list"></div>
+          </div>
+          <div>
+            <h4>Reminders</h4>
+            <div id="summaryReminders" class="summary-list"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <h3>Monthly Report Generator</h3>
+          <p class="muted">Generate KPI summaries and charts from structure data.</p>
+        </div>
+        <div class="form-row">
+          <div class="input-group">
+            <label for="summaryMonth">Month</label>
+            <input type="month" id="summaryMonth" />
+          </div>
+          <button class="btn primary" id="generateMonthly">Generate Report</button>
+        </div>
+
+        <div class="card-grid" id="monthlyMetrics"></div>
+
+        <div class="chart-grid">
+          <div class="panel" aria-hidden="true">
+            <h4>Daily Concreting (m³)</h4>
+            <canvas id="concretingChart"></canvas>
+          </div>
+          <div class="panel" aria-hidden="true">
+            <h4>Average Labour by Site</h4>
+            <canvas id="labourChart"></canvas>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h4>Highlights</h4>
+          <div id="monthlyHighlights" class="summary-list"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="modal" id="structureModal" aria-hidden="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Structure Details (Table II)</h3>
+        <button class="btn ghost" id="closeStructureModal">Close</button>
+      </div>
+      <div class="form-grid">
+        <div class="input-group">
+          <label for="structureSite">Site</label>
+          <input list="siteOptions" id="structureSite" placeholder="Headworks, Powerhouse" />
+          <datalist id="siteOptions"></datalist>
+        </div>
+        <div class="input-group">
+          <label for="dateCasting">Date of Casting</label>
+          <input type="date" id="dateCasting" />
+        </div>
+        <div class="input-group">
+          <label for="structureName">Structure</label>
+          <input list="structureOptions" id="structureName" placeholder="Spillway, Settling Basin" />
+          <datalist id="structureOptions"></datalist>
+        </div>
+        <div class="input-group">
+          <label for="subStructure">Sub-Structure</label>
+          <input list="subStructureOptions" id="subStructure" placeholder="Pier-1, SB-Block-9" />
+          <datalist id="subStructureOptions"></datalist>
+        </div>
+        <div class="input-group">
+          <label for="concreteGrade">Concrete Grade</label>
+          <input list="concreteGradeOptions" id="concreteGrade" placeholder="M20, M25" />
+          <datalist id="concreteGradeOptions"></datalist>
+        </div>
+        <div class="input-group">
+          <label for="elevation">Elevation</label>
+          <input id="elevation" placeholder="442-445" />
+        </div>
+        <div class="input-group">
+          <label for="pouredQty">Poured Quantity (m³)</label>
+          <input type="number" step="0.01" id="pouredQty" />
+        </div>
+        <div class="input-group">
+          <label for="labCodeInput">Lab Codes</label>
+          <div class="tag-input">
+            <input id="labCodeInput" placeholder="C-123" />
+            <button class="btn ghost" id="addLabCode">Add</button>
+          </div>
+          <div class="tag-list" id="labCodesList"></div>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn primary" id="saveStructure">Save Structure</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
+

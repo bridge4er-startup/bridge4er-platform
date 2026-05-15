@@ -1,9 +1,524 @@
 import os
 import threading
+from urllib.parse import quote
 
 import dropbox
 import requests
 from django.conf import settings
+from django.db import connection
+
+_DROPBOX_PROVIDER = "dropbox"
+_SUPABASE_PROVIDER = "supabase"
+_DEFAULT_APP_ROOT = "bridge4er"
+_SUPABASE_BUCKET_PUBLIC_CACHE_SECONDS = 300
+
+
+def _storage_provider():
+    configured = str(getattr(settings, "STORAGE_PROVIDER", _DROPBOX_PROVIDER) or _DROPBOX_PROVIDER).strip().lower()
+    if configured in {_DROPBOX_PROVIDER, _SUPABASE_PROVIDER}:
+        return configured
+    return _DROPBOX_PROVIDER
+
+
+def _is_supabase_provider():
+    return _storage_provider() == _SUPABASE_PROVIDER
+
+
+def _normalize_path(path):
+    if not isinstance(path, str):
+        return ""
+    value = path.strip().replace("\\", "/")
+    if not value:
+        return ""
+    parts = [segment for segment in value.split("/") if segment]
+    if not parts:
+        return "/"
+    return "/" + "/".join(parts)
+
+
+def _path_segments(path):
+    return [segment for segment in _normalize_path(path).split("/") if segment]
+
+
+def _storage_root_segment():
+    configured = str(getattr(settings, "SUPABASE_STORAGE_ROOT_PREFIX", _DEFAULT_APP_ROOT) or _DEFAULT_APP_ROOT).strip()
+    return configured or _DEFAULT_APP_ROOT
+
+
+def _supabase_bucket():
+    configured = str(getattr(settings, "SUPABASE_STORAGE_BUCKET", "bridge4ER") or "bridge4ER").strip()
+    return configured or "bridge4ER"
+
+
+def _supabase_url():
+    value = str(getattr(settings, "SUPABASE_URL", "") or "").strip().rstrip("/")
+    return value
+
+
+def _supabase_service_role_key():
+    return str(getattr(settings, "SUPABASE_SERVICE_ROLE_KEY", "") or "").strip()
+
+
+def _supabase_signed_ttl_seconds():
+    value = getattr(settings, "SUPABASE_SIGNED_URL_TTL_SECONDS", 3600)
+    try:
+        return max(60, int(value))
+    except (TypeError, ValueError):
+        return 3600
+
+
+def _supabase_timeout_seconds():
+    value = getattr(settings, "SUPABASE_REQUEST_TIMEOUT_SECONDS", 45)
+    try:
+        return max(5, int(value))
+    except (TypeError, ValueError):
+        return 45
+
+
+def _supabase_key_from_app_path(path):
+    normalized = _normalize_path(path)
+    if normalized in {"", "/"}:
+        return ""
+    segments = _path_segments(normalized)
+    if not segments:
+        return ""
+    root_segment = _storage_root_segment().lower()
+    if segments and segments[0].lower() == root_segment:
+        segments = segments[1:]
+    return "/".join(segments)
+
+
+def _app_path_from_supabase_key(key):
+    normalized = str(key or "").strip().replace("\\", "/").strip("/")
+    root_segment = _storage_root_segment().strip("/")
+    if not normalized:
+        return f"/{root_segment}"
+    return f"/{root_segment}/{normalized}"
+
+
+def _supabase_headers(require_service_key=False, content_type=None):
+    headers = {}
+    service_key = _supabase_service_role_key()
+    if require_service_key and not service_key:
+        raise RuntimeError("SUPABASE_SERVICE_ROLE_KEY is required for private storage operations.")
+    if service_key:
+        headers["Authorization"] = f"Bearer {service_key}"
+        headers["apikey"] = service_key
+    if content_type:
+        headers["Content-Type"] = content_type
+    return headers
+
+
+def _supabase_object_public_url(key):
+    supabase_url = _supabase_url()
+    if not supabase_url:
+        raise RuntimeError("SUPABASE_URL is required for Supabase storage.")
+    bucket = quote(_supabase_bucket(), safe="")
+    encoded_key = quote(str(key or "").strip(), safe="/")
+    return f"{supabase_url}/storage/v1/object/public/{bucket}/{encoded_key}"
+
+
+_supabase_bucket_public_lock = threading.Lock()
+_supabase_bucket_public_cached_value = None
+_supabase_bucket_public_checked_at = 0.0
+
+
+def _supabase_bucket_is_public():
+    if bool(getattr(settings, "SUPABASE_STORAGE_PUBLIC", False)):
+        return True
+
+    global _supabase_bucket_public_cached_value, _supabase_bucket_public_checked_at
+    with _supabase_bucket_public_lock:
+        import time
+
+        current_time = time.time()
+        if (
+            _supabase_bucket_public_cached_value is not None
+            and current_time - float(_supabase_bucket_public_checked_at) < _SUPABASE_BUCKET_PUBLIC_CACHE_SECONDS
+        ):
+            return bool(_supabase_bucket_public_cached_value)
+
+        value = False
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT public FROM storage.buckets WHERE id = %s", [_supabase_bucket()])
+                row = cursor.fetchone()
+                value = bool(row[0]) if row else False
+        except Exception:
+            value = False
+
+        _supabase_bucket_public_cached_value = bool(value)
+        _supabase_bucket_public_checked_at = current_time
+        return bool(value)
+
+
+def _coerce_size(value):
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _supabase_query_object_rows(prefix_key=""):
+    normalized_prefix = str(prefix_key or "").strip().strip("/")
+    with connection.cursor() as cursor:
+        if normalized_prefix:
+            like_value = f"{normalized_prefix}/%"
+            cursor.execute(
+                """
+                SELECT name, metadata->>'size' AS size_text, updated_at
+                FROM storage.objects
+                WHERE bucket_id = %s
+                  AND (name = %s OR name LIKE %s)
+                ORDER BY name ASC
+                """,
+                [_supabase_bucket(), normalized_prefix, like_value],
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT name, metadata->>'size' AS size_text, updated_at
+                FROM storage.objects
+                WHERE bucket_id = %s
+                ORDER BY name ASC
+                """,
+                [_supabase_bucket()],
+            )
+        rows = cursor.fetchall()
+
+    normalized_rows = []
+    for row in rows:
+        key = str(row[0] or "").strip()
+        if not key:
+            continue
+        modified_value = row[2].isoformat() if row[2] else ""
+        normalized_rows.append(
+            {
+                "key": key,
+                "size": _coerce_size(row[1]),
+                "modified": modified_value,
+            }
+        )
+    return normalized_rows
+
+
+def _supabase_list_folder_with_metadata(path, include_dirs=True, recursive=False):
+    prefix_key = _supabase_key_from_app_path(path)
+    rows = _supabase_query_object_rows(prefix_key=prefix_key)
+    prefix = str(prefix_key or "").strip("/")
+    entries = []
+    dir_seen = set()
+
+    def add_dir(dir_key):
+        normalized_dir = str(dir_key or "").strip("/")
+        if not normalized_dir or normalized_dir in dir_seen:
+            return
+        dir_seen.add(normalized_dir)
+        entries.append(
+            {
+                "name": normalized_dir.split("/")[-1],
+                "path": _app_path_from_supabase_key(normalized_dir),
+                "is_dir": True,
+            }
+        )
+
+    for row in rows:
+        key = row["key"]
+        if prefix:
+            if key == prefix:
+                relative = ""
+            elif key.startswith(f"{prefix}/"):
+                relative = key[len(prefix) + 1 :]
+            else:
+                continue
+        else:
+            relative = key
+
+        if relative == "":
+            entries.append(
+                {
+                    "name": key.split("/")[-1],
+                    "path": _app_path_from_supabase_key(key),
+                    "size": int(row["size"]),
+                    "modified": row["modified"],
+                    "is_dir": False,
+                }
+            )
+            continue
+
+        segments = [segment for segment in relative.split("/") if segment]
+        if not segments:
+            continue
+
+        if not recursive and len(segments) > 1:
+            if include_dirs:
+                first_level = segments[0]
+                dir_key = f"{prefix}/{first_level}" if prefix else first_level
+                add_dir(dir_key)
+            continue
+
+        if include_dirs and recursive and len(segments) > 1:
+            for depth in range(1, len(segments)):
+                sub_path = "/".join(segments[:depth])
+                dir_key = f"{prefix}/{sub_path}" if prefix else sub_path
+                add_dir(dir_key)
+
+        entries.append(
+            {
+                "name": key.split("/")[-1],
+                "path": _app_path_from_supabase_key(key),
+                "size": int(row["size"]),
+                "modified": row["modified"],
+                "is_dir": False,
+            }
+        )
+
+    entries.sort(key=lambda item: str(item.get("modified") or ""), reverse=True)
+    return entries
+
+
+def _supabase_create_signed_url(key, expires_in=None):
+    supabase_url = _supabase_url()
+    if not supabase_url:
+        raise RuntimeError("SUPABASE_URL is required for Supabase storage.")
+    service_key = _supabase_service_role_key()
+    if not service_key:
+        raise RuntimeError("SUPABASE_SERVICE_ROLE_KEY is required for private storage links.")
+    ttl = _supabase_signed_ttl_seconds() if expires_in is None else max(60, int(expires_in))
+    bucket = quote(_supabase_bucket(), safe="")
+    endpoint = f"{supabase_url}/storage/v1/object/sign/{bucket}/{quote(str(key or '').strip(), safe='/')}"
+    response = requests.post(
+        endpoint,
+        json={"expiresIn": ttl},
+        headers=_supabase_headers(require_service_key=True, content_type="application/json"),
+        timeout=_supabase_timeout_seconds(),
+    )
+    response.raise_for_status()
+    payload = response.json() if response.content else {}
+    signed_path = payload.get("signedURL") or payload.get("signedUrl") or ""
+    if not signed_path:
+        raise RuntimeError("Supabase signed URL response did not contain a URL.")
+    if signed_path.startswith("http://") or signed_path.startswith("https://"):
+        return signed_path
+    if signed_path.startswith("/"):
+        return f"{supabase_url}/storage/v1{signed_path}"
+    return f"{supabase_url}/storage/v1/{signed_path}"
+
+
+def _supabase_download_file(path):
+    key = _supabase_key_from_app_path(path)
+    if not key:
+        raise RuntimeError("Invalid storage path.")
+
+    timeout = _supabase_timeout_seconds()
+    if _supabase_bucket_is_public():
+        url = _supabase_object_public_url(key)
+        response = requests.get(url, timeout=timeout)
+    else:
+        signed_url = _supabase_create_signed_url(key, expires_in=120)
+        response = requests.get(signed_url, timeout=timeout)
+    response.raise_for_status()
+    return response.content
+
+
+def _supabase_get_file_metadata(path):
+    key = _supabase_key_from_app_path(path)
+    if not key:
+        return None
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT name, metadata->>'size' AS size_text, updated_at
+            FROM storage.objects
+            WHERE bucket_id = %s AND name = %s
+            LIMIT 1
+            """,
+            [_supabase_bucket(), key],
+        )
+        row = cursor.fetchone()
+    if not row:
+        return None
+    return {
+        "name": str(row[0]).split("/")[-1],
+        "path": _app_path_from_supabase_key(row[0]),
+        "size": _coerce_size(row[1]),
+        "modified": row[2].isoformat() if row[2] else "",
+    }
+
+
+def _supabase_search_files(path, query):
+    cleaned_query = str(query or "").strip().lower()
+    if not cleaned_query:
+        return []
+    prefix = _supabase_key_from_app_path(path)
+
+    with connection.cursor() as cursor:
+        if prefix:
+            like_prefix = f"{prefix}/%"
+            cursor.execute(
+                """
+                SELECT name, metadata->>'size' AS size_text, updated_at
+                FROM storage.objects
+                WHERE bucket_id = %s
+                  AND (name = %s OR name LIKE %s)
+                  AND LOWER(name) LIKE %s
+                ORDER BY updated_at DESC NULLS LAST
+                """,
+                [_supabase_bucket(), prefix, like_prefix, f"%{cleaned_query}%"],
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT name, metadata->>'size' AS size_text, updated_at
+                FROM storage.objects
+                WHERE bucket_id = %s
+                  AND LOWER(name) LIKE %s
+                ORDER BY updated_at DESC NULLS LAST
+                """,
+                [_supabase_bucket(), f"%{cleaned_query}%"],
+            )
+        rows = cursor.fetchall()
+
+    entries = []
+    for row in rows:
+        key = str(row[0] or "").strip()
+        if not key:
+            continue
+        entries.append(
+            {
+                "name": key.split("/")[-1],
+                "path": _app_path_from_supabase_key(key),
+                "size": _coerce_size(row[1]),
+                "modified": row[2].isoformat() if row[2] else "",
+            }
+        )
+    return entries
+
+
+def _supabase_upload_file(path, file_obj):
+    key = _supabase_key_from_app_path(path)
+    if not key:
+        raise RuntimeError("Invalid upload path.")
+    if not _supabase_url():
+        raise RuntimeError("SUPABASE_URL is required for Supabase storage.")
+    if not _supabase_service_role_key():
+        raise RuntimeError("SUPABASE_SERVICE_ROLE_KEY is required for uploads to a private bucket.")
+
+    if hasattr(file_obj, "seek"):
+        try:
+            file_obj.seek(0)
+        except Exception:
+            pass
+    payload = file_obj.read()
+    if payload is None:
+        payload = b""
+
+    endpoint = f"{_supabase_url()}/storage/v1/object/{quote(_supabase_bucket(), safe='')}/{quote(key, safe='/')}"
+    headers = _supabase_headers(require_service_key=True)
+    headers["x-upsert"] = "true"
+    content_type = getattr(file_obj, "content_type", None) or "application/octet-stream"
+    headers["Content-Type"] = content_type
+
+    response = requests.post(endpoint, data=payload, headers=headers, timeout=_supabase_timeout_seconds())
+    response.raise_for_status()
+    metadata = _supabase_get_file_metadata(path)
+    return metadata
+
+
+def _supabase_delete_object_key(object_key):
+    endpoint = (
+        f"{_supabase_url()}/storage/v1/object/{quote(_supabase_bucket(), safe='')}/{quote(object_key, safe='/')}"
+    )
+    response = requests.delete(
+        endpoint,
+        headers=_supabase_headers(require_service_key=True),
+        timeout=_supabase_timeout_seconds(),
+    )
+    if response.status_code in {200, 202, 204, 404}:
+        return True
+    response.raise_for_status()
+    return True
+
+
+def _supabase_delete_file(path):
+    key = _supabase_key_from_app_path(path)
+    if not key:
+        raise RuntimeError("Invalid delete path.")
+    if not _supabase_service_role_key():
+        raise RuntimeError("SUPABASE_SERVICE_ROLE_KEY is required for delete operations.")
+
+    # Delete one file, or all files under a prefix when the path is a folder.
+    rows = _supabase_query_object_rows(prefix_key=key)
+    candidate_keys = [row["key"] for row in rows]
+    if key not in candidate_keys:
+        candidate_keys.insert(0, key)
+    candidate_keys = sorted({item.strip("/") for item in candidate_keys if item})
+
+    deleted_any = False
+    for item_key in candidate_keys:
+        try:
+            _supabase_delete_object_key(item_key)
+            deleted_any = True
+        except Exception:
+            continue
+    return deleted_any
+
+
+def _supabase_move_object_key(source_key, destination_key):
+    endpoint = f"{_supabase_url()}/storage/v1/object/move"
+    payload = {
+        "bucketId": _supabase_bucket(),
+        "sourceKey": source_key,
+        "destinationKey": destination_key,
+    }
+    response = requests.post(
+        endpoint,
+        json=payload,
+        headers=_supabase_headers(require_service_key=True, content_type="application/json"),
+        timeout=_supabase_timeout_seconds(),
+    )
+    response.raise_for_status()
+    return True
+
+
+def _supabase_move_path(from_path, to_path):
+    from_key = _supabase_key_from_app_path(from_path).strip("/")
+    to_key = _supabase_key_from_app_path(to_path).strip("/")
+    if not from_key or not to_key:
+        raise RuntimeError("Both source and destination paths are required.")
+    if not _supabase_service_role_key():
+        raise RuntimeError("SUPABASE_SERVICE_ROLE_KEY is required for move operations.")
+
+    rows = _supabase_query_object_rows(prefix_key=from_key)
+    if rows:
+        for row in rows:
+            source_key = str(row["key"]).strip("/")
+            if source_key == from_key:
+                destination_key = to_key
+            elif source_key.startswith(f"{from_key}/"):
+                suffix = source_key[len(from_key) + 1 :]
+                destination_key = f"{to_key}/{suffix}" if suffix else to_key
+            else:
+                continue
+            _supabase_move_object_key(source_key, destination_key)
+        return True
+
+    _supabase_move_object_key(from_key, to_key)
+    return True
+
+
+def _supabase_get_shareable_link(path):
+    key = _supabase_key_from_app_path(path)
+    if not key:
+        raise RuntimeError("Invalid storage path.")
+    if _supabase_bucket_is_public():
+        return _supabase_object_public_url(key)
+    return _supabase_create_signed_url(key)
+
+
+# -----------------------------
+# Dropbox implementation
+# -----------------------------
 
 _use_env_proxy = str(os.getenv("DROPBOX_USE_ENV_PROXY", "0")).lower() in {"1", "true", "yes"}
 _session = requests.Session()
@@ -66,10 +581,8 @@ def _entry_path(entry):
     return entry.path_display or entry.path_lower
 
 
-def _list_folder_entries(path, recursive=False):
-    result = _execute_with_auth_retry(
-        lambda client: client.files_list_folder(path, recursive=recursive)
-    )
+def _dropbox_list_folder_entries(path, recursive=False):
+    result = _execute_with_auth_retry(lambda client: client.files_list_folder(path, recursive=recursive))
     entries = list(result.entries)
     while result.has_more:
         cursor = result.cursor
@@ -91,193 +604,264 @@ def _as_preview_link(url):
     return f"{url}{separator}dl=0"
 
 
-def list_folder(path):
-    """List all files and folders in a Dropbox path"""
-    try:
-        entries_data = _list_folder_entries(path)
-        entries = []
-        for entry in entries_data:
-            entries.append({
+def _dropbox_list_folder(path):
+    entries_data = _dropbox_list_folder_entries(path)
+    entries = []
+    for entry in entries_data:
+        entries.append(
+            {
                 "name": entry.name,
                 "path": _entry_path(entry),
                 "is_dir": isinstance(entry, dropbox.files.FolderMetadata),
-            })
-        return entries
-    except Exception as e:
-        raise Exception(f"Error listing folder: {str(e)}")
+            }
+        )
+    return entries
 
 
-def list_folder_with_metadata(path, include_dirs=True, recursive=False):
-    """List files with metadata like size, date, etc."""
-    try:
-        entries_data = _list_folder_entries(path, recursive=recursive)
-        entries = []
-        for entry in entries_data:
-            if isinstance(entry, dropbox.files.FileMetadata):
-                entries.append({
+def _dropbox_list_folder_with_metadata(path, include_dirs=True, recursive=False):
+    entries_data = _dropbox_list_folder_entries(path, recursive=recursive)
+    entries = []
+    for entry in entries_data:
+        if isinstance(entry, dropbox.files.FileMetadata):
+            entries.append(
+                {
                     "name": entry.name,
                     "path": _entry_path(entry),
                     "size": entry.size,
                     "modified": entry.server_modified.isoformat(),
                     "is_dir": False,
-                })
-            elif include_dirs:
-                entries.append({
+                }
+            )
+        elif include_dirs:
+            entries.append(
+                {
                     "name": entry.name,
                     "path": _entry_path(entry),
                     "is_dir": True,
-                })
-        if include_dirs and recursive:
-            try:
-                top_entries = _list_folder_entries(path, recursive=False)
-                existing_paths = {item.get("path") for item in entries if item.get("path")}
-                for entry in top_entries:
-                    if isinstance(entry, dropbox.files.FolderMetadata):
-                        entry_path = _entry_path(entry)
-                        if entry_path and entry_path not in existing_paths:
-                            entries.append({
+                }
+            )
+    if include_dirs and recursive:
+        try:
+            top_entries = _dropbox_list_folder_entries(path, recursive=False)
+            existing_paths = {item.get("path") for item in entries if item.get("path")}
+            for entry in top_entries:
+                if isinstance(entry, dropbox.files.FolderMetadata):
+                    entry_path = _entry_path(entry)
+                    if entry_path and entry_path not in existing_paths:
+                        entries.append(
+                            {
                                 "name": entry.name,
                                 "path": entry_path,
                                 "is_dir": True,
-                            })
-                            existing_paths.add(entry_path)
-            except Exception:
-                pass
-        # Sort by modified date, newest first
-        entries.sort(key=lambda x: x.get('modified', ''), reverse=True)
-        return entries
-    except Exception as e:
-        raise Exception(f"Error listing folder metadata: {str(e)}")
+                            }
+                        )
+                        existing_paths.add(entry_path)
+        except Exception:
+            pass
+    entries.sort(key=lambda item: item.get("modified", ""), reverse=True)
+    return entries
 
-def download_file(path):
-    """Download a file from Dropbox"""
-    try:
-        _metadata, res = _execute_with_auth_retry(lambda client: client.files_download(path))
-        return res.content
-    except Exception as e:
-        raise Exception(f"Error downloading file: {str(e)}")
 
-def get_file_metadata(path):
-    """Get metadata for a specific file"""
-    try:
-        metadata = _execute_with_auth_retry(lambda client: client.files_get_metadata(path))
-        if isinstance(metadata, dropbox.files.FileMetadata):
-            return {
-                "name": metadata.name,
-                "path": metadata.path_display or metadata.path_lower,
-                "size": metadata.size,
-                "modified": metadata.server_modified.isoformat(),
-            }
-        return None
-    except Exception as e:
-        raise Exception(f"Error getting metadata: {str(e)}")
+def _dropbox_download_file(path):
+    _metadata, res = _execute_with_auth_retry(lambda client: client.files_download(path))
+    return res.content
 
-def upload_file(path, file):
-    """Upload a file to Dropbox"""
-    try:
-        _execute_with_auth_retry(
-            lambda client: client.files_upload(
-                file.read(),
-                path,
-                mode=dropbox.files.WriteMode.overwrite,
-            )
+
+def _dropbox_get_file_metadata(path):
+    metadata = _execute_with_auth_retry(lambda client: client.files_get_metadata(path))
+    if isinstance(metadata, dropbox.files.FileMetadata):
+        return {
+            "name": metadata.name,
+            "path": metadata.path_display or metadata.path_lower,
+            "size": metadata.size,
+            "modified": metadata.server_modified.isoformat(),
+        }
+    return None
+
+
+def _dropbox_upload_file(path, file_obj):
+    _execute_with_auth_retry(
+        lambda client: client.files_upload(
+            file_obj.read(),
+            path,
+            mode=dropbox.files.WriteMode.overwrite,
         )
-        return get_file_metadata(path)
-    except Exception as e:
-        raise Exception(f"Error uploading file: {str(e)}")
+    )
+    return _dropbox_get_file_metadata(path)
 
-def delete_file(path):
-    """Delete a file from Dropbox"""
-    try:
-        _execute_with_auth_retry(lambda client: client.files_delete_v2(path))
-        return True
-    except Exception as e:
-        raise Exception(f"Error deleting file: {str(e)}")
 
-def search_files(path, query):
-    """Search for files in a Dropbox path"""
-    try:
-        results = _execute_with_auth_retry(
-            lambda client: client.files_search_v2(
-                query,
-                options=dropbox.files.SearchOptions(path=path),
-            )
+def _dropbox_delete_file(path):
+    _execute_with_auth_retry(lambda client: client.files_delete_v2(path))
+    return True
+
+
+def _dropbox_search_files(path, query):
+    results = _execute_with_auth_retry(
+        lambda client: client.files_search_v2(
+            query,
+            options=dropbox.files.SearchOptions(path=path),
         )
-        matches = list(results.matches)
+    )
+    matches = list(results.matches)
 
-        while getattr(results, "has_more", False):
-            cursor = results.cursor
-            results = _execute_with_auth_retry(
-                lambda client, next_cursor=cursor: client.files_search_continue_v2(next_cursor)
-            )
-            matches.extend(results.matches)
+    while getattr(results, "has_more", False):
+        cursor = results.cursor
+        results = _execute_with_auth_retry(lambda client, next_cursor=cursor: client.files_search_continue_v2(next_cursor))
+        matches.extend(results.matches)
 
-        entries = []
-        for match in matches:
-            entry = match.metadata.metadata
-            if isinstance(entry, dropbox.files.FileMetadata):
-                entries.append({
+    entries = []
+    for match in matches:
+        entry = match.metadata.metadata
+        if isinstance(entry, dropbox.files.FileMetadata):
+            entries.append(
+                {
                     "name": entry.name,
                     "path": _entry_path(entry),
                     "size": entry.size,
                     "modified": entry.server_modified.isoformat(),
-                })
-        return entries
-    except Exception as e:
-        raise Exception(f"Error searching files: {str(e)}")
-
-def get_shareable_link(path):
-    """Get a shareable link for a file"""
-    try:
-        link = _execute_with_auth_retry(
-            lambda client: client.sharing_create_shared_link_with_settings(path)
-        )
-        return _as_preview_link(link.url)
-    except dropbox.exceptions.ApiError as e:
-        if e.error.is_shared_link_already_exists():
-            # If link already exists, get it
-            links = _execute_with_auth_retry(
-                lambda client: client.sharing_list_shared_links(path=path)
+                }
             )
+    return entries
+
+
+def _dropbox_get_shareable_link(path):
+    try:
+        link = _execute_with_auth_retry(lambda client: client.sharing_create_shared_link_with_settings(path))
+        return _as_preview_link(link.url)
+    except dropbox.exceptions.ApiError as exc:
+        if exc.error.is_shared_link_already_exists():
+            links = _execute_with_auth_retry(lambda client: client.sharing_list_shared_links(path=path))
             if links.links:
                 return _as_preview_link(links.links[0].url)
-        # Fallback for apps without sharing scopes. Temporary links work for inline read-only previews.
         try:
-            temporary_link = _execute_with_auth_retry(
-                lambda client: client.files_get_temporary_link(path)
-            )
+            temporary_link = _execute_with_auth_retry(lambda client: client.files_get_temporary_link(path))
             return temporary_link.link
         except Exception as fallback_error:
-            raise Exception(f"Error creating link: {str(e)}; fallback failed: {str(fallback_error)}")
-    except Exception as e:
+            raise Exception(f"Error creating link: {str(exc)}; fallback failed: {str(fallback_error)}")
+    except Exception as exc:
         try:
-            temporary_link = _execute_with_auth_retry(
-                lambda client: client.files_get_temporary_link(path)
-            )
+            temporary_link = _execute_with_auth_retry(lambda client: client.files_get_temporary_link(path))
             return temporary_link.link
         except Exception:
-            raise Exception(f"Error creating link: {str(e)}")
+            raise Exception(f"Error creating link: {str(exc)}")
 
-def create_folder(path):
-    """Create a folder in Dropbox"""
+
+def _dropbox_create_folder(path):
     try:
         _execute_with_auth_retry(lambda client: client.files_create_folder_v2(path))
         return True
-    except Exception as e:
+    except Exception:
+        return False
+
+
+def _dropbox_move_path(from_path, to_path):
+    _execute_with_auth_retry(
+        lambda client: client.files_move_v2(
+            from_path,
+            to_path,
+            allow_ownership_transfer=True,
+            autorename=False,
+        )
+    )
+    return True
+
+
+def list_folder(path):
+    """List all files and folders in the configured storage provider."""
+    try:
+        if _is_supabase_provider():
+            return _supabase_list_folder_with_metadata(path, include_dirs=True, recursive=False)
+        return _dropbox_list_folder(path)
+    except Exception as exc:
+        raise Exception(f"Error listing folder: {str(exc)}")
+
+
+def list_folder_with_metadata(path, include_dirs=True, recursive=False):
+    """List files with metadata like size and date."""
+    try:
+        if _is_supabase_provider():
+            return _supabase_list_folder_with_metadata(path, include_dirs=include_dirs, recursive=recursive)
+        return _dropbox_list_folder_with_metadata(path, include_dirs=include_dirs, recursive=recursive)
+    except Exception as exc:
+        raise Exception(f"Error listing folder metadata: {str(exc)}")
+
+
+def download_file(path):
+    """Download a file from the configured storage provider."""
+    try:
+        if _is_supabase_provider():
+            return _supabase_download_file(path)
+        return _dropbox_download_file(path)
+    except Exception as exc:
+        raise Exception(f"Error downloading file: {str(exc)}")
+
+
+def get_file_metadata(path):
+    """Get metadata for a specific file."""
+    try:
+        if _is_supabase_provider():
+            return _supabase_get_file_metadata(path)
+        return _dropbox_get_file_metadata(path)
+    except Exception as exc:
+        raise Exception(f"Error getting metadata: {str(exc)}")
+
+
+def upload_file(path, file_obj):
+    """Upload a file to the configured storage provider."""
+    try:
+        if _is_supabase_provider():
+            return _supabase_upload_file(path, file_obj)
+        return _dropbox_upload_file(path, file_obj)
+    except Exception as exc:
+        raise Exception(f"Error uploading file: {str(exc)}")
+
+
+def delete_file(path):
+    """Delete a file from the configured storage provider."""
+    try:
+        if _is_supabase_provider():
+            return _supabase_delete_file(path)
+        return _dropbox_delete_file(path)
+    except Exception as exc:
+        raise Exception(f"Error deleting file: {str(exc)}")
+
+
+def search_files(path, query):
+    """Search for files in a storage path."""
+    try:
+        if _is_supabase_provider():
+            return _supabase_search_files(path, query)
+        return _dropbox_search_files(path, query)
+    except Exception as exc:
+        raise Exception(f"Error searching files: {str(exc)}")
+
+
+def get_shareable_link(path):
+    """Get a shareable preview link for a file."""
+    try:
+        if _is_supabase_provider():
+            return _supabase_get_shareable_link(path)
+        return _dropbox_get_shareable_link(path)
+    except Exception as exc:
+        raise Exception(f"Error creating link: {str(exc)}")
+
+
+def create_folder(path):
+    """Create a folder in the configured storage provider."""
+    try:
+        if _is_supabase_provider():
+            # Supabase folders are implicit; no-op is enough unless uploads are performed.
+            return True
+        return _dropbox_create_folder(path)
+    except Exception:
         return False
 
 
 def move_path(from_path, to_path):
-    """Move or rename a file/folder in Dropbox"""
+    """Move or rename a file/folder in the configured storage provider."""
     try:
-        _execute_with_auth_retry(
-            lambda client: client.files_move_v2(
-                from_path,
-                to_path,
-                allow_ownership_transfer=True,
-                autorename=False,
-            )
-        )
-        return True
-    except Exception as e:
-        raise Exception(f"Error moving path: {str(e)}")
+        if _is_supabase_provider():
+            return _supabase_move_path(from_path, to_path)
+        return _dropbox_move_path(from_path, to_path)
+    except Exception as exc:
+        raise Exception(f"Error moving path: {str(exc)}")

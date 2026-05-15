@@ -1,31 +1,21 @@
 from decimal import Decimal, InvalidOperation
 
-from django.conf import settings
 from django.db import transaction
-from django.shortcuts import redirect
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from exams.models import ExamPurchase, ExamSet
 
-from .gateways import (
-    GatewayError,
-    build_frontend_result_url,
-    check_esewa_status,
-    create_esewa_form_payload,
-    decode_esewa_callback_data,
-    esewa_form_url,
-    khalti_initiate,
-    khalti_lookup,
-    verify_esewa_callback_signature,
+from .models import PaymentTransaction, QRPaymentConfiguration
+
+
+MANUAL_QR_GATEWAY = "manual_qr"
+LEGACY_REMOVED_ERROR = (
+    "Online gateway payment is disabled. Use QR payment request and wait for admin approval."
 )
-from .models import PaymentTransaction
-
-
-SUCCESS_STATUSES = {"completed", "complete", "success", "succeeded"}
 
 
 def _parse_amount(value):
@@ -57,42 +47,6 @@ def _create_or_get_purchase(transaction_obj, gateway_tx_id=""):
         purchase.amount = transaction_obj.amount
         purchase.save(update_fields=["payment_gateway", "transaction_id", "amount"])
     return purchase
-
-
-def _build_callback_url(path, reference_id):
-    backend_base = (settings.BACKEND_PUBLIC_URL or "").rstrip("/")
-    if not backend_base:
-        raise GatewayError("BACKEND_PUBLIC_URL is not configured.")
-    return f"{backend_base}{path}?ref={reference_id}"
-
-
-def _mark_transaction_failed(transaction_obj, message, raw_payload=None, status_override="failed"):
-    transaction_obj.status = status_override
-    transaction_obj.error_message = str(message or "")[:2000]
-    if raw_payload is not None:
-        transaction_obj.raw_response = raw_payload
-    transaction_obj.save(update_fields=["status", "error_message", "raw_response", "updated_at"])
-
-
-def _mark_transaction_success(transaction_obj, gateway_transaction_id="", raw_payload=None):
-    with transaction.atomic():
-        transaction_obj.status = "success"
-        transaction_obj.error_message = ""
-        transaction_obj.gateway_transaction_id = gateway_transaction_id or transaction_obj.gateway_transaction_id
-        transaction_obj.verified_at = timezone.now()
-        if raw_payload is not None:
-            transaction_obj.raw_response = raw_payload
-        transaction_obj.save(
-            update_fields=[
-                "status",
-                "error_message",
-                "gateway_transaction_id",
-                "verified_at",
-                "raw_response",
-                "updated_at",
-            ]
-        )
-        return _create_or_get_purchase(transaction_obj, transaction_obj.gateway_transaction_id)
 
 
 def _get_exam_set_for_payment(exam_set_id):
@@ -146,13 +100,188 @@ def _validate_payment_profile(user, email, mobile_number):
     return profile_email, profile_mobile, None
 
 
-class EsewaInitiatePayment(APIView):
+def _as_bool(value, default=False):
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _build_qr_config_payload(config):
+    if not config:
+        return {
+            "has_config": False,
+            "title": "Bridge4ER Official Payment QR",
+            "account_name": "",
+            "account_number": "",
+            "contact_email": "",
+            "contact_phone": "",
+            "qr_image_url": "",
+            "instructions": (
+                "Admin has not configured payment QR details yet. "
+                "Please contact admin for payment instructions."
+            ),
+            "updated_at": None,
+        }
+    return {
+        "has_config": True,
+        "id": config.id,
+        "title": config.title,
+        "account_name": config.account_name,
+        "account_number": config.account_number,
+        "contact_email": config.contact_email,
+        "contact_phone": config.contact_phone,
+        "qr_image_url": config.qr_image_url,
+        "instructions": config.instructions,
+        "is_active": bool(config.is_active),
+        "updated_at": config.updated_at,
+    }
+
+
+def _build_payment_request_payload(txn):
+    return {
+        "reference_id": str(txn.reference_id),
+        "exam_set_id": txn.exam_set_id,
+        "exam_set_name": getattr(txn.exam_set, "name", ""),
+        "exam_type": getattr(txn.exam_set, "exam_type", ""),
+        "gateway": txn.gateway,
+        "amount": str(txn.amount),
+        "email": txn.email,
+        "mobile_number": txn.mobile_number,
+        "transaction_reference": txn.gateway_reference,
+        "status": txn.status,
+        "payer_note": txn.payer_note,
+        "payment_screenshot_url": txn.payment_screenshot_url,
+        "admin_note": txn.admin_note,
+        "error_message": txn.error_message,
+        "reviewed_at": txn.reviewed_at,
+        "approved_at": txn.approved_at,
+        "created_at": txn.created_at,
+        "updated_at": txn.updated_at,
+        "reviewed_by": getattr(getattr(txn, "reviewed_by", None), "username", ""),
+        "student": {
+            "id": txn.user_id,
+            "username": getattr(txn.user, "username", ""),
+            "full_name": getattr(txn.user, "full_name", ""),
+            "email": getattr(txn.user, "email", ""),
+        },
+    }
+
+
+def _mark_request_rejected(transaction_obj, reviewer, admin_note=""):
+    transaction_obj.status = "rejected"
+    transaction_obj.reviewed_by = reviewer
+    transaction_obj.reviewed_at = timezone.now()
+    transaction_obj.admin_note = str(admin_note or "").strip()
+    transaction_obj.error_message = "Rejected by admin"
+    transaction_obj.save(
+        update_fields=[
+            "status",
+            "reviewed_by",
+            "reviewed_at",
+            "admin_note",
+            "error_message",
+            "updated_at",
+        ]
+    )
+
+
+def _mark_request_approved(transaction_obj, reviewer, admin_note="", gateway_tx_id=""):
+    with transaction.atomic():
+        transaction_obj.status = "approved"
+        transaction_obj.reviewed_by = reviewer
+        transaction_obj.reviewed_at = timezone.now()
+        transaction_obj.approved_at = timezone.now()
+        transaction_obj.admin_note = str(admin_note or "").strip()
+        transaction_obj.gateway_transaction_id = (
+            str(gateway_tx_id or "").strip() or transaction_obj.gateway_reference
+        )
+        transaction_obj.error_message = ""
+        transaction_obj.verified_at = timezone.now()
+        transaction_obj.save(
+            update_fields=[
+                "status",
+                "reviewed_by",
+                "reviewed_at",
+                "approved_at",
+                "admin_note",
+                "gateway_transaction_id",
+                "error_message",
+                "verified_at",
+                "updated_at",
+            ]
+        )
+        return _create_or_get_purchase(transaction_obj, transaction_obj.gateway_transaction_id)
+
+
+def _legacy_gateway_response():
+    return Response({"error": LEGACY_REMOVED_ERROR}, status=status.HTTP_410_GONE)
+
+
+class QRCodePaymentConfigView(APIView):
+    def get_permissions(self):
+        if self.request.method.lower() == "get":
+            return [IsAuthenticated()]
+        return [IsAdminUser()]
+
+    def get(self, request):
+        config = (
+            QRPaymentConfiguration.objects.filter(is_active=True)
+            .order_by("-updated_at", "-id")
+            .first()
+        )
+        return Response(_build_qr_config_payload(config))
+
+    def patch(self, request):
+        config = QRPaymentConfiguration.objects.order_by("-updated_at", "-id").first()
+        is_new = config is None
+        if config is None:
+            config = QRPaymentConfiguration(created_by=request.user)
+
+        editable_fields = [
+            "title",
+            "account_name",
+            "account_number",
+            "contact_email",
+            "contact_phone",
+            "qr_image_url",
+            "instructions",
+        ]
+        for field in editable_fields:
+            if field in request.data:
+                setattr(config, field, str(request.data.get(field) or "").strip())
+
+        if "is_active" in request.data:
+            config.is_active = _as_bool(request.data.get("is_active"), default=True)
+
+        config.updated_by = request.user
+        if not config.created_by_id:
+            config.created_by = request.user
+        config.save()
+
+        if config.is_active:
+            QRPaymentConfiguration.objects.exclude(id=config.id).update(is_active=False)
+
+        payload = _build_qr_config_payload(config)
+        http_status = status.HTTP_201_CREATED if is_new else status.HTTP_200_OK
+        return Response(payload, status=http_status)
+
+    def post(self, request):
+        return self.patch(request)
+
+
+class ManualPaymentRequestCreateView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
         exam_set, error_response = _get_exam_set_for_payment(request.data.get("exam_set_id"))
         if error_response:
             return error_response
+
+        if ExamPurchase.objects.filter(user=request.user, exam_set=exam_set).exists():
+            return Response(
+                {"error": "Exam set is already unlocked for your account."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         email, mobile_number, error_response = _validate_payment_profile(
             request.user,
@@ -162,257 +291,140 @@ class EsewaInitiatePayment(APIView):
         if error_response:
             return error_response
 
+        transaction_reference = str(
+            request.data.get("transaction_reference")
+            or request.data.get("gateway_reference")
+            or ""
+        ).strip()
+        if not transaction_reference:
+            return Response(
+                {"error": "transaction_reference is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        screenshot_url = str(request.data.get("payment_screenshot_url") or "").strip()
+        payer_note = str(request.data.get("payer_note") or "").strip()
+
+        existing_pending = (
+            PaymentTransaction.objects.filter(
+                user=request.user,
+                exam_set=exam_set,
+                gateway=MANUAL_QR_GATEWAY,
+                status="pending_approval",
+            )
+            .order_by("-created_at")
+            .first()
+        )
+        if existing_pending:
+            return Response(
+                {
+                    "error": "You already have a pending payment request for this exam set.",
+                    "request": _build_payment_request_payload(existing_pending),
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
         txn = PaymentTransaction.objects.create(
             user=request.user,
             exam_set=exam_set,
-            gateway="esewa",
+            gateway=MANUAL_QR_GATEWAY,
             amount=exam_set.fee,
             email=email,
             mobile_number=mobile_number,
-            status="initiated",
+            status="pending_approval",
+            gateway_reference=transaction_reference,
+            payer_note=payer_note,
+            payment_screenshot_url=screenshot_url,
+            raw_response={"source": "manual_qr"},
         )
-
-        try:
-            success_url = _build_callback_url("/api/payments/esewa/callback/", txn.reference_id)
-            failure_url = build_frontend_result_url(
-                "failed",
-                "esewa",
-                txn.reference_id,
-                exam_set_id=exam_set.id,
-                message="Payment was cancelled or failed.",
-            )
-            form_fields = create_esewa_form_payload(
-                reference_id=txn.reference_id,
-                total_amount=txn.amount,
-                success_url=success_url,
-                failure_url=failure_url,
-            )
-        except GatewayError as exc:
-            _mark_transaction_failed(txn, str(exc))
-            return Response({"error": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-
-        txn.gateway_reference = str(txn.reference_id)
-        txn.raw_response = {"request": form_fields}
-        txn.save(update_fields=["gateway_reference", "raw_response", "updated_at"])
 
         return Response(
             {
-                "gateway": "esewa",
-                "reference_id": str(txn.reference_id),
-                "payment_url": esewa_form_url(),
-                "method": "POST",
-                "form_fields": form_fields,
-            }
+                "message": "Payment request submitted. Please wait for admin approval.",
+                "request": _build_payment_request_payload(txn),
+            },
+            status=status.HTTP_201_CREATED,
         )
 
 
-class KhaltiInitiatePayment(APIView):
+class ManualPaymentRequestListView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def post(self, request):
-        exam_set, error_response = _get_exam_set_for_payment(request.data.get("exam_set_id"))
-        if error_response:
-            return error_response
-
-        email, mobile_number, error_response = _validate_payment_profile(
-            request.user,
-            request.data.get("email"),
-            request.data.get("mobile_number") or request.data.get("mobile"),
+    def get(self, request):
+        status_filter = str(request.query_params.get("status") or "").strip().lower()
+        queryset = PaymentTransaction.objects.filter(user=request.user, gateway=MANUAL_QR_GATEWAY).select_related(
+            "exam_set", "user", "reviewed_by"
         )
-        if error_response:
-            return error_response
+        if status_filter and status_filter != "all":
+            queryset = queryset.filter(status=status_filter)
+        rows = [_build_payment_request_payload(txn) for txn in queryset.order_by("-created_at")]
+        return Response(rows)
 
-        txn = PaymentTransaction.objects.create(
-            user=request.user,
-            exam_set=exam_set,
-            gateway="khalti",
-            amount=exam_set.fee,
-            email=email,
-            mobile_number=mobile_number,
-            status="initiated",
+
+class ManualPaymentRequestAdminListView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        status_filter = str(request.query_params.get("status") or "pending_approval").strip().lower()
+        queryset = PaymentTransaction.objects.filter(gateway=MANUAL_QR_GATEWAY).select_related(
+            "exam_set", "user", "reviewed_by"
         )
+        if status_filter and status_filter != "all":
+            queryset = queryset.filter(status=status_filter)
+        rows = [_build_payment_request_payload(txn) for txn in queryset.order_by("-created_at")]
+        return Response(rows)
 
-        try:
-            return_url = _build_callback_url("/api/payments/khalti/callback/", txn.reference_id)
-            payload = khalti_initiate(
-                amount_npr=txn.amount,
-                reference_id=txn.reference_id,
-                return_url=return_url,
-                website_url=settings.FRONTEND_PUBLIC_URL,
-                purchase_name=exam_set.name,
-                email=email,
-                mobile_number=mobile_number,
-                full_name=getattr(request.user, "full_name", "") or request.user.username,
+
+class ManualPaymentRequestAdminReviewView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def post(self, request, reference_id):
+        txn = (
+            PaymentTransaction.objects.filter(reference_id=reference_id, gateway=MANUAL_QR_GATEWAY)
+            .select_related("exam_set", "user", "reviewed_by")
+            .first()
+        )
+        if not txn:
+            return Response({"error": "Payment request not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        if txn.status in {"approved", "rejected"}:
+            return Response(
+                {"error": f"Payment request is already {txn.status}."},
+                status=status.HTTP_400_BAD_REQUEST,
             )
-        except GatewayError as exc:
-            _mark_transaction_failed(txn, str(exc))
-            return Response({"error": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
-        txn.gateway_reference = str(payload.get("pidx", ""))
-        txn.raw_response = payload
-        txn.save(update_fields=["gateway_reference", "raw_response", "updated_at"])
+        action = str(request.data.get("action") or "").strip().lower()
+        admin_note = str(request.data.get("admin_note") or "").strip()
+        gateway_tx_id = str(request.data.get("gateway_transaction_id") or "").strip()
 
+        if action not in {"approve", "reject"}:
+            return Response(
+                {"error": "action must be either 'approve' or 'reject'"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if action == "approve":
+            purchase = _mark_request_approved(
+                txn,
+                reviewer=request.user,
+                admin_note=admin_note,
+                gateway_tx_id=gateway_tx_id,
+            )
+            return Response(
+                {
+                    "message": "Payment approved and exam unlocked.",
+                    "purchase_id": purchase.id,
+                    "request": _build_payment_request_payload(txn),
+                }
+            )
+
+        _mark_request_rejected(txn, reviewer=request.user, admin_note=admin_note)
         return Response(
             {
-                "gateway": "khalti",
-                "reference_id": str(txn.reference_id),
-                "gateway_reference": txn.gateway_reference,
-                "payment_url": payload.get("payment_url", ""),
-                "method": "GET",
+                "message": "Payment request rejected.",
+                "request": _build_payment_request_payload(txn),
             }
         )
-
-
-class EsewaCallbackView(APIView):
-    permission_classes = [AllowAny]
-
-    def get(self, request):
-        reference_id = request.query_params.get("ref")
-        encoded_data = request.query_params.get("data")
-
-        if not reference_id:
-            return Response({"error": "Missing reference id"}, status=status.HTTP_400_BAD_REQUEST)
-
-        txn = PaymentTransaction.objects.filter(reference_id=reference_id, gateway="esewa").first()
-        if not txn:
-            return Response({"error": "Transaction not found"}, status=status.HTTP_404_NOT_FOUND)
-
-        if txn.status == "success":
-            target = build_frontend_result_url("success", "esewa", txn.reference_id, txn.exam_set_id)
-            return redirect(target)
-
-        if not encoded_data:
-            _mark_transaction_failed(txn, "Missing callback payload")
-            target = build_frontend_result_url(
-                "failed",
-                "esewa",
-                txn.reference_id,
-                txn.exam_set_id,
-                message="Missing callback payload",
-            )
-            return redirect(target)
-
-        try:
-            callback_payload = decode_esewa_callback_data(encoded_data)
-            verify_esewa_callback_signature(callback_payload)
-            status_payload = check_esewa_status(txn.reference_id, txn.amount)
-        except GatewayError as exc:
-            _mark_transaction_failed(txn, str(exc), raw_payload={"callback": encoded_data})
-            target = build_frontend_result_url(
-                "failed",
-                "esewa",
-                txn.reference_id,
-                txn.exam_set_id,
-                message=str(exc),
-            )
-            return redirect(target)
-
-        transaction_status = str(status_payload.get("status", "")).lower()
-        if transaction_status in SUCCESS_STATUSES:
-            gateway_tx = str(
-                status_payload.get("transaction_code")
-                or callback_payload.get("transaction_code")
-                or ""
-            )
-            _mark_transaction_success(
-                txn,
-                gateway_transaction_id=gateway_tx,
-                raw_payload={"callback": callback_payload, "status": status_payload},
-            )
-            target = build_frontend_result_url("success", "esewa", txn.reference_id, txn.exam_set_id)
-            return redirect(target)
-
-        _mark_transaction_failed(
-            txn,
-            f"eSewa payment status: {status_payload.get('status', 'unknown')}",
-            raw_payload={"callback": callback_payload, "status": status_payload},
-        )
-        target = build_frontend_result_url(
-            "failed",
-            "esewa",
-            txn.reference_id,
-            txn.exam_set_id,
-            message=f"eSewa status: {status_payload.get('status', 'unknown')}",
-        )
-        return redirect(target)
-
-
-class KhaltiCallbackView(APIView):
-    permission_classes = [AllowAny]
-
-    def get(self, request):
-        reference_id = request.query_params.get("ref")
-        pidx = request.query_params.get("pidx")
-
-        if not reference_id:
-            return Response({"error": "Missing reference id"}, status=status.HTTP_400_BAD_REQUEST)
-
-        txn = PaymentTransaction.objects.filter(reference_id=reference_id, gateway="khalti").first()
-        if not txn:
-            return Response({"error": "Transaction not found"}, status=status.HTTP_404_NOT_FOUND)
-
-        if txn.status == "success":
-            target = build_frontend_result_url("success", "khalti", txn.reference_id, txn.exam_set_id)
-            return redirect(target)
-
-        if not pidx:
-            _mark_transaction_failed(txn, "Missing pidx in callback")
-            target = build_frontend_result_url(
-                "failed",
-                "khalti",
-                txn.reference_id,
-                txn.exam_set_id,
-                message="Missing pidx in callback",
-            )
-            return redirect(target)
-
-        try:
-            lookup_payload = khalti_lookup(pidx)
-        except GatewayError as exc:
-            _mark_transaction_failed(txn, str(exc), raw_payload={"pidx": pidx})
-            target = build_frontend_result_url(
-                "failed",
-                "khalti",
-                txn.reference_id,
-                txn.exam_set_id,
-                message=str(exc),
-            )
-            return redirect(target)
-
-        lookup_status = str(lookup_payload.get("status", "")).lower()
-        lookup_amount_paisa = lookup_payload.get("total_amount") or lookup_payload.get("amount")
-        expected_amount_paisa = int((txn.amount * Decimal("100")).quantize(Decimal("1")))
-
-        if lookup_status in SUCCESS_STATUSES and int(lookup_amount_paisa or 0) >= expected_amount_paisa:
-            gateway_tx = str(
-                lookup_payload.get("transaction_id")
-                or request.query_params.get("transaction_id")
-                or request.query_params.get("tidx")
-                or ""
-            )
-            txn.gateway_reference = str(pidx)
-            txn.save(update_fields=["gateway_reference", "updated_at"])
-            _mark_transaction_success(
-                txn,
-                gateway_transaction_id=gateway_tx,
-                raw_payload={"callback": dict(request.query_params), "lookup": lookup_payload},
-            )
-            target = build_frontend_result_url("success", "khalti", txn.reference_id, txn.exam_set_id)
-            return redirect(target)
-
-        _mark_transaction_failed(
-            txn,
-            f"Khalti payment status: {lookup_payload.get('status', 'unknown')}",
-            raw_payload={"callback": dict(request.query_params), "lookup": lookup_payload},
-        )
-        target = build_frontend_result_url(
-            "failed",
-            "khalti",
-            txn.reference_id,
-            txn.exam_set_id,
-            message=f"Khalti status: {lookup_payload.get('status', 'unknown')}",
-        )
-        return redirect(target)
 
 
 class PaymentStatusView(APIView):
@@ -423,73 +435,80 @@ class PaymentStatusView(APIView):
         if not reference_id:
             return Response({"error": "reference_id is required"}, status=status.HTTP_400_BAD_REQUEST)
 
-        txn = PaymentTransaction.objects.filter(reference_id=reference_id, user=request.user).first()
+        txn = (
+            PaymentTransaction.objects.filter(reference_id=reference_id, user=request.user)
+            .select_related("exam_set", "user", "reviewed_by")
+            .first()
+        )
         if not txn:
             return Response({"error": "Transaction not found"}, status=status.HTTP_404_NOT_FOUND)
-
-        return Response(
-            {
-                "reference_id": str(txn.reference_id),
-                "gateway": txn.gateway,
-                "status": txn.status,
-                "exam_set_id": txn.exam_set_id,
-                "amount": str(txn.amount),
-                "verified_at": txn.verified_at,
-                "error_message": txn.error_message,
-            }
-        )
+        return Response(_build_payment_request_payload(txn))
 
 
 class VerifyPayment(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        if settings.ALLOW_INSECURE_PAYMENT_VERIFICATION:
-            exam_set_id = request.data.get("exam_set_id")
+        if request.data.get("gateway") == MANUAL_QR_GATEWAY:
+            exam_set, error_response = _get_exam_set_for_payment(request.data.get("exam_set_id"))
+            if error_response:
+                return error_response
+
             amount = _parse_amount(request.data.get("amount"))
-            if not exam_set_id or amount is None:
-                return Response({"error": "exam_set_id and valid amount are required"}, status=status.HTTP_400_BAD_REQUEST)
-            try:
-                exam_set = ExamSet.objects.get(id=exam_set_id, is_active=True)
-            except ExamSet.DoesNotExist:
-                return Response({"error": "Exam set not found"}, status=status.HTTP_404_NOT_FOUND)
-            if amount < exam_set.fee:
-                return Response({"error": "Amount is less than required fee."}, status=status.HTTP_400_BAD_REQUEST)
+            if amount is None:
+                amount = exam_set.fee
 
             purchase = _create_or_get_purchase(
                 PaymentTransaction(
                     user=request.user,
                     exam_set=exam_set,
-                    gateway=(request.data.get("gateway") or "manual").lower(),
+                    gateway=MANUAL_QR_GATEWAY,
                     amount=amount,
                 ),
-                gateway_tx_id=str(request.data.get("transaction_id") or "manual"),
+                gateway_tx_id=str(request.data.get("transaction_id") or ""),
             )
             return Response({"status": "verified", "purchase_id": purchase.id})
 
-        return Response(
-            {
-                "error": "Manual verification disabled. Use /payments/esewa/initiate/ or /payments/khalti/initiate/."
-            },
-            status=status.HTTP_410_GONE,
-        )
+        return _legacy_gateway_response()
+
+
+class EsewaInitiatePayment(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        return _legacy_gateway_response()
+
+
+class KhaltiInitiatePayment(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        return _legacy_gateway_response()
+
+
+class EsewaCallbackView(APIView):
+    permission_classes = []
+
+    def get(self, request):
+        return _legacy_gateway_response()
+
+
+class KhaltiCallbackView(APIView):
+    permission_classes = []
+
+    def get(self, request):
+        return _legacy_gateway_response()
 
 
 class EsewaVerify(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        return Response(
-            {"error": "Deprecated endpoint. Use /payments/esewa/initiate/."},
-            status=status.HTTP_410_GONE,
-        )
+        return _legacy_gateway_response()
 
 
 class KhaltiVerify(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        return Response(
-            {"error": "Deprecated endpoint. Use /payments/khalti/initiate/."},
-            status=status.HTTP_410_GONE,
-        )
+        return _legacy_gateway_response()
