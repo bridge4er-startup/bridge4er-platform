@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.db import IntegrityError, connection
 from django.db.models import Avg
 from django.utils import timezone
 from rest_framework import status
@@ -26,6 +27,32 @@ def _build_tokens_for_user(user):
         "refresh": str(refresh),
         "access": str(refresh.access_token),
     }
+
+
+def _is_duplicate_user_pk_error(exc):
+    message = str(exc or "").lower()
+    return (
+        "duplicate key value violates unique constraint" in message
+        and "key (id)=" in message
+    )
+
+
+def _realign_user_id_sequence():
+    if connection.vendor != "postgresql":
+        return
+    table_name = User._meta.db_table
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT setval(
+                pg_get_serial_sequence(%s, 'id'),
+                COALESCE(MAX(id), 1),
+                true
+            )
+            FROM {table_name}
+            """,
+            [table_name],
+        )
 
 
 def _match_referral_for_user(user):
@@ -57,16 +84,24 @@ class RegisterView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        user = User.objects.create_user(
-            username=data["username"],
-            email=data["email"],
-            password=data["password"],
-            full_name=data["full_name"].strip(),
-            mobile_number=data["mobile_number"],
-            field_of_study=data["field_of_study"],
-            is_student=True,
-            is_mobile_verified=False,
-        )
+        create_payload = {
+            "username": data["username"],
+            "email": data["email"],
+            "password": data["password"],
+            "full_name": data["full_name"].strip(),
+            "mobile_number": data["mobile_number"],
+            "field_of_study": data["field_of_study"],
+            "is_student": True,
+            "is_mobile_verified": False,
+        }
+
+        try:
+            user = User.objects.create_user(**create_payload)
+        except IntegrityError as exc:
+            if not _is_duplicate_user_pk_error(exc):
+                raise
+            _realign_user_id_sequence()
+            user = User.objects.create_user(**create_payload)
 
         _match_referral_for_user(user)
 

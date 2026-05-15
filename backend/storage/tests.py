@@ -1,5 +1,6 @@
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
+from storage import dropbox_service
 from storage.models import FileMetadata, FolderMetadata
 from storage.views import (
     _filter_files_by_visibility,
@@ -147,3 +148,21 @@ class FolderMetadataSyncTests(TestCase):
         self.assertEqual(len(without_dirs), 1)
         self.assertFalse(without_dirs[0]["is_dir"])
         self.assertEqual(without_dirs[0]["path"], file_path)
+
+
+class SupabasePathNormalizationTests(TestCase):
+    @override_settings(SUPABASE_STORAGE_ROOT_PREFIX="bridge4er")
+    def test_candidate_keys_support_rooted_and_rootless_paths(self):
+        keys = dropbox_service._supabase_candidate_keys_from_app_path(
+            "/bridge4er/Civil Engineering/Notice"
+        )
+        self.assertIn("bridge4er/Civil Engineering/Notice", keys)
+        self.assertIn("Civil Engineering/Notice", keys)
+
+    @override_settings(SUPABASE_STORAGE_ROOT_PREFIX="bridge4er")
+    def test_app_path_from_key_does_not_duplicate_root_prefix(self):
+        rooted = dropbox_service._app_path_from_supabase_key("bridge4er/Civil Engineering/Notice/file.pdf")
+        rootless = dropbox_service._app_path_from_supabase_key("Civil Engineering/Notice/file.pdf")
+
+        self.assertEqual(rooted, "/bridge4er/Civil Engineering/Notice/file.pdf")
+        self.assertEqual(rootless, "/bridge4er/Civil Engineering/Notice/file.pdf")

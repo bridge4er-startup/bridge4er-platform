@@ -12,22 +12,44 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
 
-def env_bool(name, default=False):
+def _clean_env_value(raw):
+    if raw is None:
+        return None
+    value = str(raw).replace("\ufeff", "")
+    value = value.replace("\\r", "").replace("\\n", "")
+    value = value.replace("\r", "").replace("\n", "")
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+        value = value[1:-1].strip()
+    return value
+
+
+def env_text(name, default=""):
     raw = os.getenv(name)
+    if raw is None:
+        return default
+    cleaned = _clean_env_value(raw)
+    if cleaned is None:
+        return default
+    return cleaned
+
+
+def env_bool(name, default=False):
+    raw = env_text(name, None)
     if raw is None:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def env_list(name, default=""):
-    raw = os.getenv(name, default)
+    raw = env_text(name, default)
     if not raw:
         return []
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
 def env_int(name, default=0, minimum=None):
-    raw = os.getenv(name)
+    raw = env_text(name, None)
     if raw is None:
         value = default
     else:
@@ -41,7 +63,7 @@ def env_int(name, default=0, minimum=None):
 
 
 def build_database_config():
-    database_url = os.getenv("DATABASE_URL", "").strip()
+    database_url = env_text("DATABASE_URL", "").strip()
     default_sqlite_path = BASE_DIR.parent / "db.sqlite3"
     if not database_url:
         return {
@@ -82,7 +104,7 @@ def build_database_config():
 DEBUG = env_bool("DEBUG", False)
 
 _DEFAULT_SECRET_KEY = "bridge4er-platform-dev-secret-key-0123456789"
-SECRET_KEY = os.getenv("SECRET_KEY")
+SECRET_KEY = env_text("SECRET_KEY", "")
 if not SECRET_KEY:
     if DEBUG:
         SECRET_KEY = _DEFAULT_SECRET_KEY
@@ -100,20 +122,20 @@ if not DEBUG and not ALLOWED_HOSTS:
     raise RuntimeError("ALLOWED_HOSTS is required when DEBUG is False.")
 
 # Dropbox
-DROPBOX_ACCESS_TOKEN = os.getenv("DROPBOX_ACCESS_TOKEN")
-DROPBOX_REFRESH_TOKEN = os.getenv("DROPBOX_REFRESH_TOKEN", "")
-DROPBOX_APP_KEY = os.getenv("DROPBOX_APP_KEY", "")
-DROPBOX_APP_SECRET = os.getenv("DROPBOX_APP_SECRET", "")
+DROPBOX_ACCESS_TOKEN = env_text("DROPBOX_ACCESS_TOKEN", "")
+DROPBOX_REFRESH_TOKEN = env_text("DROPBOX_REFRESH_TOKEN", "")
+DROPBOX_APP_KEY = env_text("DROPBOX_APP_KEY", "")
+DROPBOX_APP_SECRET = env_text("DROPBOX_APP_SECRET", "")
 
 # Storage provider
-STORAGE_PROVIDER = (os.getenv("STORAGE_PROVIDER", "dropbox") or "dropbox").strip().lower() or "dropbox"
-SUPABASE_URL = (os.getenv("SUPABASE_URL", "") or "").strip().rstrip("/")
-SUPABASE_STORAGE_BUCKET = (os.getenv("SUPABASE_STORAGE_BUCKET", "bridge4ER") or "bridge4ER").strip() or "bridge4ER"
+STORAGE_PROVIDER = (env_text("STORAGE_PROVIDER", "dropbox") or "dropbox").strip().lower() or "dropbox"
+SUPABASE_URL = (env_text("SUPABASE_URL", "") or "").strip().rstrip("/")
+SUPABASE_STORAGE_BUCKET = (env_text("SUPABASE_STORAGE_BUCKET", "bridge4ER") or "bridge4ER").strip() or "bridge4ER"
 SUPABASE_STORAGE_ROOT_PREFIX = (
-    (os.getenv("SUPABASE_STORAGE_ROOT_PREFIX", "bridge4er") or "bridge4er").strip() or "bridge4er"
+    (env_text("SUPABASE_STORAGE_ROOT_PREFIX", "bridge4er") or "bridge4er").strip() or "bridge4er"
 )
 SUPABASE_STORAGE_PUBLIC = env_bool("SUPABASE_STORAGE_PUBLIC", False)
-SUPABASE_SERVICE_ROLE_KEY = (os.getenv("SUPABASE_SERVICE_ROLE_KEY", "") or "").strip()
+SUPABASE_SERVICE_ROLE_KEY = (env_text("SUPABASE_SERVICE_ROLE_KEY", "") or "").strip()
 SUPABASE_SIGNED_URL_TTL_SECONDS = env_int("SUPABASE_SIGNED_URL_TTL_SECONDS", 3600, minimum=60)
 SUPABASE_REQUEST_TIMEOUT_SECONDS = env_int("SUPABASE_REQUEST_TIMEOUT_SECONDS", 45, minimum=5)
 
@@ -181,10 +203,10 @@ WSGI_APPLICATION = "bridge4er.wsgi.application"
 DATABASES = {"default": build_database_config()}
 
 # Cache (shared across gunicorn workers when using Redis/file-based cache)
-REDIS_URL = os.getenv("REDIS_URL", "").strip()
-CACHE_BACKEND = os.getenv("CACHE_BACKEND", "").strip()
-CACHE_LOCATION = os.getenv("CACHE_LOCATION", "").strip()
-CACHE_KEY_PREFIX = os.getenv("CACHE_KEY_PREFIX", "bridge4er")
+CACHE_BACKEND = env_text("CACHE_BACKEND", "").strip()
+CACHE_LOCATION = env_text("CACHE_LOCATION", "").strip()
+CACHE_KEY_PREFIX = env_text("CACHE_KEY_PREFIX", "bridge4er")
+REDIS_URL = env_text("REDIS_URL", "").strip()
 
 if not CACHE_BACKEND:
     if REDIS_URL:
@@ -271,12 +293,12 @@ USE_X_FORWARDED_HOST = env_bool("USE_X_FORWARDED_HOST", True)
 SECURE_SSL_REDIRECT = env_bool("SECURE_SSL_REDIRECT", not DEBUG)
 SESSION_COOKIE_SECURE = env_bool("SESSION_COOKIE_SECURE", not DEBUG)
 CSRF_COOKIE_SECURE = env_bool("CSRF_COOKIE_SECURE", not DEBUG)
-SECURE_HSTS_SECONDS = int(os.getenv("SECURE_HSTS_SECONDS", "31536000" if not DEBUG else "0"))
+SECURE_HSTS_SECONDS = int(env_text("SECURE_HSTS_SECONDS", "31536000" if not DEBUG else "0"))
 SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool("SECURE_HSTS_INCLUDE_SUBDOMAINS", not DEBUG)
 SECURE_HSTS_PRELOAD = env_bool("SECURE_HSTS_PRELOAD", not DEBUG)
 SECURE_CONTENT_TYPE_NOSNIFF = env_bool("SECURE_CONTENT_TYPE_NOSNIFF", True)
-SECURE_REFERRER_POLICY = os.getenv("SECURE_REFERRER_POLICY", "same-origin")
-X_FRAME_OPTIONS = os.getenv("X_FRAME_OPTIONS", "DENY")
+SECURE_REFERRER_POLICY = env_text("SECURE_REFERRER_POLICY", "same-origin")
+X_FRAME_OPTIONS = env_text("X_FRAME_OPTIONS", "DENY")
 
 # App behavior toggles
 ALLOW_INSECURE_PAYMENT_VERIFICATION = env_bool("ALLOW_INSECURE_PAYMENT_VERIFICATION", DEBUG)
@@ -302,23 +324,23 @@ DROPBOX_OBJECTIVE_COUNT_CACHE_STALE_TTL_SECONDS = env_int(
 )
 
 # Public URLs used in API responses
-FRONTEND_PUBLIC_URL = os.getenv("FRONTEND_PUBLIC_URL", "http://localhost:3000").rstrip("/")
-BACKEND_PUBLIC_URL = os.getenv("BACKEND_PUBLIC_URL", "http://127.0.0.1:8000").rstrip("/")
+FRONTEND_PUBLIC_URL = env_text("FRONTEND_PUBLIC_URL", "http://localhost:3000").rstrip("/")
+BACKEND_PUBLIC_URL = env_text("BACKEND_PUBLIC_URL", "http://127.0.0.1:8000").rstrip("/")
 
 # Email settings for notifications
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "bridge4er@gmail.com")
-ADMIN_ALERT_EMAIL = os.getenv("ADMIN_ALERT_EMAIL", "")
+DEFAULT_FROM_EMAIL = env_text("DEFAULT_FROM_EMAIL", "bridge4er@gmail.com")
+ADMIN_ALERT_EMAIL = env_text("ADMIN_ALERT_EMAIL", "")
 EMAIL_HOST_PASSWORD = (
-    os.getenv("EMAIL_HOST_PASSWORD", "").strip()
-    or os.getenv("GMAIL_APP_PASSWORD", "").strip()
-    or os.getenv("GOOGLE_APP_PASSWORD", "").strip()
+    env_text("EMAIL_HOST_PASSWORD", "").strip()
+    or env_text("GMAIL_APP_PASSWORD", "").strip()
+    or env_text("GOOGLE_APP_PASSWORD", "").strip()
 )
-EMAIL_BACKEND = os.getenv(
+EMAIL_BACKEND = env_text(
     "EMAIL_BACKEND",
     "django.core.mail.backends.console.EmailBackend" if DEBUG else "django.core.mail.backends.smtp.EmailBackend",
 )
-EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com").strip()
+EMAIL_HOST = env_text("EMAIL_HOST", "smtp.gmail.com").strip()
 EMAIL_PORT = env_int("EMAIL_PORT", 587, minimum=1)
 EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", True)
-EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", DEFAULT_FROM_EMAIL).strip()
+EMAIL_HOST_USER = env_text("EMAIL_HOST_USER", DEFAULT_FROM_EMAIL).strip()
 EMAIL_TIMEOUT_SECONDS = env_int("EMAIL_TIMEOUT_SECONDS", 8, minimum=1)

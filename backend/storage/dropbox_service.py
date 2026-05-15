@@ -75,24 +75,66 @@ def _supabase_timeout_seconds():
         return 45
 
 
-def _supabase_key_from_app_path(path):
+def _normalize_key(key):
+    return str(key or "").strip().replace("\\", "/").strip("/")
+
+
+def _is_rooted_key(key):
+    normalized = _normalize_key(key)
+    if not normalized:
+        return False
+    root = _storage_root_segment().strip("/").lower()
+    if not root:
+        return False
+    lowered = normalized.lower()
+    return lowered == root or lowered.startswith(f"{root}/")
+
+
+def _supabase_candidate_keys_from_app_path(path):
     normalized = _normalize_path(path)
     if normalized in {"", "/"}:
-        return ""
+        return []
+
     segments = _path_segments(normalized)
     if not segments:
-        return ""
-    root_segment = _storage_root_segment().lower()
-    if segments and segments[0].lower() == root_segment:
-        segments = segments[1:]
-    return "/".join(segments)
+        return []
+
+    root_segment = _storage_root_segment().strip("/")
+    root_lower = root_segment.lower()
+    joined = "/".join(segments)
+    candidates = [joined]
+
+    if root_segment:
+        if segments[0].lower() == root_lower:
+            trimmed = "/".join(segments[1:])
+            if trimmed:
+                candidates.append(trimmed)
+        else:
+            candidates.append(f"{root_segment}/{joined}")
+
+    deduped = []
+    seen = set()
+    for candidate in candidates:
+        normalized_candidate = _normalize_key(candidate)
+        if not normalized_candidate or normalized_candidate in seen:
+            continue
+        deduped.append(normalized_candidate)
+        seen.add(normalized_candidate)
+    return deduped
+
+
+def _supabase_key_from_app_path(path):
+    candidates = _supabase_candidate_keys_from_app_path(path)
+    return candidates[0] if candidates else ""
 
 
 def _app_path_from_supabase_key(key):
-    normalized = str(key or "").strip().replace("\\", "/").strip("/")
+    normalized = _normalize_key(key)
     root_segment = _storage_root_segment().strip("/")
     if not normalized:
         return f"/{root_segment}"
+    if _is_rooted_key(normalized):
+        return f"/{normalized}"
     return f"/{root_segment}/{normalized}"
 
 
@@ -202,10 +244,85 @@ def _supabase_query_object_rows(prefix_key=""):
     return normalized_rows
 
 
+def _dedupe_rows_by_key(rows):
+    deduped = {}
+    for row in rows:
+        key = _normalize_key((row or {}).get("key"))
+        if not key:
+            continue
+        deduped[key] = {
+            **(row or {}),
+            "key": key,
+        }
+    return list(deduped.values())
+
+
+def _relative_for_prefix(key, prefix):
+    normalized_key = _normalize_key(key)
+    normalized_prefix = _normalize_key(prefix)
+    if normalized_prefix:
+        if normalized_key == normalized_prefix:
+            return ""
+        if normalized_key.startswith(f"{normalized_prefix}/"):
+            return normalized_key[len(normalized_prefix) + 1 :]
+        return None
+    return normalized_key
+
+
+def _matching_destination_key(source_key, destination_candidates):
+    normalized_source = _normalize_key(source_key)
+    normalized_candidates = [_normalize_key(item) for item in destination_candidates if _normalize_key(item)]
+    if not normalized_source or not normalized_candidates:
+        return ""
+    source_rooted = _is_rooted_key(normalized_source)
+    for candidate in normalized_candidates:
+        if _is_rooted_key(candidate) == source_rooted:
+            return candidate
+    return normalized_candidates[0]
+
+
+def _first_existing_key(candidates):
+    normalized_candidates = [_normalize_key(item) for item in candidates if _normalize_key(item)]
+    if not normalized_candidates:
+        return ""
+    with connection.cursor() as cursor:
+        for candidate in normalized_candidates:
+            cursor.execute(
+                """
+                SELECT 1
+                FROM storage.objects
+                WHERE bucket_id = %s AND name = %s
+                LIMIT 1
+                """,
+                [_supabase_bucket(), candidate],
+            )
+            if cursor.fetchone():
+                return candidate
+        for candidate in normalized_candidates:
+            like_value = f"{candidate}/%"
+            cursor.execute(
+                """
+                SELECT 1
+                FROM storage.objects
+                WHERE bucket_id = %s AND name LIKE %s
+                LIMIT 1
+                """,
+                [_supabase_bucket(), like_value],
+            )
+            if cursor.fetchone():
+                return candidate
+    return ""
+
+
 def _supabase_list_folder_with_metadata(path, include_dirs=True, recursive=False):
-    prefix_key = _supabase_key_from_app_path(path)
-    rows = _supabase_query_object_rows(prefix_key=prefix_key)
-    prefix = str(prefix_key or "").strip("/")
+    prefix_candidates = _supabase_candidate_keys_from_app_path(path)
+    if prefix_candidates:
+        rows = []
+        for prefix_key in prefix_candidates:
+            rows.extend(_supabase_query_object_rows(prefix_key=prefix_key))
+        rows = _dedupe_rows_by_key(rows)
+    else:
+        rows = _supabase_query_object_rows(prefix_key="")
     entries = []
     dir_seen = set()
 
@@ -223,13 +340,21 @@ def _supabase_list_folder_with_metadata(path, include_dirs=True, recursive=False
         )
 
     for row in rows:
-        key = row["key"]
-        if prefix:
-            if key == prefix:
-                relative = ""
-            elif key.startswith(f"{prefix}/"):
-                relative = key[len(prefix) + 1 :]
-            else:
+        key = _normalize_key(row.get("key"))
+        if not key:
+            continue
+
+        matched_prefix = ""
+        relative = None
+        if prefix_candidates:
+            for prefix_candidate in prefix_candidates:
+                candidate_relative = _relative_for_prefix(key, prefix_candidate)
+                if candidate_relative is None:
+                    continue
+                matched_prefix = _normalize_key(prefix_candidate)
+                relative = candidate_relative
+                break
+            if relative is None:
                 continue
         else:
             relative = key
@@ -253,14 +378,14 @@ def _supabase_list_folder_with_metadata(path, include_dirs=True, recursive=False
         if not recursive and len(segments) > 1:
             if include_dirs:
                 first_level = segments[0]
-                dir_key = f"{prefix}/{first_level}" if prefix else first_level
+                dir_key = f"{matched_prefix}/{first_level}" if matched_prefix else first_level
                 add_dir(dir_key)
             continue
 
         if include_dirs and recursive and len(segments) > 1:
             for depth in range(1, len(segments)):
                 sub_path = "/".join(segments[:depth])
-                dir_key = f"{prefix}/{sub_path}" if prefix else sub_path
+                dir_key = f"{matched_prefix}/{sub_path}" if matched_prefix else sub_path
                 add_dir(dir_key)
 
         entries.append(
@@ -306,66 +431,92 @@ def _supabase_create_signed_url(key, expires_in=None):
 
 
 def _supabase_download_file(path):
-    key = _supabase_key_from_app_path(path)
-    if not key:
+    candidate_keys = _supabase_candidate_keys_from_app_path(path)
+    if not candidate_keys:
         raise RuntimeError("Invalid storage path.")
 
     timeout = _supabase_timeout_seconds()
+    last_error = None
     if _supabase_bucket_is_public():
-        url = _supabase_object_public_url(key)
-        response = requests.get(url, timeout=timeout)
+        for key in candidate_keys:
+            try:
+                url = _supabase_object_public_url(key)
+                response = requests.get(url, timeout=timeout)
+                if response.status_code == 404:
+                    continue
+                response.raise_for_status()
+                return response.content
+            except Exception as exc:
+                last_error = exc
+                continue
     else:
-        signed_url = _supabase_create_signed_url(key, expires_in=120)
-        response = requests.get(signed_url, timeout=timeout)
-    response.raise_for_status()
-    return response.content
+        for key in candidate_keys:
+            try:
+                signed_url = _supabase_create_signed_url(key, expires_in=120)
+                response = requests.get(signed_url, timeout=timeout)
+                if response.status_code == 404:
+                    continue
+                response.raise_for_status()
+                return response.content
+            except Exception as exc:
+                last_error = exc
+                continue
+
+    if last_error:
+        raise last_error
+    raise RuntimeError("File not found in Supabase storage.")
 
 
 def _supabase_get_file_metadata(path):
-    key = _supabase_key_from_app_path(path)
-    if not key:
+    candidate_keys = _supabase_candidate_keys_from_app_path(path)
+    if not candidate_keys:
         return None
     with connection.cursor() as cursor:
-        cursor.execute(
-            """
-            SELECT name, metadata->>'size' AS size_text, updated_at
-            FROM storage.objects
-            WHERE bucket_id = %s AND name = %s
-            LIMIT 1
-            """,
-            [_supabase_bucket(), key],
-        )
-        row = cursor.fetchone()
-    if not row:
-        return None
-    return {
-        "name": str(row[0]).split("/")[-1],
-        "path": _app_path_from_supabase_key(row[0]),
-        "size": _coerce_size(row[1]),
-        "modified": row[2].isoformat() if row[2] else "",
-    }
+        for key in candidate_keys:
+            cursor.execute(
+                """
+                SELECT name, metadata->>'size' AS size_text, updated_at
+                FROM storage.objects
+                WHERE bucket_id = %s AND name = %s
+                LIMIT 1
+                """,
+                [_supabase_bucket(), key],
+            )
+            row = cursor.fetchone()
+            if not row:
+                continue
+            return {
+                "name": str(row[0]).split("/")[-1],
+                "path": _app_path_from_supabase_key(row[0]),
+                "size": _coerce_size(row[1]),
+                "modified": row[2].isoformat() if row[2] else "",
+            }
+    return None
 
 
 def _supabase_search_files(path, query):
     cleaned_query = str(query or "").strip().lower()
     if not cleaned_query:
         return []
-    prefix = _supabase_key_from_app_path(path)
+    prefix_candidates = _supabase_candidate_keys_from_app_path(path)
 
+    rows = []
     with connection.cursor() as cursor:
-        if prefix:
-            like_prefix = f"{prefix}/%"
-            cursor.execute(
-                """
-                SELECT name, metadata->>'size' AS size_text, updated_at
-                FROM storage.objects
-                WHERE bucket_id = %s
-                  AND (name = %s OR name LIKE %s)
-                  AND LOWER(name) LIKE %s
-                ORDER BY updated_at DESC NULLS LAST
-                """,
-                [_supabase_bucket(), prefix, like_prefix, f"%{cleaned_query}%"],
-            )
+        if prefix_candidates:
+            for prefix in prefix_candidates:
+                like_prefix = f"{prefix}/%"
+                cursor.execute(
+                    """
+                    SELECT name, metadata->>'size' AS size_text, updated_at
+                    FROM storage.objects
+                    WHERE bucket_id = %s
+                      AND (name = %s OR name LIKE %s)
+                      AND LOWER(name) LIKE %s
+                    ORDER BY updated_at DESC NULLS LAST
+                    """,
+                    [_supabase_bucket(), prefix, like_prefix, f"%{cleaned_query}%"],
+                )
+                rows.extend(cursor.fetchall())
         else:
             cursor.execute(
                 """
@@ -377,26 +528,32 @@ def _supabase_search_files(path, query):
                 """,
                 [_supabase_bucket(), f"%{cleaned_query}%"],
             )
-        rows = cursor.fetchall()
+            rows = cursor.fetchall()
 
-    entries = []
+    deduped_rows = {}
     for row in rows:
-        key = str(row[0] or "").strip()
+        key = _normalize_key(row[0] if row else "")
         if not key:
             continue
+        deduped_rows[key] = row
+
+    entries = []
+    for key, row in deduped_rows.items():
         entries.append(
             {
                 "name": key.split("/")[-1],
-                "path": _app_path_from_supabase_key(key),
+                "path": _app_path_from_supabase_key(row[0]),
                 "size": _coerce_size(row[1]),
                 "modified": row[2].isoformat() if row[2] else "",
             }
         )
+    entries.sort(key=lambda item: str(item.get("modified") or ""), reverse=True)
     return entries
 
 
 def _supabase_upload_file(path, file_obj):
-    key = _supabase_key_from_app_path(path)
+    candidate_keys = _supabase_candidate_keys_from_app_path(path)
+    key = candidate_keys[0] if candidate_keys else ""
     if not key:
         raise RuntimeError("Invalid upload path.")
     if not _supabase_url():
@@ -441,18 +598,24 @@ def _supabase_delete_object_key(object_key):
 
 
 def _supabase_delete_file(path):
-    key = _supabase_key_from_app_path(path)
-    if not key:
+    prefix_candidates = _supabase_candidate_keys_from_app_path(path)
+    if not prefix_candidates:
         raise RuntimeError("Invalid delete path.")
     if not _supabase_service_role_key():
         raise RuntimeError("SUPABASE_SERVICE_ROLE_KEY is required for delete operations.")
 
     # Delete one file, or all files under a prefix when the path is a folder.
-    rows = _supabase_query_object_rows(prefix_key=key)
-    candidate_keys = [row["key"] for row in rows]
-    if key not in candidate_keys:
-        candidate_keys.insert(0, key)
-    candidate_keys = sorted({item.strip("/") for item in candidate_keys if item})
+    candidate_keys = set()
+    for prefix_key in prefix_candidates:
+        rows = _supabase_query_object_rows(prefix_key=prefix_key)
+        for row in rows:
+            normalized_key = _normalize_key(row.get("key"))
+            if normalized_key:
+                candidate_keys.add(normalized_key)
+        normalized_prefix = _normalize_key(prefix_key)
+        if normalized_prefix:
+            candidate_keys.add(normalized_prefix)
+    candidate_keys = sorted(candidate_keys)
 
     deleted_any = False
     for item_key in candidate_keys:
@@ -482,33 +645,53 @@ def _supabase_move_object_key(source_key, destination_key):
 
 
 def _supabase_move_path(from_path, to_path):
-    from_key = _supabase_key_from_app_path(from_path).strip("/")
-    to_key = _supabase_key_from_app_path(to_path).strip("/")
-    if not from_key or not to_key:
+    from_candidates = _supabase_candidate_keys_from_app_path(from_path)
+    to_candidates = _supabase_candidate_keys_from_app_path(to_path)
+    if not from_candidates or not to_candidates:
         raise RuntimeError("Both source and destination paths are required.")
     if not _supabase_service_role_key():
         raise RuntimeError("SUPABASE_SERVICE_ROLE_KEY is required for move operations.")
 
+    from_key = _first_existing_key(from_candidates) or _normalize_key(from_candidates[0])
     rows = _supabase_query_object_rows(prefix_key=from_key)
-    if rows:
+    destination_root = _matching_destination_key(from_key, to_candidates)
+
+    if rows and destination_root:
         for row in rows:
-            source_key = str(row["key"]).strip("/")
+            source_key = _normalize_key(row.get("key"))
+            if not source_key:
+                continue
             if source_key == from_key:
-                destination_key = to_key
+                destination_key = destination_root
             elif source_key.startswith(f"{from_key}/"):
                 suffix = source_key[len(from_key) + 1 :]
-                destination_key = f"{to_key}/{suffix}" if suffix else to_key
+                destination_key = f"{destination_root}/{suffix}" if suffix else destination_root
             else:
                 continue
             _supabase_move_object_key(source_key, destination_key)
         return True
 
-    _supabase_move_object_key(from_key, to_key)
-    return True
+    last_error = None
+    for source_key in from_candidates:
+        normalized_source = _normalize_key(source_key)
+        destination_key = _matching_destination_key(normalized_source, to_candidates)
+        if not normalized_source or not destination_key:
+            continue
+        try:
+            _supabase_move_object_key(normalized_source, destination_key)
+            return True
+        except Exception as exc:
+            last_error = exc
+            continue
+
+    if last_error:
+        raise last_error
+    raise RuntimeError("Unable to move source path in Supabase storage.")
 
 
 def _supabase_get_shareable_link(path):
-    key = _supabase_key_from_app_path(path)
+    candidate_keys = _supabase_candidate_keys_from_app_path(path)
+    key = _first_existing_key(candidate_keys) or (candidate_keys[0] if candidate_keys else "")
     if not key:
         raise RuntimeError("Invalid storage path.")
     if _supabase_bucket_is_public():
@@ -520,7 +703,11 @@ def _supabase_get_shareable_link(path):
 # Dropbox implementation
 # -----------------------------
 
-_use_env_proxy = str(os.getenv("DROPBOX_USE_ENV_PROXY", "0")).lower() in {"1", "true", "yes"}
+_use_env_proxy_raw = str(os.getenv("DROPBOX_USE_ENV_PROXY", "0") or "0")
+_use_env_proxy = (
+    _use_env_proxy_raw.replace("\\r", "").replace("\\n", "").replace("\r", "").replace("\n", "").strip().lower()
+    in {"1", "true", "yes"}
+)
 _session = requests.Session()
 if not _use_env_proxy:
     # Ignore broken machine-level proxy variables unless explicitly enabled.

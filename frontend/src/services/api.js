@@ -3,7 +3,35 @@ import axios from "axios";
 export const ACCESS_TOKEN_KEY = "bridge4er_access_token";
 export const REFRESH_TOKEN_KEY = "bridge4er_refresh_token";
 
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://127.0.0.1:8000/api/";
+const sanitizeEnvText = (value) => {
+  if (typeof value !== "string") {
+    return "";
+  }
+  const cleaned = value
+    .replace(/\\r/g, "")
+    .replace(/\\n/g, "")
+    .replace(/\r/g, "")
+    .replace(/\n/g, "")
+    .trim();
+  if (
+    (cleaned.startsWith('"') && cleaned.endsWith('"')) ||
+    (cleaned.startsWith("'") && cleaned.endsWith("'"))
+  ) {
+    return cleaned.slice(1, -1).trim();
+  }
+  return cleaned;
+};
+
+const ensureTrailingSlash = (value) => {
+  const cleaned = sanitizeEnvText(value);
+  if (!cleaned) {
+    return "";
+  }
+  return cleaned.endsWith("/") ? cleaned : `${cleaned}/`;
+};
+
+const API_BASE_URL =
+  ensureTrailingSlash(process.env.REACT_APP_API_BASE_URL) || "http://127.0.0.1:8000/api/";
 const RETRIABLE_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504, 520, 522, 524]);
 
 const parsePositiveInt = (value, fallback, minValue = 1) => {
