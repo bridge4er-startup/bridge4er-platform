@@ -108,14 +108,15 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
 
   const handleSelectSubject = async (subject) => {
     const subjectName = subject?.name || "";
+    const subjectToken = String(subject?.id ?? subjectName).trim();
     const displayName = subject?.display_name || subjectName;
-    setSelectedSubject(subjectName);
+    setSelectedSubject(subjectToken);
     setSelectedSubjectLabel(displayName);
     setSelectedChapter("");
     resetQuestionSession();
     setLoading(true);
     try {
-      const res = await cachedGet(`exams/subjects/${encodeURIComponent(subjectName)}/chapters/`, {
+      const res = await cachedGet(`exams/subjects/${encodeURIComponent(subjectToken)}/chapters/`, {
         params: { branch },
         persistCache: true,
       });
