@@ -11,6 +11,8 @@ from rest_framework.test import APIClient
 
 from .dropbox_sync import _sync_exam_set_type
 from .models import ExamPurchase, ExamSet, SubjectiveSubmission
+from .views_exam import _dropbox_auto_sync_enabled as exam_sync_enabled
+from .views_mcq import _dropbox_auto_sync_enabled as mcq_sync_enabled
 
 User = get_user_model()
 TEST_MEDIA_ROOT = os.path.join(os.getcwd(), "tmp_test_media")
@@ -87,6 +89,16 @@ class DropboxExamSetSyncTests(TestCase):
         stale_set.refresh_from_db()
         self.assertTrue(active_set.is_active)
         self.assertFalse(stale_set.is_active)
+
+
+class SupabaseAutoSyncToggleTests(TestCase):
+    @override_settings(STORAGE_PROVIDER="supabase", DROPBOX_AUTO_SYNC_ENABLED=False)
+    def test_mcq_sync_enabled_in_supabase_mode(self):
+        self.assertTrue(mcq_sync_enabled())
+
+    @override_settings(STORAGE_PROVIDER="supabase", DROPBOX_AUTO_SYNC_ENABLED=False)
+    def test_exam_sync_enabled_in_supabase_mode(self):
+        self.assertTrue(exam_sync_enabled())
 
     def test_sync_does_not_prune_when_errors_exist(self):
         branch = "Civil Engineering"

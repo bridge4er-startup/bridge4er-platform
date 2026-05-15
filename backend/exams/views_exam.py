@@ -135,7 +135,8 @@ AUTO_SYNC_COOLDOWN_SECONDS = _auto_sync_cooldown_seconds()
 
 
 def _dropbox_auto_sync_enabled():
-    return bool(getattr(settings, "DROPBOX_AUTO_SYNC_ENABLED", False))
+    provider = str(getattr(settings, "STORAGE_PROVIDER", "dropbox") or "dropbox").strip().lower()
+    return bool(getattr(settings, "DROPBOX_AUTO_SYNC_ENABLED", False)) or provider == "supabase"
 
 
 def _as_bool(value, default=False):
