@@ -5,7 +5,8 @@ import { discussionsService } from "../../services/discussionsService";
 import TimedLoadingState from "../common/TimedLoadingState";
 import { formatNepalDateTime } from "../../utils/dateTime";
 
-const POLL_INTERVAL_MS = 2200;
+const POLL_INTERVAL_MS = 5000;
+const AUTO_SCROLL_THRESHOLD_PX = 72;
 
 export default function DiscussionsSection({ branch = "Civil Engineering", isActive = false }) {
   const { user, isAdmin } = useAuth();
@@ -21,8 +22,9 @@ export default function DiscussionsSection({ branch = "Civil Engineering", isAct
   const [newClassroomDescription, setNewClassroomDescription] = useState("");
   const [deletingClassroomId, setDeletingClassroomId] = useState(null);
   const [deletingMessageId, setDeletingMessageId] = useState(null);
-  const [lastMessageId, setLastMessageId] = useState(0);
+  const lastMessageIdRef = useRef(0);
   const chatBodyRef = useRef(null);
+  const shouldAutoScrollRef = useRef(false);
 
   const selectedClassroom = useMemo(
     () => classrooms.find((item) => Number(item.id) === Number(selectedClassroomId)) || null,
@@ -35,6 +37,17 @@ export default function DiscussionsSection({ branch = "Civil Engineering", isAct
     node.scrollTop = node.scrollHeight;
   };
 
+  const isNearBottom = () => {
+    const node = chatBodyRef.current;
+    if (!node) return true;
+    const remaining = node.scrollHeight - node.scrollTop - node.clientHeight;
+    return remaining <= AUTO_SCROLL_THRESHOLD_PX;
+  };
+
+  const updateLastMessageId = (value) => {
+    lastMessageIdRef.current = Number(value || 0);
+  };
+
   const loadClassrooms = async () => {
     setLoadingClassrooms(true);
     try {
@@ -44,20 +57,20 @@ export default function DiscussionsSection({ branch = "Civil Engineering", isAct
       if (!list.length) {
         setSelectedClassroomId(null);
         setMessages([]);
-        setLastMessageId(0);
+        updateLastMessageId(0);
         return;
       }
       setSelectedClassroomId((current) => {
         const hasCurrent = list.some((item) => Number(item.id) === Number(current));
         if (hasCurrent) return current;
-        return list[0].id;
+        return null;
       });
     } catch (error) {
       toast.error(error?.response?.data?.error || "Failed to load classrooms.");
       setClassrooms([]);
       setSelectedClassroomId(null);
       setMessages([]);
-      setLastMessageId(0);
+      updateLastMessageId(0);
     } finally {
       setLoadingClassrooms(false);
     }
@@ -69,15 +82,17 @@ export default function DiscussionsSection({ branch = "Civil Engineering", isAct
       setLoadingMessages(true);
     }
     try {
-      const sinceId = reset ? 0 : lastMessageId;
+      const sinceId = reset ? 0 : Number(lastMessageIdRef.current || 0);
       const payload = await discussionsService.listMessages(classroomId, sinceId, 140);
       const incoming = Array.isArray(payload?.messages) ? payload.messages : [];
-      setLastMessageId(Number(payload?.last_message_id || lastMessageId || 0));
+      updateLastMessageId(Math.max(Number(lastMessageIdRef.current || 0), Number(payload?.last_message_id || 0)));
       if (reset) {
         setMessages(incoming);
+        shouldAutoScrollRef.current = true;
         return;
       }
       if (!incoming.length) return;
+      const keepPinnedToBottom = isNearBottom();
       setMessages((previous) => {
         const known = new Set(previous.map((item) => Number(item.id)));
         const nextRows = [...previous];
@@ -87,6 +102,9 @@ export default function DiscussionsSection({ branch = "Civil Engineering", isAct
         });
         return nextRows;
       });
+      if (keepPinnedToBottom) {
+        shouldAutoScrollRef.current = true;
+      }
     } catch (_error) {
       if (reset) {
         toast.error("Unable to load discussion messages.");
@@ -114,16 +132,29 @@ export default function DiscussionsSection({ branch = "Civil Engineering", isAct
       loadMessages(selectedClassroomId, false).catch(() => {});
     }, POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [isActive, selectedClassroomId, lastMessageId]);
+  }, [isActive, selectedClassroomId]);
 
   useEffect(() => {
-    if (!isActive) return;
-    scrollToBottom();
+    if (!isActive || !selectedClassroomId) return;
+    if (shouldAutoScrollRef.current) {
+      scrollToBottom();
+      shouldAutoScrollRef.current = false;
+    }
   }, [messages, isActive]);
+
+  useEffect(() => {
+    if (selectedClassroomId) return;
+    setMessages([]);
+    updateLastMessageId(0);
+  }, [selectedClassroomId]);
 
   const handleSend = async () => {
     const classroomId = Number(selectedClassroomId || 0);
-    if (!classroomId || sendingMessage) return;
+    if (!classroomId) {
+      toast.error("Select a classroom first.");
+      return;
+    }
+    if (sendingMessage) return;
     const raw = String(messageText || "").trim();
     if (!raw) return;
     const text = raw.slice(0, 1000);
@@ -131,7 +162,8 @@ export default function DiscussionsSection({ branch = "Civil Engineering", isAct
     try {
       const created = await discussionsService.sendMessage(classroomId, text);
       setMessages((previous) => [...previous, created]);
-      setLastMessageId((current) => Math.max(Number(current || 0), Number(created?.id || 0)));
+      updateLastMessageId(Math.max(Number(lastMessageIdRef.current || 0), Number(created?.id || 0)));
+      shouldAutoScrollRef.current = true;
       setMessageText("");
     } catch (error) {
       toast.error(error?.response?.data?.error || "Message failed to send.");
@@ -201,23 +233,25 @@ export default function DiscussionsSection({ branch = "Civil Engineering", isAct
       </h2>
       <p>Choose a classroom and discuss live in text-only group chat.</p>
 
-      <div className="discussion-admin-panel">
-        <input
-          type="text"
-          placeholder="New classroom name (e.g., PSC, M.Sc., NEA Entrance)"
-          value={newClassroomName}
-          onChange={(event) => setNewClassroomName(event.target.value)}
-        />
-        <input
-          type="text"
-          placeholder="Short description (optional)"
-          value={newClassroomDescription}
-          onChange={(event) => setNewClassroomDescription(event.target.value)}
-        />
-        <button className="btn btn-secondary" type="button" onClick={handleCreateClassroom} disabled={creatingClassroom}>
-          {creatingClassroom ? "Creating..." : "Add Classroom"}
-        </button>
-      </div>
+      {isAdmin ? (
+        <div className="discussion-admin-panel">
+          <input
+            type="text"
+            placeholder="New classroom name (e.g., PSC, M.Sc., NEA Entrance)"
+            value={newClassroomName}
+            onChange={(event) => setNewClassroomName(event.target.value)}
+          />
+          <input
+            type="text"
+            placeholder="Short description (optional)"
+            value={newClassroomDescription}
+            onChange={(event) => setNewClassroomDescription(event.target.value)}
+          />
+          <button className="btn btn-secondary" type="button" onClick={handleCreateClassroom} disabled={creatingClassroom}>
+            {creatingClassroom ? "Creating..." : "Add Classroom"}
+          </button>
+        </div>
+      ) : null}
 
       {loadingClassrooms ? (
         <TimedLoadingState baseMessage="Loading discussion classrooms..." />
@@ -236,7 +270,10 @@ export default function DiscussionsSection({ branch = "Civil Engineering", isAct
                   key={room.id}
                   type="button"
                   className={`discussion-room-item ${isActiveRoom ? "active" : ""}`}
-                  onClick={() => setSelectedClassroomId(room.id)}
+                  onClick={() => {
+                    shouldAutoScrollRef.current = true;
+                    setSelectedClassroomId(room.id);
+                  }}
                 >
                   <div className="discussion-room-meta">
                     <strong>{room.name}</strong>
@@ -271,11 +308,17 @@ export default function DiscussionsSection({ branch = "Civil Engineering", isAct
           <div className="discussion-chat-pane">
             <header className="discussion-chat-head">
               <h3>{selectedClassroom?.name || "Classroom"}</h3>
-              <p>{selectedClassroom?.description || "Live text discussion"}</p>
+              <p>
+                {selectedClassroom
+                  ? (selectedClassroom.description || "Live text discussion")
+                  : "Select a classroom first to view discussion messages."}
+              </p>
             </header>
 
             <div className="discussion-chat-body" ref={chatBodyRef}>
-              {loadingMessages ? (
+              {!selectedClassroomId ? (
+                <div className="discussion-empty-chat">Select a classroom from the left to load messages.</div>
+              ) : loadingMessages ? (
                 <TimedLoadingState baseMessage="Loading messages..." />
               ) : messages.length === 0 ? (
                 <div className="discussion-empty-chat">Start the conversation.</div>
@@ -314,7 +357,7 @@ export default function DiscussionsSection({ branch = "Civil Engineering", isAct
             <footer className="discussion-chat-input">
               <input
                 type="text"
-                placeholder="Type your message..."
+                placeholder={selectedClassroomId ? "Type your message..." : "Select a classroom first"}
                 value={messageText}
                 onChange={(event) => setMessageText(event.target.value)}
                 onKeyDown={(event) => {
@@ -324,12 +367,13 @@ export default function DiscussionsSection({ branch = "Civil Engineering", isAct
                   }
                 }}
                 maxLength={1000}
+                disabled={!selectedClassroomId}
               />
               <button
                 type="button"
                 className="btn btn-primary"
                 onClick={handleSend}
-                disabled={sendingMessage || !String(messageText || "").trim()}
+                disabled={!selectedClassroomId || sendingMessage || !String(messageText || "").trim()}
               >
                 {sendingMessage ? "Sending..." : "Send"}
               </button>

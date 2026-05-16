@@ -31,7 +31,7 @@ function AccessRequired({ title }) {
 
 export default function Home() {
   const { branch } = useBranch();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isAdmin } = useAuth();
   const branchTheme = useMemo(() => branch.toLowerCase().replace(/\s+/g, "-"), [branch]);
   const validSections = useMemo(
     () => ["homepage", "syllabus", "old-questions", "objective-mcqs", "library", "exam-hall", "discussions"],
@@ -69,7 +69,7 @@ export default function Home() {
       <Header />
       <Navigation activeSection={activeSection} />
       <main className="container">
-        <ContentSyncBar branch={branch} isActive />
+        {isAdmin ? <ContentSyncBar branch={branch} isActive /> : null}
         <HomepageSection branch={branch} isActive={activeSection === "homepage"} />
 
         {activeSection === "syllabus" && authRequiredSections.has("syllabus") && !isAuthenticated ? (

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { useAuth } from "../../context/AuthContext";
 import {
@@ -45,16 +45,13 @@ export default function ContentSyncBar({ branch = "Civil Engineering", isActive 
     });
   }, [branch, isActive, isAdmin]);
 
-  if (!isAuthenticated || !isActive) {
+  if (!isAuthenticated || !isActive || !isAdmin) {
     return null;
   }
 
-  const lastSyncedLabel = useMemo(() => {
-    if (!isAdmin) return "On-demand refresh";
-    const timestamp = status?.last_synced;
-    if (!timestamp) return "Not synced yet";
-    return formatNepalDateTime(timestamp);
-  }, [status, isAdmin]);
+  const lastSyncedLabel = !isAdmin
+    ? "On-demand refresh"
+    : (status?.last_synced ? formatNepalDateTime(status.last_synced) : "Not synced yet");
 
   const handleSync = async () => {
     if (syncing) return;

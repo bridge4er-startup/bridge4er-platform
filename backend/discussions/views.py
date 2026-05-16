@@ -36,6 +36,8 @@ class ClassroomListCreateView(APIView):
         return Response(serializer.data)
 
     def post(self, request):
+        if not request.user.is_staff:
+            return Response({"error": "Admin access required"}, status=status.HTTP_403_FORBIDDEN)
         branch = _clean_branch(request.data.get("branch", "Civil Engineering"))
         name = str(request.data.get("name") or "").strip()
         if not name:

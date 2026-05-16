@@ -42,7 +42,7 @@ class DiscussionsApiTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(EngineeringClassroom.objects.count(), 1)
 
-    def test_authenticated_student_can_create_classroom(self):
+    def test_authenticated_student_cannot_create_classroom(self):
         self.client.force_authenticate(self.student)
         response = self.client.post(
             "/api/discussions/classrooms/",
@@ -53,9 +53,8 @@ class DiscussionsApiTests(TestCase):
             },
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(EngineeringClassroom.objects.count(), 1)
-        self.assertEqual(EngineeringClassroom.objects.first().created_by, self.student)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(EngineeringClassroom.objects.count(), 0)
 
     def test_student_can_send_message_to_active_classroom(self):
         classroom = EngineeringClassroom.objects.create(
