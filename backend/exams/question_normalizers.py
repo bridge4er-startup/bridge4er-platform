@@ -20,6 +20,37 @@ def _to_int(value, default: int = 0) -> int:
         return default
 
 
+def _key_token(value) -> str:
+    return re.sub(r"[^a-z0-9]+", "", _to_text(value).lower())
+
+
+def _build_lookup(raw: dict) -> dict[str, object]:
+    lookup: dict[str, object] = {}
+    if not isinstance(raw, dict):
+        return lookup
+    for key, value in raw.items():
+        token = _key_token(key)
+        if not token or token in lookup:
+            continue
+        lookup[token] = value
+    return lookup
+
+
+def _pick(raw: dict, lookup: dict[str, object], *aliases):
+    for alias in aliases:
+        if alias in raw:
+            value = raw.get(alias)
+            if value not in (None, ""):
+                return value
+    for alias in aliases:
+        token = _key_token(alias)
+        if token in lookup:
+            value = lookup[token]
+            if value not in (None, ""):
+                return value
+    return ""
+
+
 def _parse_options_value(options):
     if isinstance(options, str):
         try:
@@ -101,6 +132,7 @@ def _candidate_to_letter(candidate, option_map: dict[str, str]) -> str:
 
 
 def resolve_correct_option(raw: dict, option_a: str, option_b: str, option_c: str, option_d: str) -> str:
+    lookup = _build_lookup(raw)
     option_map = {
         "a": _to_text(option_a),
         "b": _to_text(option_b),
@@ -109,18 +141,11 @@ def resolve_correct_option(raw: dict, option_a: str, option_b: str, option_c: st
     }
 
     candidates = [
-        raw.get("correct_option"),
-        raw.get("correctOption"),
-        raw.get("correct"),
-        raw.get("correct_answer"),
-        raw.get("correctAnswer"),
-        raw.get("answer"),
-        raw.get("answer_key"),
-        raw.get("answerIndex"),
-        raw.get("answer_index"),
-        raw.get("correctIndex"),
-        raw.get("correct_index"),
-        raw.get("ans"),
+        _pick(raw, lookup, "correct_option", "correctOption", "correct option", "correctoption"),
+        _pick(raw, lookup, "correct", "correct_answer", "correct answer", "correctAnswer"),
+        _pick(raw, lookup, "answer", "answer_key", "answer key", "ans"),
+        _pick(raw, lookup, "answerIndex", "answer_index", "answer index"),
+        _pick(raw, lookup, "correctIndex", "correct_index", "correct index"),
     ]
 
     for candidate in candidates:
@@ -132,40 +157,102 @@ def resolve_correct_option(raw: dict, option_a: str, option_b: str, option_c: st
 
 
 def normalize_mcq_payload(raw: dict) -> dict:
-    options = _parse_options_value(raw.get("options"))
+    lookup = _build_lookup(raw)
+    options = _parse_options_value(_pick(raw, lookup, "options", "option_list", "option list", "choices"))
 
-    option_a = _to_text(raw.get("option_a") or raw.get("a") or (options[0] if len(options) > 0 else ""))
-    option_b = _to_text(raw.get("option_b") or raw.get("b") or (options[1] if len(options) > 1 else ""))
-    option_c = _to_text(raw.get("option_c") or raw.get("c") or (options[2] if len(options) > 2 else ""))
-    option_d = _to_text(raw.get("option_d") or raw.get("d") or (options[3] if len(options) > 3 else ""))
+    option_a = _to_text(
+        _pick(raw, lookup, "option_a", "option a", "optiona", "choice_a", "choice a", "choicea", "a", "1")
+        or (options[0] if len(options) > 0 else "")
+    )
+    option_b = _to_text(
+        _pick(raw, lookup, "option_b", "option b", "optionb", "choice_b", "choice b", "choiceb", "b", "2")
+        or (options[1] if len(options) > 1 else "")
+    )
+    option_c = _to_text(
+        _pick(raw, lookup, "option_c", "option c", "optionc", "choice_c", "choice c", "choicec", "c", "3")
+        or (options[2] if len(options) > 2 else "")
+    )
+    option_d = _to_text(
+        _pick(raw, lookup, "option_d", "option d", "optiond", "choice_d", "choice d", "choiced", "d", "4")
+        or (options[3] if len(options) > 3 else "")
+    )
 
     return {
-        "id": _to_text(raw.get("id")),
-        "question_header": _to_text(raw.get("question_header") or raw.get("header") or raw.get("questionHeader")),
-        "question_text": _to_text(raw.get("question_text") or raw.get("question") or raw.get("text")),
+        "id": _to_text(_pick(raw, lookup, "id")),
+        "question_header": _to_text(
+            _pick(
+                raw,
+                lookup,
+                "question_header",
+                "question header",
+                "questionHeader",
+                "header",
+                "section",
+                "section_title",
+                "section title",
+            )
+        ),
+        "question_text": _to_text(
+            _pick(
+                raw,
+                lookup,
+                "question_text",
+                "question text",
+                "question",
+                "text",
+                "questiontitle",
+                "question_title",
+            )
+        ),
         "option_a": option_a,
         "option_b": option_b,
         "option_c": option_c,
         "option_d": option_d,
         "correct_option": resolve_correct_option(raw, option_a, option_b, option_c, option_d),
-        "explanation": _to_text(raw.get("explanation")),
+        "explanation": _to_text(_pick(raw, lookup, "explanation", "explain", "solution", "answer_explanation")),
         "question_image_url": _to_text(
-            raw.get("question_image_url") or raw.get("image") or raw.get("questionImageUrl")
+            _pick(
+                raw,
+                lookup,
+                "question_image_url",
+                "question image url",
+                "questionImageUrl",
+                "question_image",
+                "question image",
+                "image",
+                "image_url",
+                "question_figure",
+            )
         ),
     }
 
 
 def normalize_exam_question_payload(raw: dict, exam_type: str) -> dict:
+    lookup = _build_lookup(raw)
     payload = {
-        "id": _to_text(raw.get("id")),
-        "order": _to_int(raw.get("order") or raw.get("no") or raw.get("index"), 0),
-        "question_header": _to_text(raw.get("question_header") or raw.get("header") or raw.get("questionHeader")),
-        "question_text": _to_text(raw.get("question_text") or raw.get("question") or raw.get("text")),
-        "question_image_url": _to_text(
-            raw.get("question_image_url") or raw.get("image") or raw.get("questionImageUrl")
+        "id": _to_text(_pick(raw, lookup, "id")),
+        "order": _to_int(_pick(raw, lookup, "order", "no", "index", "qno", "question no"), 0),
+        "question_header": _to_text(
+            _pick(raw, lookup, "question_header", "question header", "header", "questionHeader", "section")
         ),
-        "marks": _to_int(raw.get("marks") or 1, 1),
-        "explanation": _to_text(raw.get("explanation")),
+        "question_text": _to_text(
+            _pick(raw, lookup, "question_text", "question text", "question", "text", "question_title")
+        ),
+        "question_image_url": _to_text(
+            _pick(
+                raw,
+                lookup,
+                "question_image_url",
+                "question image url",
+                "questionImageUrl",
+                "question_image",
+                "question image",
+                "image",
+                "image_url",
+            )
+        ),
+        "marks": _to_int(_pick(raw, lookup, "marks", "mark", "weightage") or 1, 1),
+        "explanation": _to_text(_pick(raw, lookup, "explanation", "solution", "explain")),
         "option_a": "",
         "option_b": "",
         "option_c": "",
@@ -173,18 +260,37 @@ def normalize_exam_question_payload(raw: dict, exam_type: str) -> dict:
         "correct_option": "",
     }
 
-    subquestions = raw.get("subquestions") or raw.get("sub_questions")
+    subquestions = _pick(raw, lookup, "subquestions", "sub_questions", "sub questions")
+    if isinstance(subquestions, str):
+        try:
+            parsed_sub = json.loads(subquestions)
+            if isinstance(parsed_sub, list):
+                subquestions = parsed_sub
+        except (TypeError, ValueError):
+            subquestions = []
     if not payload["question_text"] and isinstance(subquestions, list):
         lines = [_to_text(item) for item in subquestions if _to_text(item)]
         if lines:
             payload["question_text"] = "\n".join(lines)
 
     if exam_type == "mcq":
-        options = _parse_options_value(raw.get("options"))
-        option_a = _to_text(raw.get("option_a") or raw.get("a") or (options[0] if len(options) > 0 else ""))
-        option_b = _to_text(raw.get("option_b") or raw.get("b") or (options[1] if len(options) > 1 else ""))
-        option_c = _to_text(raw.get("option_c") or raw.get("c") or (options[2] if len(options) > 2 else ""))
-        option_d = _to_text(raw.get("option_d") or raw.get("d") or (options[3] if len(options) > 3 else ""))
+        options = _parse_options_value(_pick(raw, lookup, "options", "option_list", "choices"))
+        option_a = _to_text(
+            _pick(raw, lookup, "option_a", "option a", "optiona", "choice_a", "choice a", "a", "1")
+            or (options[0] if len(options) > 0 else "")
+        )
+        option_b = _to_text(
+            _pick(raw, lookup, "option_b", "option b", "optionb", "choice_b", "choice b", "b", "2")
+            or (options[1] if len(options) > 1 else "")
+        )
+        option_c = _to_text(
+            _pick(raw, lookup, "option_c", "option c", "optionc", "choice_c", "choice c", "c", "3")
+            or (options[2] if len(options) > 2 else "")
+        )
+        option_d = _to_text(
+            _pick(raw, lookup, "option_d", "option d", "optiond", "choice_d", "choice d", "d", "4")
+            or (options[3] if len(options) > 3 else "")
+        )
         payload.update(
             {
                 "option_a": option_a,

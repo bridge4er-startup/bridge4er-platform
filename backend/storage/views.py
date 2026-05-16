@@ -1174,6 +1174,28 @@ class SyncDropboxContentView(APIView):
             return Response({"error": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+class ContentSyncStatusView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        branch = _normalize_branch(request.query_params.get("branch", "Civil Engineering"))
+        provider = _storage_provider()
+        sync_log = FileSyncLog.objects.filter(branch=branch).first()
+        live_reads_enabled = True if _uses_supabase_storage() else _dropbox_auto_sync_enabled()
+        manual_sync_mode = not live_reads_enabled
+        return Response(
+            {
+                "branch": branch,
+                "storage_provider": provider,
+                "manual_sync_mode": manual_sync_mode,
+                "live_reads_enabled": live_reads_enabled,
+                "last_synced": sync_log.last_synced if sync_log else None,
+                "sync_count": int(sync_log.sync_count or 0) if sync_log else 0,
+                "supports_admin_sync": provider in {"dropbox", "supabase"},
+            }
+        )
+
+
 class ResetDropboxMetadataView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUser]
 

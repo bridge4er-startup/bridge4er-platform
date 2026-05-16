@@ -10,7 +10,8 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from .dropbox_sync import _sync_exam_set_type
-from .models import Chapter, ExamPurchase, ExamSet, Subject, SubjectiveSubmission
+from .models import Chapter, ExamPurchase, ExamSet, MCQQuestion, Subject, SubjectiveSubmission
+from .question_normalizers import normalize_mcq_payload
 
 User = get_user_model()
 TEST_MEDIA_ROOT = os.path.join(os.getcwd(), "tmp_test_media")
@@ -183,6 +184,45 @@ class SubjectLookupApiTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), 1)
         self.assertEqual(response.data[0]["name"], "Chapter 1")
+
+    def test_question_endpoint_accepts_chapter_id_token(self):
+        MCQQuestion.objects.create(
+            chapter=self.chapter,
+            question_text="What is 2+2?",
+            option_a="4",
+            option_b="5",
+            option_c="6",
+            option_d="7",
+            correct_option="a",
+            explanation="basic math",
+        )
+        response = self.client.get(
+            f"/api/exams/subjects/{self.subject.id}/chapters/{self.chapter.id}/questions/",
+            {"branch": "Civil Engineering"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get("count"), 1)
+        self.assertEqual(len(response.data.get("results", [])), 1)
+
+
+class QuestionNormalizerTests(TestCase):
+    def test_normalize_mcq_payload_accepts_spaced_headers(self):
+        raw = {
+            "Question Text": "Kathmandu is the capital of Nepal.",
+            "Option A": "True",
+            "Option B": "False",
+            "Option C": "Maybe",
+            "Option D": "None",
+            "Correct Answer": "Option A",
+            "Explanation": "General knowledge",
+        }
+        normalized = normalize_mcq_payload(raw)
+        self.assertEqual(normalized["question_text"], "Kathmandu is the capital of Nepal.")
+        self.assertEqual(normalized["option_a"], "True")
+        self.assertEqual(normalized["option_b"], "False")
+        self.assertEqual(normalized["option_c"], "Maybe")
+        self.assertEqual(normalized["option_d"], "None")
+        self.assertEqual(normalized["correct_option"], "a")
 
 
 @override_settings(MEDIA_ROOT=TEST_MEDIA_ROOT)

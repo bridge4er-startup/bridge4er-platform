@@ -301,6 +301,30 @@ def _resolve_subject_record(branch, subject_value):
     return None
 
 
+def _resolve_chapter_record(subject_obj, chapter_value):
+    token = str(chapter_value or "").strip()
+    if not token:
+        return None
+
+    queryset = Chapter.objects.filter(subject=subject_obj)
+    if token.isdigit():
+        by_id = queryset.filter(id=int(token)).first()
+        if by_id:
+            return by_id
+
+    by_exact = queryset.filter(name=token).first() or queryset.filter(name__iexact=token).first()
+    if by_exact:
+        return by_exact
+
+    normalized_token = _normalized_lookup_token(token)
+    for row in queryset.values("id", "name"):
+        row_name = str(row.get("name") or "")
+        if _normalized_lookup_token(row_name) == normalized_token:
+            return queryset.filter(id=row["id"]).first()
+
+    return None
+
+
 def _list_matching_chapter_paths(branch, subject_name, chapter_name):
     normalized_chapter = str(chapter_name or "").strip().lower()
     if not normalized_chapter:
@@ -472,9 +496,8 @@ class QuestionListView(APIView):
         if not subject_obj:
             return Response({"error": "Subject not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        try:
-            chapter_obj = Chapter.objects.get(name=chapter, subject=subject_obj)
-        except Chapter.DoesNotExist:
+        chapter_obj = _resolve_chapter_record(subject_obj=subject_obj, chapter_value=chapter)
+        if not chapter_obj:
             return Response({"error": "Chapter not found"}, status=status.HTTP_404_NOT_FOUND)
 
         _ensure_demo_questions(chapter_obj)
@@ -927,8 +950,9 @@ class UserProgressView(APIView):
 
         try:
             subject_obj = Subject.objects.get(name=subject, branch=branch)
-            chapter_obj = Chapter.objects.get(name=chapter, subject=subject_obj)
-
+            chapter_obj = _resolve_chapter_record(subject_obj=subject_obj, chapter_value=chapter)
+            if not chapter_obj:
+                return Response({"error": "Chapter not found"}, status=status.HTTP_404_NOT_FOUND)
             total_questions = MCQQuestion.objects.filter(chapter=chapter_obj).count()
             correct_answers = 0
 

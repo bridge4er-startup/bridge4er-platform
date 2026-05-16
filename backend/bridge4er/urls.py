@@ -20,4 +20,5 @@ urlpatterns = [
     path('api/storage/', include('storage.urls')),
     path('api/payments/', include('payments.urls')),
     path('api/contributions/', include('contributions.urls')),
+    path('api/discussions/', include('discussions.urls')),
 ]
