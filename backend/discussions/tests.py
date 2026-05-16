@@ -42,6 +42,21 @@ class DiscussionsApiTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(EngineeringClassroom.objects.count(), 1)
 
+    def test_authenticated_student_can_create_classroom(self):
+        self.client.force_authenticate(self.student)
+        response = self.client.post(
+            "/api/discussions/classrooms/",
+            {
+                "branch": "Civil Engineering",
+                "name": "KUKL Preparation",
+                "description": "Open student group",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(EngineeringClassroom.objects.count(), 1)
+        self.assertEqual(EngineeringClassroom.objects.first().created_by, self.student)
+
     def test_student_can_send_message_to_active_classroom(self):
         classroom = EngineeringClassroom.objects.create(
             branch="Civil Engineering",
@@ -75,4 +90,3 @@ class DiscussionsApiTests(TestCase):
         response = self.client.delete(f"/api/discussions/messages/{message.id}/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertFalse(ClassroomMessage.objects.filter(id=message.id).exists())
-

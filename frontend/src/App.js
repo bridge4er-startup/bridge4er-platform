@@ -13,6 +13,7 @@ import { useAuth } from "./context/AuthContext";
 import { startBackendHeartbeat, warmupBackendConnection } from "./services/api";
 import { useBranch } from "./context/BranchContext";
 import { warmInitialStudentContent } from "./services/bootstrapService";
+import AppErrorBoundary from "./components/common/AppErrorBoundary";
 
 function ProtectedRoute({ children, adminOnly = false }) {
   const { loading, isAuthenticated, isAdmin } = useAuth();
@@ -47,46 +48,48 @@ function App() {
     <div className="App">
       <Toaster position="top-right" />
 
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
-        <Route path="/payment/result" element={<PaymentResultPage />} />
-        <Route
-          path="/profile"
-          element={
-            <ProtectedRoute>
-              <ProfileAnalyticsPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/admin/dashboard"
-          element={
-            <ProtectedRoute adminOnly>
-              <AdminDashboard />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/exam/mcq/:branch/:setName"
-          element={
-            <ProtectedRoute>
-              <MCQExamPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/exam/subjective/:branch/:setName"
-          element={
-            <ProtectedRoute>
-              <SubjectiveExamPage />
-            </ProtectedRoute>
-          }
-        />
+      <AppErrorBoundary>
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/payment/result" element={<PaymentResultPage />} />
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <ProfileAnalyticsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/dashboard"
+            element={
+              <ProtectedRoute adminOnly>
+                <AdminDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/exam/mcq/:branch/:setName"
+            element={
+              <ProtectedRoute>
+                <MCQExamPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/exam/subjective/:branch/:setName"
+            element={
+              <ProtectedRoute>
+                <SubjectiveExamPage />
+              </ProtectedRoute>
+            }
+          />
 
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </AppErrorBoundary>
     </div>
   );
 }

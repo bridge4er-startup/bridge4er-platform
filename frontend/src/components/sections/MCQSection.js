@@ -58,14 +58,20 @@ export default function MCQSection({ branch = "Civil Engineering", isActive = fa
   };
 
   const handleSelectChapter = async (chapter) => {
-    setSelectedChapter(chapter);
+    const chapterName = String(chapter?.name || chapter || "").trim();
+    const chapterToken = String(chapter?.id ?? chapterName).trim();
+    if (!chapterToken) {
+      toast.error("Invalid chapter");
+      return;
+    }
+    setSelectedChapter(chapterName || chapterToken);
     setLoading(true);
     try {
       const res = await API.get(
-        `exams/subjects/${encodeURIComponent(selectedSubject)}/chapters/${encodeURIComponent(chapter)}/questions/`,
+        `exams/subjects/${encodeURIComponent(selectedSubject)}/chapters/${encodeURIComponent(chapterToken)}/questions/`,
         { params: { branch } }
       );
-      setQuestions(res.data || []);
+      setQuestions(res.data?.results || res.data || []);
       setCurrentQuestionIndex(0);
       setShowAnswer(false);
       setSelectedOption("");
@@ -197,7 +203,7 @@ export default function MCQSection({ branch = "Civil Engineering", isActive = fa
                   <h3>{chapter.name || chapter}</h3>
                   <button
                     className="btn btn-primary"
-                    onClick={() => handleSelectChapter(chapter.name || chapter)}
+                    onClick={() => handleSelectChapter(chapter)}
                   >
                     Practice Chapter
                   </button>

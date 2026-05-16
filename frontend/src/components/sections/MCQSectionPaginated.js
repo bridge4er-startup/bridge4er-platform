@@ -30,6 +30,25 @@ function normalizeSubjectRecord(subject) {
   };
 }
 
+function normalizeChapterRecord(chapter) {
+  if (typeof chapter === "string") {
+    return {
+      id: chapter,
+      name: chapter,
+      small_note: "",
+      order: 0,
+    };
+  }
+  const name = String(chapter?.name || "").trim();
+  const chapterId = chapter?.id ?? name;
+  return {
+    id: chapterId,
+    name,
+    small_note: String(chapter?.small_note || "").trim(),
+    order: Number(chapter?.order || 0),
+  };
+}
+
 export default function MCQSectionPaginated({ branch = "Civil Engineering", isActive = false }) {
   const [subjects, setSubjects] = useState([]);
   const [institutionFolders, setInstitutionFolders] = useState([]);
@@ -153,7 +172,7 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
       allowStale: true,
     });
     if (Array.isArray(cachedChapters?.data) && cachedChapters.data.length > 0) {
-      setChapters(cachedChapters.data);
+      setChapters(cachedChapters.data.map(normalizeChapterRecord));
       setView("chapters");
       setLoading(false);
     } else {
@@ -165,7 +184,8 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
         params: { branch },
         persistCache: true,
       });
-      setChapters(res.data || []);
+      const normalized = Array.isArray(res.data) ? res.data.map(normalizeChapterRecord) : [];
+      setChapters(normalized);
       setView("chapters");
     } catch (error) {
       toast.error("Failed to load chapters");
@@ -225,9 +245,15 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
   };
 
   const handleSelectChapter = async (chapter) => {
-    setSelectedChapter(chapter);
+    const chapterToken = String((chapter?.id ?? chapter) || "").trim();
+    const chapterName = String((chapter?.name ?? chapter) || "").trim();
+    if (!chapterToken) {
+      toast.error("Invalid chapter record.");
+      return;
+    }
+    setSelectedChapter(chapterName || chapterToken);
     resetQuestionSession();
-    await loadQuestionPage(selectedSubject, chapter, 1, pageSize);
+    await loadQuestionPage(selectedSubject, chapterToken, 1, pageSize);
     setView("questions");
   };
 
@@ -419,12 +445,12 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
             <div className="subject-grid">
               {chapters.map((chapter) => (
                 <div key={chapter.id || chapter.name} className="subject-card folder-card chapter-card">
-                  <i className={getSubjectIcon(chapter.name || chapter, "fas fa-file-lines")}></i>
-                  <h3 className="folder-display-name">{chapter.name || chapter}</h3>
+                  <i className={getSubjectIcon(chapter.name || chapter.id, "fas fa-file-lines")}></i>
+                  <h3 className="folder-display-name">{chapter.name || chapter.id}</h3>
                   {chapter.small_note ? <p className="chapter-small-note">{chapter.small_note}</p> : null}
                   <button
                     className="btn btn-primary mcq-folder-open-btn"
-                    onClick={() => handleSelectChapter(chapter.name || chapter)}
+                    onClick={() => handleSelectChapter(chapter)}
                   >
                     Open Question Set
                   </button>

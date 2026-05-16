@@ -201,25 +201,23 @@ export default function DiscussionsSection({ branch = "Civil Engineering", isAct
       </h2>
       <p>Choose a classroom and discuss live in text-only group chat.</p>
 
-      {isAdmin ? (
-        <div className="discussion-admin-panel">
-          <input
-            type="text"
-            placeholder="New classroom name (e.g., PSC, M.Sc., NEA Entrance)"
-            value={newClassroomName}
-            onChange={(event) => setNewClassroomName(event.target.value)}
-          />
-          <input
-            type="text"
-            placeholder="Short description (optional)"
-            value={newClassroomDescription}
-            onChange={(event) => setNewClassroomDescription(event.target.value)}
-          />
-          <button className="btn btn-secondary" type="button" onClick={handleCreateClassroom} disabled={creatingClassroom}>
-            {creatingClassroom ? "Creating..." : "Add Classroom"}
-          </button>
-        </div>
-      ) : null}
+      <div className="discussion-admin-panel">
+        <input
+          type="text"
+          placeholder="New classroom name (e.g., PSC, M.Sc., NEA Entrance)"
+          value={newClassroomName}
+          onChange={(event) => setNewClassroomName(event.target.value)}
+        />
+        <input
+          type="text"
+          placeholder="Short description (optional)"
+          value={newClassroomDescription}
+          onChange={(event) => setNewClassroomDescription(event.target.value)}
+        />
+        <button className="btn btn-secondary" type="button" onClick={handleCreateClassroom} disabled={creatingClassroom}>
+          {creatingClassroom ? "Creating..." : "Add Classroom"}
+        </button>
+      </div>
 
       {loadingClassrooms ? (
         <TimedLoadingState baseMessage="Loading discussion classrooms..." />
@@ -342,4 +340,3 @@ export default function DiscussionsSection({ branch = "Civil Engineering", isAct
     </section>
   );
 }
-
