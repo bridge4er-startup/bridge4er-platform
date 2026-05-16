@@ -10,7 +10,7 @@ WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
 REQUEST_TIMEOUT_SECONDS = 8
 DEFAULT_HEADERS = {
     "Accept": "application/json",
-    "User-Agent": "Bridge4ER/1.0 (+https://bridge4er-platform.vercel.app)",
+    "User-Agent": "Bridge4ER/1.0 (+https://bridge4er-new-frontend.vercel.app)",
 }
 GEOCODE_CACHE_TTL_SECONDS = 24 * 60 * 60
 WEATHER_CACHE_TTL_SECONDS = 10 * 60
