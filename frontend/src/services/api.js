@@ -212,6 +212,55 @@ const writePersistedGetResponse = (cacheKey, response, ttlMs, staleTtlMs) => {
   }
 };
 
+const withGetConfig = (response, url, params, requestConfig = {}) => ({
+  ...(response || {}),
+  config: {
+    ...((response || {}).config || {}),
+    ...(requestConfig || {}),
+    method: "get",
+    url,
+    params,
+  },
+});
+
+export const peekCachedGet = (url, options = {}) => {
+  const {
+    params = {},
+    allowStale = false,
+    persistCache = false,
+    requestConfig = {},
+  } = options || {};
+  const cacheKey = buildGetCacheKey(url, params);
+
+  const fresh = readCachedGetResponse(cacheKey);
+  if (fresh) {
+    return withGetConfig(fresh, url, params, requestConfig);
+  }
+
+  if (persistCache) {
+    const persistedFresh = readPersistedGetResponse(cacheKey);
+    if (persistedFresh) {
+      return withGetConfig(persistedFresh, url, params, requestConfig);
+    }
+  }
+
+  if (!allowStale) {
+    return null;
+  }
+
+  const stale = readStaleGetResponse(cacheKey);
+  if (stale) {
+    return withGetConfig(stale, url, params, requestConfig);
+  }
+  if (persistCache) {
+    const persistedStale = readPersistedStaleGetResponse(cacheKey);
+    if (persistedStale) {
+      return withGetConfig(persistedStale, url, params, requestConfig);
+    }
+  }
+  return null;
+};
+
 export const clearPersistedGetCache = () => {
   if (!isBrowser) return;
   try {
@@ -369,16 +418,7 @@ export const cachedGet = async (url, options = {}) => {
     ...requestConfig
   } = options || {};
   const cacheKey = buildGetCacheKey(url, params);
-  const applyRequestConfig = (response) => ({
-    ...(response || {}),
-    config: {
-      ...((response || {}).config || {}),
-      ...(requestConfig || {}),
-      method: "get",
-      url,
-      params,
-    },
-  });
+  const applyRequestConfig = (response) => withGetConfig(response, url, params, requestConfig);
 
   if (!forceRefresh) {
     const cached = readCachedGetResponse(cacheKey);

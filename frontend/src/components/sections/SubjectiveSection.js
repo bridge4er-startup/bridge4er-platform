@@ -1,10 +1,11 @@
 import React, { useDeferredValue, useEffect, useMemo, useState } from "react";
-import API, { cachedGet } from "../../services/api";
+import API, { cachedGet, peekCachedGet } from "../../services/api";
 import toast from "react-hot-toast";
 import { getInstitutionIcon, getSubjectIcon } from "../../utils/subjectIcons";
 import FilePreviewModal from "../common/FilePreviewModal";
 import TimedLoadingState from "../common/TimedLoadingState";
 import { formatNepalDate } from "../../utils/dateTime";
+import { onContentSyncEvent } from "../../services/contentSyncService";
 
 function resolveFileIcon(name = "") {
   const lower = name.toLowerCase();
@@ -90,31 +91,37 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
 
   useEffect(() => {
     if (!isActive) return;
-
-    const loadFiles = async () => {
-      setLoading(true);
-      try {
-        const res = await cachedGet("storage/files/list/", {
-          params: {
-            content_type: "subjective",
-            branch,
-            include_dirs: true,
-            prefer_metadata: true,
-            metadata_only: true,
-          },
-          persistCache: true,
-        });
-        setEntries(res.data || []);
-        setCurrentFolderParts([]);
-        closePreview();
-      } catch (_error) {
-        toast.error("Failed to load library materials");
-      } finally {
-        setLoading(false);
-      }
+    const params = {
+      content_type: "subjective",
+      branch,
+      include_dirs: true,
+      prefer_metadata: true,
+      metadata_only: true,
     };
-
+    const cached = peekCachedGet("storage/files/list/", {
+      params,
+      persistCache: true,
+      allowStale: true,
+    });
+    if (Array.isArray(cached?.data)) {
+      setEntries(cached.data || []);
+      setCurrentFolderParts([]);
+      setLoading(false);
+      closePreview();
+      loadFiles({ silent: true }).catch(() => {});
+      return;
+    }
     loadFiles();
+  }, [branch, isActive]);
+
+  useEffect(() => {
+    if (!isActive) return () => {};
+    return onContentSyncEvent((event) => {
+      if (event?.branch && String(event.branch).trim() !== String(branch || "").trim()) {
+        return;
+      }
+      loadFiles({ forceRefresh: true }).catch(() => {});
+    });
   }, [branch, isActive]);
 
   useEffect(() => {
@@ -124,6 +131,35 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
       }
     };
   }, [previewFile]);
+
+  const loadFiles = async ({ forceRefresh = false, silent = false } = {}) => {
+    if (!silent) {
+      setLoading(true);
+    }
+    try {
+      const res = await cachedGet("storage/files/list/", {
+        params: {
+          content_type: "subjective",
+          branch,
+          include_dirs: true,
+          refresh: !!forceRefresh,
+          prefer_metadata: true,
+          metadata_only: !forceRefresh,
+        },
+        forceRefresh: !!forceRefresh,
+        persistCache: true,
+      });
+      setEntries(res.data || []);
+      setCurrentFolderParts([]);
+      closePreview();
+    } catch (_error) {
+      toast.error("Failed to load library materials");
+    } finally {
+      if (!silent) {
+        setLoading(false);
+      }
+    }
+  };
 
   useEffect(() => {
     if (!previewFile) return undefined;

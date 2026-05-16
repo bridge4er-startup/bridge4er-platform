@@ -3,6 +3,7 @@ import API, { cachedGet } from "./api";
 export const listExamSets = async (branch, examType, refresh = false) => {
   const res = await cachedGet("exams/sets/", {
     params: { branch, exam_type: examType, refresh: !!refresh },
+    forceRefresh: !!refresh,
     persistCache: true,
   });
   return res.data;
@@ -42,6 +43,9 @@ export const reviewSubjectiveSubmission = async (submissionId, payload) => {
 };
 
 export const getUserAnalytics = async () => {
-  const res = await API.get("exams/profile/analytics/");
+  const res = await cachedGet("exams/profile/analytics/", {
+    persistCache: true,
+    allowStaleOnError: true,
+  });
   return res.data;
 };

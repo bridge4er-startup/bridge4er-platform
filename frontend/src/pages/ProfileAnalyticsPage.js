@@ -1,32 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { getUserAnalytics } from "../services/examService";
-import API from "../services/api";
 import toast from "react-hot-toast";
-import { formatNepalDateTime } from "../utils/dateTime";
-import { contributionService } from "../services/contributionService";
+import { getUserAnalytics } from "../services/examService";
 import { referralService } from "../services/referralService";
-import FilePreviewModal from "../components/common/FilePreviewModal";
-
-function formatSubmissionStatus(value = "") {
-  const normalized = String(value || "pending");
-  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
-}
-
-function inferPreviewType(contentType = "", filename = "") {
-  const normalized = String(contentType || "").toLowerCase();
-  const lowerName = String(filename || "").toLowerCase();
-  if (normalized.includes("pdf") || lowerName.endsWith(".pdf")) return "pdf";
-  if (
-    normalized.startsWith("image/") ||
-    [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"].some(
-      (ext) => lowerName.endsWith(ext)
-    )
-  ) {
-    return "image";
-  }
-  return "other";
-}
+import { formatNepalDateTime } from "../utils/dateTime";
 
 function ScoreTrendChart({ data = [] }) {
   const width = 640;
@@ -76,11 +53,7 @@ function ScoreTrendChart({ data = [] }) {
   const points = useMemo(() => {
     if (!data.length) return "";
     return data
-      .map((item, index) => {
-        const x = xForIndex(index);
-        const y = yForScore(item.score);
-        return `${x},${y}`;
-      })
+      .map((item, index) => `${xForIndex(index)},${yForScore(item.score)}`)
       .join(" ");
   }, [data, maxScore]);
 
@@ -108,70 +81,26 @@ function ScoreTrendChart({ data = [] }) {
           strokeDasharray="4 4"
         />
       ))}
-      <line
-        x1={padding.left}
-        y1={padding.top}
-        x2={padding.left}
-        y2={height - padding.bottom}
-        stroke="#94a3b8"
-        strokeWidth="1.2"
-      />
-      <line
-        x1={padding.left}
-        y1={height - padding.bottom}
-        x2={width - padding.right}
-        y2={height - padding.bottom}
-        stroke="#94a3b8"
-        strokeWidth="1.2"
-      />
+      <line x1={padding.left} y1={padding.top} x2={padding.left} y2={height - padding.bottom} stroke="#94a3b8" strokeWidth="1.2" />
+      <line x1={padding.left} y1={height - padding.bottom} x2={width - padding.right} y2={height - padding.bottom} stroke="#94a3b8" strokeWidth="1.2" />
       {yTicks.map((tick) => (
-        <text
-          key={`ytick-${tick}`}
-          x={padding.left - 10}
-          y={yForScore(tick) + 4}
-          textAnchor="end"
-          fill="#475569"
-          fontSize="11"
-        >
+        <text key={`ytick-${tick}`} x={padding.left - 10} y={yForScore(tick) + 4} textAnchor="end" fill="#475569" fontSize="11">
           {Number.isInteger(tick) ? String(tick) : tick.toFixed(2)}
         </text>
       ))}
       {xTicks.map((tick) => (
-        <text
-          key={`xtick-${tick.index}`}
-          x={xForIndex(tick.index)}
-          y={height - padding.bottom + 18}
-          textAnchor="middle"
-          fill="#475569"
-          fontSize="11"
-        >
+        <text key={`xtick-${tick.index}`} x={xForIndex(tick.index)} y={height - padding.bottom + 18} textAnchor="middle" fill="#475569" fontSize="11">
           {tick.label}
         </text>
       ))}
       <polyline fill="none" stroke="url(#scoreLine)" strokeWidth="4" points={points} />
       {data.map((item, index) => (
-        <circle
-          key={`point-${index}`}
-          cx={xForIndex(index)}
-          cy={yForScore(item.score)}
-          r="4"
-          fill="#0ea5e9"
-          stroke="#ffffff"
-          strokeWidth="2"
-        />
+        <circle key={`point-${index}`} cx={xForIndex(index)} cy={yForScore(item.score)} r="4" fill="#0ea5e9" stroke="#ffffff" strokeWidth="2" />
       ))}
       <text x={width / 2} y={height - 10} textAnchor="middle" fill="#0f172a" fontSize="12" fontWeight="700">
         Attempt Timeline
       </text>
-      <text
-        x="16"
-        y={height / 2}
-        transform={`rotate(-90 16 ${height / 2})`}
-        textAnchor="middle"
-        fill="#0f172a"
-        fontSize="12"
-        fontWeight="700"
-      >
+      <text x="16" y={height / 2} transform={`rotate(-90 16 ${height / 2})`} textAnchor="middle" fill="#0f172a" fontSize="12" fontWeight="700">
         Score
       </text>
     </svg>
@@ -181,184 +110,30 @@ function ScoreTrendChart({ data = [] }) {
 export default function ProfileAnalyticsPage() {
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [myContributions, setMyContributions] = useState([]);
-  const [loadingContributions, setLoadingContributions] = useState(false);
-  const [uploadingContribution, setUploadingContribution] = useState(false);
-  const [contributionForm, setContributionForm] = useState({
-    title: "",
-    description: "",
-    file: null,
-  });
-  const [unlockExamSetName, setUnlockExamSetName] = useState("");
-  const [previewFile, setPreviewFile] = useState(null);
   const [referralModalOpen, setReferralModalOpen] = useState(false);
-  const [openingFileUrl, setOpeningFileUrl] = useState("");
+  const [showAllAttempts, setShowAllAttempts] = useState(false);
   const [referralForm, setReferralForm] = useState({ name: "", mobile: "" });
   const [submittingReferral, setSubmittingReferral] = useState(false);
   const [referralUnlockName, setReferralUnlockName] = useState("");
   const [unlockingReferral, setUnlockingReferral] = useState(false);
-  const [expandedSubmissionId, setExpandedSubmissionId] = useState(null);
-  const [showAllAttempts, setShowAllAttempts] = useState(false);
-  const [showAllContributions, setShowAllContributions] = useState(false);
-
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      try {
-        const data = await getUserAnalytics();
-        setAnalytics(data);
-      } catch (_error) {
-        toast.error("Failed to load profile analytics");
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
-  }, []);
-
-  const closePreview = () => {
-    setPreviewFile((current) => {
-      if (current?.url && current.url.startsWith("blob:")) {
-        URL.revokeObjectURL(current.url);
-      }
-      return null;
-    });
-  };
-
-  useEffect(() => {
-    return () => {
-      if (previewFile?.url && previewFile.url.startsWith("blob:")) {
-        URL.revokeObjectURL(previewFile.url);
-      }
-    };
-  }, [previewFile]);
-
-  const openPreview = async (fileUrl, nameFallback) => {
-    const safeUrl = String(fileUrl || "").trim();
-    if (!safeUrl) return;
-    if (openingFileUrl === safeUrl) return;
-    setOpeningFileUrl(safeUrl);
-    try {
-      const response = await API.get(safeUrl, { responseType: "blob" });
-      const contentType = String(response?.headers?.["content-type"] || "");
-      const blob = response.data instanceof Blob ? response.data : new Blob([response.data], { type: contentType || undefined });
-      const objectUrl = URL.createObjectURL(blob);
-      const previewType = inferPreviewType(contentType, nameFallback || safeUrl);
-      setPreviewFile((current) => {
-        if (current?.url && current.url.startsWith("blob:")) {
-          URL.revokeObjectURL(current.url);
-        }
-        return {
-          name: nameFallback || "File Preview",
-          url: objectUrl,
-          type: previewType,
-        };
-      });
-    } catch (_error) {
-      toast.error("Unable to open file.");
-    } finally {
-      setOpeningFileUrl((current) => (current === safeUrl ? "" : current));
-    }
-  };
-
-  const downloadFile = async (fileUrl, nameFallback) => {
-    const safeUrl = String(fileUrl || "").trim();
-    if (!safeUrl) return;
-    try {
-      const downloadUrl = safeUrl.includes("?") ? `${safeUrl}&download=1` : `${safeUrl}?download=1`;
-      const response = await API.get(downloadUrl, { responseType: "blob" });
-      const blob = response.data instanceof Blob ? response.data : new Blob([response.data]);
-      const objectUrl = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = objectUrl;
-      link.download = nameFallback || "download";
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-    } catch (_error) {
-      toast.error("Unable to download file.");
-    }
-  };
-
-  const loadMyContributions = async () => {
-    setLoadingContributions(true);
-    try {
-      const data = await contributionService.listMyContributions();
-      setMyContributions(Array.isArray(data) ? data : data?.results || []);
-    } catch (_error) {
-      toast.error("Failed to load contributions.");
-    } finally {
-      setLoadingContributions(false);
-    }
-  };
 
   const refreshAnalytics = async () => {
     try {
       const data = await getUserAnalytics();
       setAnalytics(data);
     } catch (_error) {
-      // Keep existing analytics if refresh fails.
+      toast.error("Failed to load profile analytics");
     }
   };
 
   useEffect(() => {
-    loadMyContributions().catch(() => {});
+    const load = async () => {
+      setLoading(true);
+      await refreshAnalytics();
+      setLoading(false);
+    };
+    load();
   }, []);
-
-  const updateContributionForm = (field, value) => {
-    setContributionForm((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const submitContribution = async () => {
-    const title = String(contributionForm.title || "").trim();
-    const description = String(contributionForm.description || "").trim();
-    const file = contributionForm.file;
-    if (!title || !file) {
-      toast.error("Please provide a name and file.");
-      return;
-    }
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error("File must be under 2MB.");
-      return;
-    }
-    const allowed = [".pdf", ".png", ".jpg", ".jpeg"];
-    const lower = String(file.name || "").toLowerCase();
-    if (!allowed.some((ext) => lower.endsWith(ext))) {
-      toast.error("Only PDF, JPG, or PNG files are allowed.");
-      return;
-    }
-    setUploadingContribution(true);
-    try {
-      const formData = new FormData();
-      formData.append("title", title);
-      formData.append("description", description);
-      formData.append("file", file);
-      await contributionService.uploadContribution(formData);
-      toast.success("Contribution submitted for review.");
-      setContributionForm({ title: "", description: "", file: null });
-      await loadMyContributions();
-    } catch (error) {
-      toast.error(error?.response?.data?.error || "Failed to upload contribution.");
-    } finally {
-      setUploadingContribution(false);
-    }
-  };
-
-  const claimUnlock = async () => {
-    const examSetName = String(unlockExamSetName || "").trim();
-    if (!examSetName) {
-      toast.error("Enter an exam set name.");
-      return;
-    }
-    try {
-      await contributionService.claimUnlock(examSetName);
-      toast.success("Exam set unlocked.");
-      setUnlockExamSetName("");
-    } catch (error) {
-      toast.error(error?.response?.data?.error || "Failed to unlock exam set.");
-    }
-  };
 
   const submitReferral = async () => {
     const friendName = String(referralForm.name || "").trim();
@@ -402,10 +177,6 @@ export default function ProfileAnalyticsPage() {
     }
   };
 
-  const toggleSubjectiveDetails = (submissionId) => {
-    setExpandedSubmissionId((current) => (current === submissionId ? null : submissionId));
-  };
-
   if (loading) {
     return <div style={{ padding: 20 }}>Loading analytics...</div>;
   }
@@ -419,15 +190,9 @@ export default function ProfileAnalyticsPage() {
   const recentAttempts = analytics.recent_attempts || [];
   const visibleAttempts = showAllAttempts ? recentAttempts : recentAttempts.slice(0, 5);
   const paymentBreakdown = analytics.payment_gateway_breakdown || [];
-  const subjectiveBreakdown = analytics.subjective_status_breakdown || [];
-  const subjectiveSubmissions = analytics.subjective_submissions || [];
-  const contributionSummary = analytics.contribution_summary || {};
-  const availableUnlocks =
-    Number(contributionSummary.available_unlocks ?? summary.contribution_unlocks_available ?? 0) || 0;
   const referralSummary = analytics.referral_summary || {};
   const availableReferralUnlocks =
     Number(referralSummary.available_unlocks ?? summary.referral_unlocks_available ?? 0) || 0;
-  const visibleContributions = showAllContributions ? myContributions : myContributions.slice(0, 5);
 
   return (
     <div className="container profile-analytics-page" style={{ paddingTop: 20, paddingBottom: 40 }}>
@@ -492,12 +257,8 @@ export default function ProfileAnalyticsPage() {
                   <strong>{summary.total_purchased_sets || 0}</strong>
                 </div>
                 <div>
-                  <span>Subjective Submissions</span>
-                  <strong>{summary.subjective_submissions || 0}</strong>
-                </div>
-                <div>
-                  <span>Reviewed Subjective</span>
-                  <strong>{summary.reviewed_subjective_submissions || 0}</strong>
+                  <span>Referral Unlocks Available</span>
+                  <strong>{availableReferralUnlocks}</strong>
                 </div>
               </div>
               <div className="profile-breakdown-tags">
@@ -506,258 +267,40 @@ export default function ProfileAnalyticsPage() {
                     {item.payment_gateway || "unknown"}: {item.total}
                   </span>
                 ))}
-                {subjectiveBreakdown.map((item) => (
-                  <span key={`sub-${item.status || "unknown"}`} className="breakdown-pill">
-                    {item.status || "unknown"}: {item.total}
-                  </span>
-                ))}
               </div>
             </div>
           </section>
 
           <div className="profile-attempt-list-card" style={{ marginTop: 6 }}>
             <h3>Recent Attempts</h3>
-              {recentAttempts.length === 0 ? (
-                <p>No attempts yet.</p>
-              ) : (
-                <>
-                  <ul className="file-list">
-                    {visibleAttempts.map((item) => (
-                      <li key={item.id} className="file-item">
-                        <div className="file-details">
-                          <h4>{item.exam_name}</h4>
-                          <p>Score: {Number(item.score || 0).toFixed(2)}</p>
-                        </div>
-                        <small>{formatNepalDateTime(item.created_at)}</small>
-                      </li>
-                    ))}
-                  </ul>
-                  {recentAttempts.length > 5 ? (
-                    <button
-                      type="button"
-                      className="text-link-btn"
-                      onClick={() => setShowAllAttempts((prev) => !prev)}
-                    >
-                      {showAllAttempts ? "See less" : "See more"}
-                    </button>
-                  ) : null}
-                </>
-              )}
-            </div>
-
-          <div className="profile-attempt-list-card profile-subjective-review-card" style={{ marginTop: 10 }}>
-            <h3>Subjective Submission Reviews</h3>
-            {subjectiveSubmissions.length === 0 ? (
-              <p>No subjective submissions yet.</p>
-            ) : (
-              <div className="subjective-summary-list profile-subjective-submissions">
-                {subjectiveSubmissions.map((item) => {
-                  const hasScore = item.score !== null && item.score !== undefined && item.score !== "";
-                  const isExpanded = expandedSubmissionId === item.id;
-                  return (
-                    <div key={item.id} className="subjective-summary-item">
-                      <button
-                        type="button"
-                        className={`subjective-summary-row ${isExpanded ? "expanded" : ""}`}
-                        onClick={() => toggleSubjectiveDetails(item.id)}
-                        aria-expanded={isExpanded}
-                      >
-                        <div className="subjective-summary-left">
-                          <div className="subjective-summary-title">
-                            <span className="subjective-summary-name">{item.exam_set_name || "Subjective Exam"}</span>
-                            <span className={`subjective-status-pill status-${item.status || "pending"}`}>
-                              {formatSubmissionStatus(item.status)}
-                            </span>
-                          </div>
-                          <div className="subjective-summary-meta">
-                            <span className={`subjective-summary-score ${hasScore ? "scored" : "pending"}`}>
-                              {hasScore ? item.score : "Pending"}
-                              {hasScore && item.max_marks != null ? ` / ${item.max_marks}` : ""}
-                            </span>
-                            <span className="subjective-summary-date">
-                              {item.submitted_at ? formatNepalDateTime(item.submitted_at) : "N/A"}
-                            </span>
-                          </div>
-                        </div>
-                        <span className="subjective-summary-toggle">{isExpanded ? "Hide" : "Details"}</span>
-                      </button>
-
-                      {isExpanded ? (
-                        <div className="subjective-summary-details">
-                          <div className="subjective-detail-times">
-                            <span>
-                              Submitted:{" "}
-                              <strong>{item.submitted_at ? formatNepalDateTime(item.submitted_at) : "N/A"}</strong>
-                            </span>
-                            {item.reviewed_at ? (
-                              <span>
-                                Reviewed: <strong>{formatNepalDateTime(item.reviewed_at)}</strong>
-                              </span>
-                            ) : null}
-                          </div>
-
-                          <div className={`subjective-score-panel ${hasScore ? "scored" : "pending"}`}>
-                            <span className="subjective-score-label">Marks</span>
-                            <strong className="subjective-score-value">{hasScore ? item.score : "Pending"}</strong>
-                            {hasScore && item.max_marks != null ? (
-                              <span className="subjective-score-total">/ {item.max_marks}</span>
-                            ) : null}
-                          </div>
-
-                          <div className="subjective-comment-notepad">
-                            <div className="subjective-comment-title">Examiner Comments</div>
-                            <p>{item.feedback || "No comments yet. Your submission is under review."}</p>
-                          </div>
-
-                          {item.file_url ? (
-                            <div className="profile-subjective-actions">
-                              <button
-                                type="button"
-                                className="btn btn-secondary btn-soft-blue-action"
-                                onClick={() => openPreview(item.file_url, item.exam_set_name || "Submitted File")}
-                                disabled={openingFileUrl === item.file_url}
-                              >
-                                {openingFileUrl === item.file_url ? (
-                                  <>
-                                    Opening ...
-                                  </>
-                                ) : (
-                                  "View Submission"
-                                )}
-                              </button>
-                            </div>
-                          ) : null}
-                          {item.reviewed_file_url ? (
-                            <div className="profile-subjective-actions">
-                              <button
-                                type="button"
-                                className="btn btn-primary btn-soft-blue-action"
-                                onClick={() => openPreview(item.reviewed_file_url, item.exam_set_name || "Reviewed File")}
-                                disabled={openingFileUrl === item.reviewed_file_url}
-                              >
-                                {openingFileUrl === item.reviewed_file_url ? (
-                                  <>
-                                    Opening ...
-                                  </>
-                                ) : (
-                                  "View Reviewed File"
-                                )}
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-secondary btn-soft-blue-action"
-                                onClick={() =>
-                                  downloadFile(item.reviewed_file_url, `${item.exam_set_name || "reviewed-file"}.pdf`)
-                                }
-                              >
-                                Download Reviewed File
-                              </button>
-                            </div>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <aside className="profile-analytics-side">
-          <div className="profile-attempt-list-card contribution-profile-card">
-            <h3>Contribute Notes</h3>
-            <p>
-              Initially you can upload up to 3 different notes (PDF/JPG/PNG, max 2MB). Your file will appear in Contributions
-              section after admin approval. Then, you can upload and contribute more. You will get a star rating on each approved
-              contributions.
-            </p>
-
-            <div className="contribution-upload-form">
-              <input
-                type="text"
-                placeholder="Contribution name"
-                value={contributionForm.title}
-                onChange={(e) => updateContributionForm("title", e.target.value)}
-              />
-              <textarea
-                rows={2}
-                placeholder="Short details about your notes"
-                value={contributionForm.description}
-                onChange={(e) => updateContributionForm("description", e.target.value)}
-              />
-              <input
-                type="file"
-                accept=".pdf,.png,.jpg,.jpeg"
-                onChange={(e) => updateContributionForm("file", e.target.files?.[0] || null)}
-              />
-              <button
-                className="btn btn-primary"
-                type="button"
-                disabled={uploadingContribution}
-                onClick={submitContribution}
-              >
-                {uploadingContribution ? "Uploading..." : "Submit Contribution"}
-              </button>
-            </div>
-
-            {availableUnlocks > 0 ? (
-              <div className="contribution-unlock-panel">
-                <div>
-                  <strong>Available Unlocks:</strong> {availableUnlocks}
-                </div>
-                <div className="contribution-unlock-row">
-                  <input
-                    type="text"
-                    placeholder="Enter Exam Set Name to unlock"
-                    value={unlockExamSetName}
-                    onChange={(e) => setUnlockExamSetName(e.target.value)}
-                  />
-                  <button className="btn btn-secondary" type="button" onClick={claimUnlock}>
-                    Unlock Exam Set
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <p className="contribution-unlock-note">
-                Earn a free exam set unlock after every 5 approved contributions.
-              </p>
-            )}
-
-            <h4 style={{ marginTop: "1rem" }}>My Contributions</h4>
-            {loadingContributions ? (
-              <p>Loading contributions...</p>
-            ) : myContributions.length === 0 ? (
-              <p>No contributions yet.</p>
+            {recentAttempts.length === 0 ? (
+              <p>No attempts yet.</p>
             ) : (
               <>
                 <ul className="file-list">
-                  {visibleContributions.map((item) => (
+                  {visibleAttempts.map((item) => (
                     <li key={item.id} className="file-item">
                       <div className="file-details">
-                        <h4>{item.title || item.file_name || "Contribution"}</h4>
-                        <p>
-                          Status: {item.status || "pending"}
-                          {item.category ? ` | Category: ${item.category}` : ""}
-                        </p>
+                        <h4>{item.exam_name}</h4>
+                        <p>Score: {Number(item.score || 0).toFixed(2)}</p>
                       </div>
-                      <small>{item.submitted_at ? formatNepalDateTime(item.submitted_at) : "N/A"}</small>
+                      <small>{formatNepalDateTime(item.created_at)}</small>
                     </li>
                   ))}
                 </ul>
-                {myContributions.length > 5 ? (
+                {recentAttempts.length > 5 ? (
                   <button
                     type="button"
                     className="text-link-btn"
-                    onClick={() => setShowAllContributions((prev) => !prev)}
+                    onClick={() => setShowAllAttempts((prev) => !prev)}
                   >
-                    {showAllContributions ? "See less" : "See more"}
+                    {showAllAttempts ? "See less" : "See more"}
                   </button>
                 ) : null}
               </>
             )}
           </div>
-        </aside>
+        </div>
       </section>
 
       {referralModalOpen ? (
@@ -840,8 +383,6 @@ export default function ProfileAnalyticsPage() {
           </div>
         </div>
       ) : null}
-
-      <FilePreviewModal preview={previewFile} onClose={closePreview} />
     </div>
   );
 }

@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from "react";
-import API, { cachedGet } from "../../services/api";
+import API, { cachedGet, peekCachedGet } from "../../services/api";
 import toast from "react-hot-toast";
 import { getInstitutionIcon, getSubjectIcon } from "../../utils/subjectIcons";
+import TimedLoadingState from "../common/TimedLoadingState";
+import { onContentSyncEvent } from "../../services/contentSyncService";
 
 function normalizeSubjectRecord(subject) {
   if (typeof subject === "string") {
@@ -55,9 +57,35 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
     setTotalQuestions(0);
   };
 
+  const applySubjects = (rows) => {
+    const normalizedSubjects = (rows || []).map(normalizeSubjectRecord);
+    setSubjects(normalizedSubjects);
+
+    const institutions = [];
+    const seen = new Set();
+    normalizedSubjects.forEach((item) => {
+      const institutionName = item.institution || "General";
+      if (seen.has(institutionName)) return;
+      seen.add(institutionName);
+      institutions.push(institutionName);
+    });
+    setInstitutionFolders(institutions);
+  };
+
   useEffect(() => {
     if (!isActive) return;
-    loadSubjects();
+
+    const cachedSubjects = peekCachedGet("exams/subjects/", {
+      params: { branch },
+      persistCache: true,
+      allowStale: true,
+    });
+    if (Array.isArray(cachedSubjects?.data) && cachedSubjects.data.length > 0) {
+      applySubjects(cachedSubjects.data);
+      setLoading(false);
+    }
+
+    loadSubjects({ silent: !!cachedSubjects });
     setView("institutions");
     setSelectedInstitution("");
     setSelectedSubject("");
@@ -67,32 +95,35 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
     resetQuestionSession();
   }, [branch, isActive]);
 
-  const loadSubjects = async () => {
-    setLoading(true);
+  useEffect(() => {
+    if (!isActive) return () => {};
+    return onContentSyncEvent((event) => {
+      if (event?.branch && String(event.branch).trim() !== String(branch || "").trim()) {
+        return;
+      }
+      loadSubjects({ forceRefresh: true });
+    });
+  }, [branch, isActive]);
+
+  const loadSubjects = async ({ forceRefresh = false, silent = false } = {}) => {
+    if (!silent) {
+      setLoading(true);
+    }
     try {
       const subjectsRes = await cachedGet("exams/subjects/", {
-        params: { branch },
+        params: { branch, refresh: !!forceRefresh },
+        forceRefresh: !!forceRefresh,
         persistCache: true,
       });
-
-      const normalizedSubjects = (subjectsRes.data || []).map(normalizeSubjectRecord);
-      setSubjects(normalizedSubjects);
-
-      const institutions = [];
-      const seen = new Set();
-      normalizedSubjects.forEach((item) => {
-        const institutionName = item.institution || "General";
-        if (seen.has(institutionName)) return;
-        seen.add(institutionName);
-        institutions.push(institutionName);
-      });
-      setInstitutionFolders(institutions);
+      applySubjects(subjectsRes.data || []);
     } catch (error) {
       toast.error("Failed to load subjects");
       console.error(error);
       setInstitutionFolders([]);
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   };
 
@@ -114,9 +145,23 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
     setSelectedSubjectLabel(displayName);
     setSelectedChapter("");
     resetQuestionSession();
-    setLoading(true);
+
+    const chaptersEndpoint = `exams/subjects/${encodeURIComponent(subjectToken)}/chapters/`;
+    const cachedChapters = peekCachedGet(chaptersEndpoint, {
+      params: { branch },
+      persistCache: true,
+      allowStale: true,
+    });
+    if (Array.isArray(cachedChapters?.data) && cachedChapters.data.length > 0) {
+      setChapters(cachedChapters.data);
+      setView("chapters");
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+
     try {
-      const res = await cachedGet(`exams/subjects/${encodeURIComponent(subjectToken)}/chapters/`, {
+      const res = await cachedGet(chaptersEndpoint, {
         params: { branch },
         persistCache: true,
       });
@@ -130,20 +175,42 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
     }
   };
 
-  const loadQuestionPage = async (subjectName, chapterName, nextPage, nextPageSize = pageSize) => {
-    setLoading(true);
+  const loadQuestionPage = async (
+    subjectName,
+    chapterName,
+    nextPage,
+    nextPageSize = pageSize,
+    { forceRefresh = false } = {}
+  ) => {
+    const questionsEndpoint = `exams/subjects/${encodeURIComponent(subjectName)}/chapters/${encodeURIComponent(chapterName)}/questions/`;
+    const queryParams = {
+      branch,
+      page: nextPage,
+      page_size: Math.max(5, nextPageSize),
+      refresh: !!forceRefresh,
+    };
+    const cachedPage = peekCachedGet(questionsEndpoint, {
+      params: queryParams,
+      persistCache: true,
+      allowStale: true,
+    });
+    if (Array.isArray(cachedPage?.data?.results) && cachedPage.data.results.length > 0) {
+      setQuestions(cachedPage.data.results || []);
+      setPage(cachedPage.data?.page || nextPage);
+      setPageSize(cachedPage.data?.page_size || nextPageSize);
+      setTotalPages(cachedPage.data?.total_pages || 1);
+      setTotalQuestions(cachedPage.data?.count || 0);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+
     try {
-      const res = await cachedGet(
-        `exams/subjects/${encodeURIComponent(subjectName)}/chapters/${encodeURIComponent(chapterName)}/questions/`,
-        {
-          params: {
-            branch,
-            page: nextPage,
-            page_size: Math.max(5, nextPageSize),
-          },
-          persistCache: true,
-        }
-      );
+      const res = await cachedGet(questionsEndpoint, {
+        params: queryParams,
+        forceRefresh: !!forceRefresh,
+        persistCache: true,
+      });
       setQuestions(res.data?.results || []);
       setPage(res.data?.page || nextPage);
       setPageSize(res.data?.page_size || nextPageSize);
@@ -247,10 +314,7 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
           <p>Select an institution folder to browse objective subjects and question sets.</p>
 
           {loading ? (
-            <div className="loading">
-              <div className="spinner"></div>
-              <p>Loading institution folders...</p>
-            </div>
+            <TimedLoadingState baseMessage="Loading institution folders..." />
           ) : institutionNames.length === 0 ? (
             <div className="empty-state">
               <i className="fas fa-inbox"></i>
@@ -298,10 +362,7 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
           </button>
 
           {loading ? (
-            <div className="loading">
-              <div className="spinner"></div>
-              <p>Loading subjects...</p>
-            </div>
+            <TimedLoadingState baseMessage="Loading subjects..." />
           ) : visibleSubjects.length === 0 ? (
             <div className="empty-state">
               <i className="fas fa-inbox"></i>
@@ -348,10 +409,7 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
           </button>
 
           {loading ? (
-            <div className="loading">
-              <div className="spinner"></div>
-              <p>Loading chapters...</p>
-            </div>
+            <TimedLoadingState baseMessage="Loading chapters..." />
           ) : chapters.length === 0 ? (
             <div className="empty-state">
               <i className="fas fa-inbox"></i>
@@ -408,10 +466,7 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
           </button>
 
           {loading ? (
-            <div className="loading">
-              <div className="spinner"></div>
-              <p>Loading questions...</p>
-            </div>
+            <TimedLoadingState baseMessage="Loading questions..." />
           ) : (
             <>
               {questions.map((question, index) => {

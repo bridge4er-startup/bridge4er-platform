@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from "react";
-import API, { cachedGet } from "../../services/api";
+import API, { cachedGet, peekCachedGet } from "../../services/api";
 import toast from "react-hot-toast";
 import FilePreviewModal from "../common/FilePreviewModal";
 import TimedLoadingState from "../common/TimedLoadingState";
+import { onContentSyncEvent } from "../../services/contentSyncService";
 
 const FILES_PAGE_SIZE = 7;
 
@@ -44,7 +45,35 @@ export default function OldQuestionsSection({ branch = "Civil Engineering", isAc
 
   useEffect(() => {
     if (!isActive) return;
+    const params = {
+      content_type: "old_question",
+      branch,
+      prefer_metadata: true,
+      metadata_only: true,
+    };
+    const cached = peekCachedGet("storage/files/list/", {
+      params,
+      persistCache: true,
+      allowStale: true,
+    });
+    if (Array.isArray(cached?.data)) {
+      setFiles(cached.data);
+      setFilteredFiles(cached.data);
+      setLoading(false);
+      loadFiles({ silent: true }).catch(() => {});
+      return;
+    }
     loadFiles();
+  }, [branch, isActive]);
+
+  useEffect(() => {
+    if (!isActive) return () => {};
+    return onContentSyncEvent((event) => {
+      if (event?.branch && String(event.branch).trim() !== String(branch || "").trim()) {
+        return;
+      }
+      loadFiles({ forceRefresh: true }).catch(() => {});
+    });
   }, [branch, isActive]);
 
   useEffect(() => {
@@ -66,16 +95,20 @@ export default function OldQuestionsSection({ branch = "Civil Engineering", isAc
     return () => window.removeEventListener("keydown", handleEsc);
   }, [preview]);
 
-  const loadFiles = async () => {
-    setLoading(true);
+  const loadFiles = async ({ forceRefresh = false, silent = false } = {}) => {
+    if (!silent) {
+      setLoading(true);
+    }
     try {
       const res = await cachedGet("storage/files/list/", {
         params: {
           content_type: "old_question",
           branch: branch,
+          refresh: !!forceRefresh,
           prefer_metadata: true,
-          metadata_only: true,
+          metadata_only: !forceRefresh,
         },
+        forceRefresh: !!forceRefresh,
         persistCache: true,
       });
       setFiles(res.data || []);
@@ -85,7 +118,9 @@ export default function OldQuestionsSection({ branch = "Civil Engineering", isAc
       toast.error("Failed to load old questions");
       console.error(error);
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   };
 

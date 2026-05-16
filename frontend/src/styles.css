@@ -9367,3 +9367,324 @@ body[data-branch-theme="computer-engineering"] {
     padding: 0.95rem 0.82rem;
   }
 }
+
+.content-sync-bar {
+  margin: 0.45rem 0 1.1rem;
+  border: 1px solid #dbe4ef;
+  border-radius: 16px;
+  padding: 0.85rem 1rem;
+  background:
+    radial-gradient(circle at 90% 12%, rgba(14, 165, 233, 0.12), transparent 42%),
+    linear-gradient(145deg, #ffffff, #f3f8ff);
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.content-sync-left h3 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 1rem;
+}
+
+.content-sync-left p {
+  margin: 0.2rem 0 0;
+  color: #475569;
+  font-size: 0.88rem;
+}
+
+.content-sync-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.content-sync-mode-pill {
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #334155;
+  border-radius: 999px;
+  padding: 0.3rem 0.75rem;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.modern-loading-shell {
+  border: 1px solid #d9e2ec;
+  border-radius: 14px;
+  padding: 0.9rem 1rem;
+  background: linear-gradient(150deg, #ffffff, #f8fbff);
+}
+
+.timed-loading-pulse-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.35rem;
+}
+
+.timed-loading-pulse {
+  display: inline-block;
+  height: 7px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #0ea5e9, #22c55e);
+  animation: loadingPulseBars 1.15s ease-in-out infinite;
+}
+
+.timed-loading-pulse.pulse-a {
+  width: 36px;
+}
+
+.timed-loading-pulse.pulse-b {
+  width: 64px;
+  animation-delay: 0.12s;
+}
+
+.timed-loading-pulse.pulse-c {
+  width: 24px;
+  animation-delay: 0.24s;
+}
+
+.timed-loading-title {
+  margin: 0;
+  color: #334155;
+  font-weight: 700;
+}
+
+.timed-loading-extra-note {
+  margin-top: 0.25rem;
+  color: #64748b;
+}
+
+@keyframes loadingPulseBars {
+  0% {
+    transform: scaleX(0.85);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scaleX(0.85);
+    opacity: 0.6;
+  }
+}
+
+.discussion-admin-panel {
+  display: grid;
+  grid-template-columns: 1.5fr 1.5fr auto;
+  gap: 0.6rem;
+  margin: 0.85rem 0 1rem;
+}
+
+.discussion-admin-panel input {
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 0.58rem 0.7rem;
+}
+
+.discussion-shell {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1.5fr);
+  gap: 0.85rem;
+  min-height: 520px;
+}
+
+.discussion-room-list {
+  border: 1px solid #dbe4ef;
+  border-radius: 14px;
+  padding: 0.4rem;
+  background: #f8fbff;
+  display: grid;
+  align-content: start;
+  gap: 0.45rem;
+  max-height: 520px;
+  overflow-y: auto;
+}
+
+.discussion-room-item {
+  border: 1px solid #d7e2ef;
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 0.62rem 0.65rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  text-align: left;
+}
+
+.discussion-room-item.active {
+  border-color: #38bdf8;
+  background: linear-gradient(140deg, #ecfeff, #f8fafc);
+}
+
+.discussion-room-meta strong {
+  color: #0f172a;
+  display: block;
+}
+
+.discussion-room-meta span {
+  color: #64748b;
+  font-size: 0.78rem;
+}
+
+.discussion-room-delete {
+  color: #ef4444;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0.1rem 0.35rem;
+}
+
+.discussion-chat-pane {
+  border: 1px solid #dbe4ef;
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 10% 10%, rgba(34, 197, 94, 0.08), transparent 34%),
+    linear-gradient(180deg, #f8fbff, #eef5ff);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 520px;
+}
+
+.discussion-chat-head {
+  padding: 0.75rem 0.85rem;
+  border-bottom: 1px solid #dbe4ef;
+}
+
+.discussion-chat-head h3 {
+  margin: 0;
+  color: #0f172a;
+}
+
+.discussion-chat-head p {
+  margin: 0.15rem 0 0;
+  color: #64748b;
+  font-size: 0.84rem;
+}
+
+.discussion-chat-body {
+  padding: 0.8rem;
+  overflow-y: auto;
+  display: grid;
+  gap: 0.62rem;
+  align-content: start;
+}
+
+.discussion-empty-chat {
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  padding: 0.8rem;
+  text-align: center;
+  color: #64748b;
+  background: #ffffff;
+}
+
+.discussion-message-bubble {
+  max-width: min(86%, 660px);
+  border-radius: 14px;
+  padding: 0.58rem 0.7rem;
+  display: grid;
+  gap: 0.3rem;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+  border: 1px solid #dbe4ef;
+}
+
+.discussion-message-bubble.mine {
+  margin-left: auto;
+  background: linear-gradient(140deg, #dcfce7, #ecfeff);
+}
+
+.discussion-message-bubble.theirs {
+  margin-right: auto;
+  background: #ffffff;
+}
+
+.discussion-message-author {
+  color: #0f172a;
+  font-size: 0.8rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.discussion-message-author span {
+  border: 1px solid #86efac;
+  color: #166534;
+  background: #f0fdf4;
+  border-radius: 999px;
+  font-size: 0.66rem;
+  padding: 0.1rem 0.35rem;
+}
+
+.discussion-message-bubble p {
+  margin: 0;
+  color: #0f172a;
+  white-space: pre-wrap;
+  line-height: 1.45;
+}
+
+.discussion-message-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.discussion-message-foot small {
+  color: #64748b;
+  font-size: 0.7rem;
+}
+
+.discussion-message-delete {
+  border: none;
+  background: transparent;
+  color: #ef4444;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.discussion-chat-input {
+  border-top: 1px solid #dbe4ef;
+  padding: 0.65rem 0.75rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.55rem;
+}
+
+.discussion-chat-input input {
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  padding: 0.6rem 0.85rem;
+}
+
+.subjective-submission-info-panel p {
+  margin-top: 0.55rem;
+  line-height: 1.55;
+  color: #334155;
+}
+
+@media (max-width: 900px) {
+  .discussion-admin-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .discussion-shell {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+
+  .discussion-room-list {
+    max-height: 250px;
+  }
+
+  .discussion-chat-pane {
+    min-height: 420px;
+  }
+}

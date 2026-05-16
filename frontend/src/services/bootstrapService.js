@@ -36,6 +36,12 @@ export async function warmInitialStudentContent(branch, isAuthenticated) {
         persistCache: true,
         persistTtlMs: BOOTSTRAP_CACHE_TTL_MS,
       }),
+      prefetchGet("storage/files/sync-status/", {
+        params: { branch: normalizedBranch },
+        ttlMs: BOOTSTRAP_CACHE_TTL_MS,
+        persistCache: true,
+        persistTtlMs: BOOTSTRAP_CACHE_TTL_MS,
+      }),
     ];
 
     let subjects = [];
@@ -119,6 +125,12 @@ export async function warmInitialStudentContent(branch, isAuthenticated) {
         }),
         prefetchGet("exams/sets/", {
           params: { branch: normalizedBranch, exam_type: "subjective" },
+          ttlMs: BOOTSTRAP_CACHE_TTL_MS,
+          persistCache: true,
+          persistTtlMs: BOOTSTRAP_CACHE_TTL_MS,
+        }),
+        prefetchGet("discussions/classrooms/", {
+          params: { branch: normalizedBranch },
           ttlMs: BOOTSTRAP_CACHE_TTL_MS,
           persistCache: true,
           persistTtlMs: BOOTSTRAP_CACHE_TTL_MS,

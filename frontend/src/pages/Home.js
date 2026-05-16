@@ -8,7 +8,8 @@ import OldQuestionsSection from "../components/sections/OldQuestionSection";
 import MCQSection from "../components/sections/MCQSectionPaginated";
 import SubjectiveSection from "../components/sections/SubjectiveSection";
 import TakeExamSection from "../components/sections/TakeExamSection";
-import ContributionsSection from "../components/sections/ContributionsSection";
+import DiscussionsSection from "../components/sections/DiscussionsSection";
+import ContentSyncBar from "../components/common/ContentSyncBar";
 import Footer from "../components/layout/Footer";
 import { useBranch } from "../context/BranchContext";
 import { useAuth } from "../context/AuthContext";
@@ -33,7 +34,7 @@ export default function Home() {
   const { isAuthenticated } = useAuth();
   const branchTheme = useMemo(() => branch.toLowerCase().replace(/\s+/g, "-"), [branch]);
   const validSections = useMemo(
-    () => ["homepage", "syllabus", "old-questions", "objective-mcqs", "library", "exam-hall", "contributions"],
+    () => ["homepage", "syllabus", "old-questions", "objective-mcqs", "library", "exam-hall", "discussions"],
     []
   );
   const [activeSection, setActiveSection] = useState("homepage");
@@ -43,7 +44,7 @@ export default function Home() {
     "objective-mcqs",
     "library",
     "exam-hall",
-    "contributions",
+    "discussions",
   ]);
 
   useEffect(() => {
@@ -68,6 +69,7 @@ export default function Home() {
       <Header />
       <Navigation activeSection={activeSection} />
       <main className="container">
+        <ContentSyncBar branch={branch} isActive />
         <HomepageSection branch={branch} isActive={activeSection === "homepage"} />
 
         {activeSection === "syllabus" && authRequiredSections.has("syllabus") && !isAuthenticated ? (
@@ -100,10 +102,10 @@ export default function Home() {
           <TakeExamSection branch={branch} isActive={activeSection === "exam-hall"} />
         )}
 
-        {activeSection === "contributions" && authRequiredSections.has("contributions") && !isAuthenticated ? (
-          <AccessRequired title="Contributions" />
+        {activeSection === "discussions" && authRequiredSections.has("discussions") && !isAuthenticated ? (
+          <AccessRequired title="Discussions" />
         ) : (
-          <ContributionsSection branch={branch} isActive={activeSection === "contributions"} />
+          <DiscussionsSection branch={branch} isActive={activeSection === "discussions"} />
         )}
       </main>
       <Footer />

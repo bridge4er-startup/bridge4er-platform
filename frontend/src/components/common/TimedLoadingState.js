@@ -13,14 +13,16 @@ export default function TimedLoadingState({ baseMessage = "Loading..." }) {
   }, []);
 
   return (
-    <div className="loading timed-loading">
-      <div className="timed-loading-spinner-row">
-        <div className="spinner"></div>
+    <div className="loading timed-loading modern-loading-shell">
+      <div className="timed-loading-pulse-row" aria-hidden="true">
+        <span className="timed-loading-pulse pulse-a"></span>
+        <span className="timed-loading-pulse pulse-b"></span>
+        <span className="timed-loading-pulse pulse-c"></span>
       </div>
-      <p>{baseMessage}</p>
+      <p className="timed-loading-title">{baseMessage}</p>
       {elapsedSeconds >= 5 ? (
         <p className="timed-loading-extra-note">
-          wait for few seconds more ... preparing your questions ... be ready
+          Optimizing content stream. This should finish shortly.
         </p>
       ) : null}
     </div>

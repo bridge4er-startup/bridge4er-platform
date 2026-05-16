@@ -1,9 +1,11 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import API, { cachedGet } from "../../services/api";
+import API, { cachedGet, peekCachedGet } from "../../services/api";
 import toast from "react-hot-toast";
 import { useBranch } from "../../context/BranchContext";
 import { useAuth } from "../../context/AuthContext";
 import FilePreviewModal from "../common/FilePreviewModal";
+import TimedLoadingState from "../common/TimedLoadingState";
+import { onContentSyncEvent } from "../../services/contentSyncService";
 
 const FEATURE_CARDS = [
   {
@@ -412,6 +414,49 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
     });
   };
 
+  const loadHomepageContent = async ({ forceRefresh = false, silent = false } = {}) => {
+    if (!silent) {
+      setLoading(true);
+    }
+    try {
+      const [metricsRes, filesRes] = await Promise.allSettled([
+        cachedGet("storage/homepage/stats/", {
+          params: { branch },
+          forceRefresh: !!forceRefresh,
+          persistCache: true,
+        }),
+        cachedGet("storage/files/list/", {
+          params: {
+            content_type: "notice",
+            branch,
+            refresh: !!forceRefresh,
+            prefer_metadata: true,
+            metadata_only: !forceRefresh,
+          },
+          forceRefresh: !!forceRefresh,
+          persistCache: true,
+        }),
+      ]);
+
+      if (metricsRes.status === "fulfilled") {
+        setMetrics(metricsRes.value.data);
+      }
+      if (filesRes.status === "fulfilled") {
+        setFiles(filesRes.value.data || []);
+      }
+      if (metricsRes.status !== "fulfilled" && filesRes.status !== "fulfilled") {
+        toast.error("Failed to load homepage content.");
+      }
+      setNoticePage(1);
+    } catch (_error) {
+      toast.error("Failed to load homepage content.");
+    } finally {
+      if (!silent) {
+        setLoading(false);
+      }
+    }
+  };
+
   useEffect(() => {
     const timer = setInterval(() => setClock(new Date()), 1000);
     return () => clearInterval(timer);
@@ -671,42 +716,46 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
 
   useEffect(() => {
     if (!isActive) return;
-    const load = async () => {
-      try {
-        setLoading(true);
-        const [metricsRes, filesRes] = await Promise.allSettled([
-          cachedGet("storage/homepage/stats/", {
-            params: { branch },
-            persistCache: true,
-          }),
-          cachedGet("storage/files/list/", {
-            params: {
-              content_type: "notice",
-              branch,
-              prefer_metadata: true,
-              metadata_only: true,
-            },
-            persistCache: true,
-          }),
-        ]);
 
-        if (metricsRes.status === "fulfilled") {
-          setMetrics(metricsRes.value.data);
-        }
-        if (filesRes.status === "fulfilled") {
-          setFiles(filesRes.value.data || []);
-        }
-        if (metricsRes.status !== "fulfilled" && filesRes.status !== "fulfilled") {
-          toast.error("Failed to load homepage content.");
-        }
-        setNoticePage(1);
-      } catch (_error) {
-        toast.error("Failed to load homepage content.");
-      } finally {
-        setLoading(false);
+    const metricsCached = peekCachedGet("storage/homepage/stats/", {
+      params: { branch },
+      persistCache: true,
+      allowStale: true,
+    });
+    const noticesCached = peekCachedGet("storage/files/list/", {
+      params: {
+        content_type: "notice",
+        branch,
+        prefer_metadata: true,
+        metadata_only: true,
+      },
+      persistCache: true,
+      allowStale: true,
+    });
+
+    if (metricsCached?.data) {
+      setMetrics(metricsCached.data);
+    }
+    if (Array.isArray(noticesCached?.data)) {
+      setFiles(noticesCached.data);
+    }
+    if (metricsCached?.data || Array.isArray(noticesCached?.data)) {
+      setLoading(false);
+      loadHomepageContent({ silent: true }).catch(() => {});
+      return;
+    }
+
+    loadHomepageContent();
+  }, [branch, isActive]);
+
+  useEffect(() => {
+    if (!isActive) return () => {};
+    return onContentSyncEvent((event) => {
+      if (event?.branch && String(event.branch).trim() !== String(branch || "").trim()) {
+        return;
       }
-    };
-    load();
+      loadHomepageContent({ forceRefresh: true }).catch(() => {});
+    });
   }, [branch, isActive]);
 
   const filteredFiles = useMemo(() => {
@@ -938,9 +987,7 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
               <i className="fas fa-search"></i>
             </div>
             {loading ? (
-              <div className="loading">
-                <p>Loading notice files...</p>
-              </div>
+              <TimedLoadingState baseMessage="Loading notice files..." />
             ) : filteredFiles.length === 0 ? (
               <div className="empty-state">
                 <h4>No notice files found.</h4>

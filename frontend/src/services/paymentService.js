@@ -1,7 +1,10 @@
-import API from "./api";
+import API, { cachedGet } from "./api";
 
 export const getQRCodePaymentConfig = async () => {
-  const res = await API.get("payments/config/");
+  const res = await cachedGet("payments/config/", {
+    persistCache: true,
+    allowStaleOnError: true,
+  });
   return res.data;
 };
 
@@ -17,7 +20,11 @@ export const submitManualPaymentRequest = async (payload) => {
 
 export const getMyPaymentRequests = async (statusFilter = "all") => {
   const params = statusFilter && statusFilter !== "all" ? { status: statusFilter } : {};
-  const res = await API.get("payments/requests/my/", { params });
+  const res = await cachedGet("payments/requests/my/", {
+    params,
+    persistCache: true,
+    allowStaleOnError: true,
+  });
   return res.data;
 };
 

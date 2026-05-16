@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { listExamSets } from "../../services/examService";
-import { cachedGet } from "../../services/api";
+import { cachedGet, peekCachedGet } from "../../services/api";
 import {
   getMyPaymentRequests,
   getQRCodePaymentConfig,
@@ -11,6 +11,7 @@ import { useAuth } from "../../context/AuthContext";
 import toast from "react-hot-toast";
 import TimedLoadingState from "../common/TimedLoadingState";
 import { getInstitutionIcon, getSubjectIcon } from "../../utils/subjectIcons";
+import { onContentSyncEvent } from "../../services/contentSyncService";
 
 const EXAM_TYPE_CONTENT = {
   subjective: {
@@ -20,8 +21,8 @@ const EXAM_TYPE_CONTENT = {
       { icon: "fas fa-file-lines", tone: "feature-indigo", text: "Real Question Papers" },
       { icon: "fas fa-stopwatch-20", tone: "feature-amber", text: "Negative Timer" },
       { icon: "fas fa-laptop-code", tone: "feature-sky", text: "Practice Exam in real time simulation" },
-      { icon: "fas fa-cloud-arrow-up", tone: "feature-emerald", text: "Upload your answers within time limit" },
-      { icon: "fas fa-comments", tone: "feature-rose", text: "Get peer review, comments and score within a week" },
+      { icon: "fas fa-envelope-open-text", tone: "feature-emerald", text: "Submission support by official email" },
+      { icon: "fas fa-comments", tone: "feature-rose", text: "Expert review guidance within 7 business days" },
     ],
   },
   mcq: {
@@ -143,16 +144,57 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
     setLoadingByType((prev) => ({ ...prev, [type]: true }));
     try {
       const contentType = type === "mcq" ? "take_exam_mcq" : "take_exam_subjective";
+      const folderParams = {
+        content_type: contentType,
+        branch,
+        include_dirs: true,
+        refresh: !!force,
+        prefer_metadata: true,
+        metadata_only: !force,
+      };
+
+      if (!force) {
+        const cachedFolderRes = peekCachedGet("storage/files/list/", {
+          params: folderParams,
+          persistCache: true,
+          allowStale: true,
+        });
+        const cachedExamSets = peekCachedGet("exams/sets/", {
+          params: { branch, exam_type: type, refresh: false },
+          persistCache: true,
+          allowStale: true,
+        });
+        if (Array.isArray(cachedExamSets?.data) || Array.isArray(cachedFolderRes?.data)) {
+          const normalizedCachedSets = (cachedExamSets?.data || []).map((setItem) => ({
+            ...setItem,
+            folder_parts: normalizeFolderParts(setItem.folder_parts),
+            folder_display_parts: normalizeFolderParts(setItem.folder_display_parts || setItem.folder_parts),
+          }));
+          if (normalizedCachedSets.length) {
+            setSetsByType((prev) => ({ ...prev, [type]: normalizedCachedSets }));
+          }
+          if (Array.isArray(cachedFolderRes?.data)) {
+            const cachedFolders = cachedFolderRes.data
+              .filter((entry) => !!entry?.is_dir)
+              .map((entry) => ({
+                ...entry,
+                display_name: entry.display_name || entry.name,
+                icon_url: entry.icon_url || "",
+                sort_order: Number(entry.sort_order || 0),
+                folder_parts: getRelativeExamParts(entry.path || "", type),
+              }))
+              .filter((entry) => entry.folder_parts.length > 0);
+            setFolderEntriesByType((prev) => ({ ...prev, [type]: cachedFolders }));
+            setLoadingByType((prev) => ({ ...prev, [type]: false }));
+          }
+        }
+      }
+
       const [data, folderRes] = await Promise.all([
-        listExamSets(branch, type),
+        listExamSets(branch, type, !!force),
         cachedGet("storage/files/list/", {
-          params: {
-            content_type: contentType,
-            branch,
-            include_dirs: true,
-            prefer_metadata: true,
-            metadata_only: true,
-          },
+          params: folderParams,
+          forceRefresh: !!force,
           persistCache: true,
         }),
       ]);
@@ -183,6 +225,17 @@ export default function TakeExamSection({ branch = "Civil Engineering", isActive
       setLoadingByType((prev) => ({ ...prev, [type]: false }));
     }
   };
+
+  useEffect(() => {
+    if (!isActive) return () => {};
+    return onContentSyncEvent((event) => {
+      if (event?.branch && String(event.branch).trim() !== String(branch || "").trim()) {
+        return;
+      }
+      if (!selectedExamType) return;
+      loadSetType(selectedExamType, true).catch(() => {});
+    });
+  }, [branch, isActive, selectedExamType]);
 
   useEffect(() => {
     if (!isActive) return;

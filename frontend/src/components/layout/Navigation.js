@@ -13,7 +13,7 @@ export default function Navigation({ activeSection }) {
           <li><a href="#objective-mcqs" className={linkClass("objective-mcqs")} data-section="objective-mcqs"><i className="fas fa-question-circle"></i> Objective MCQs</a></li>
           <li><a href="#library" className={linkClass("library")} data-section="library"><i className="fas fa-book-open"></i> Library</a></li>
           <li><a href="#exam-hall" className={linkClass("exam-hall")} data-section="exam-hall"><i className="fas fa-clock"></i> Exam Hall</a></li>
-          <li><a href="#contributions" className={linkClass("contributions")} data-section="contributions"><i className="fas fa-hand-holding-heart"></i> Contributions</a></li>
+          <li><a href="#discussions" className={linkClass("discussions")} data-section="discussions"><i className="fas fa-comments"></i> Discussions</a></li>
         </ul>
       </div>
     </nav>
