@@ -51,3 +51,4 @@ frontend/src/perm_test_tmp.txt
 frontend/write_test_front.txt
 
 .vercel
+.env*.local
