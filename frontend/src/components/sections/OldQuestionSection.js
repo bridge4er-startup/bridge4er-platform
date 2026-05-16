@@ -33,6 +33,7 @@ export default function OldQuestionsSection({ branch = "Civil Engineering", isAc
   const [preview, setPreview] = useState(null);
   const [page, setPage] = useState(1);
   const [openingPath, setOpeningPath] = useState("");
+  const normalizeRows = (value) => (Array.isArray(value) ? value : []);
 
   const closePreview = () => {
     setPreview((current) => {
@@ -111,8 +112,9 @@ export default function OldQuestionsSection({ branch = "Civil Engineering", isAc
         forceRefresh: !!forceRefresh,
         persistCache: true,
       });
-      setFiles(res.data || []);
-      setFilteredFiles(res.data || []);
+      const nextRows = normalizeRows(res.data);
+      setFiles(nextRows);
+      setFilteredFiles(nextRows);
       setPage(1);
     } catch (error) {
       toast.error("Failed to load old questions");

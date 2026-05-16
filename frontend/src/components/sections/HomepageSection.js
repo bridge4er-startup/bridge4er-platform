@@ -405,6 +405,10 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
   });
   const [nepaliDateText, setNepaliDateText] = useState("");
 
+  const normalizeNoticeRows = (value) => (Array.isArray(value) ? value : []);
+  const normalizeMetrics = (value) =>
+    value && typeof value === "object" && !Array.isArray(value) ? value : null;
+
   const closePreview = () => {
     setPreview((current) => {
       if (current?.url && current.url.startsWith("blob:")) {
@@ -439,10 +443,10 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
       ]);
 
       if (metricsRes.status === "fulfilled") {
-        setMetrics(metricsRes.value.data);
+        setMetrics(normalizeMetrics(metricsRes.value.data));
       }
       if (filesRes.status === "fulfilled") {
-        setFiles(filesRes.value.data || []);
+        setFiles(normalizeNoticeRows(filesRes.value.data));
       }
       if (metricsRes.status !== "fulfilled" && filesRes.status !== "fulfilled") {
         toast.error("Failed to load homepage content.");
@@ -734,7 +738,7 @@ export default function HomepageSection({ branch = "Civil Engineering", isActive
     });
 
     if (metricsCached?.data) {
-      setMetrics(metricsCached.data);
+      setMetrics(normalizeMetrics(metricsCached.data));
     }
     if (Array.isArray(noticesCached?.data)) {
       setFiles(noticesCached.data);

@@ -67,6 +67,7 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
   const [totalPages, setTotalPages] = useState(1);
   const [totalQuestions, setTotalQuestions] = useState(0);
   const [attempts, setAttempts] = useState({});
+  const normalizeRows = (value) => (Array.isArray(value) ? value : []);
 
   const resetQuestionSession = () => {
     setQuestions([]);
@@ -77,7 +78,7 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
   };
 
   const applySubjects = (rows) => {
-    const normalizedSubjects = (rows || []).map(normalizeSubjectRecord);
+    const normalizedSubjects = normalizeRows(rows).map(normalizeSubjectRecord);
     setSubjects(normalizedSubjects);
 
     const institutions = [];
@@ -134,7 +135,7 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
         forceRefresh: !!forceRefresh,
         persistCache: true,
       });
-      applySubjects(subjectsRes.data || []);
+      applySubjects(subjectsRes.data);
     } catch (error) {
       toast.error("Failed to load subjects");
       console.error(error);
@@ -184,7 +185,7 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
         params: { branch },
         persistCache: true,
       });
-      const normalized = Array.isArray(res.data) ? res.data.map(normalizeChapterRecord) : [];
+      const normalized = normalizeRows(res.data).map(normalizeChapterRecord);
       setChapters(normalized);
       setView("chapters");
     } catch (error) {
@@ -231,7 +232,7 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
         forceRefresh: !!forceRefresh,
         persistCache: true,
       });
-      setQuestions(res.data?.results || []);
+      setQuestions(normalizeRows(res.data?.results));
       setPage(res.data?.page || nextPage);
       setPageSize(res.data?.page_size || nextPageSize);
       setTotalPages(res.data?.total_pages || 1);

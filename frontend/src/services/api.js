@@ -331,6 +331,48 @@ const API = axios.create({
 
 const isIdempotentMethod = (method) => ["get", "head", "options"].includes(String(method || "").toLowerCase());
 
+const isUnexpectedHtmlResponse = (response) => {
+  const responseType = String(response?.config?.responseType || "json").toLowerCase();
+  if (responseType === "blob" || responseType === "arraybuffer" || responseType === "stream") {
+    return false;
+  }
+  const contentType = String(
+    response?.headers?.["content-type"] || response?.headers?.["Content-Type"] || ""
+  ).toLowerCase();
+  if (!contentType.includes("text/html")) {
+    return false;
+  }
+  if (typeof response?.data !== "string") {
+    return false;
+  }
+  const sample = response.data.trim().slice(0, 240).toLowerCase();
+  return (
+    sample.startsWith("<!doctype html") ||
+    sample.startsWith("<html") ||
+    (sample.includes("<head") && sample.includes("</html>"))
+  );
+};
+
+const buildUnexpectedHtmlError = (response) => {
+  const error = new Error("Unexpected HTML response from API endpoint.");
+  error.code = "ERR_UNEXPECTED_HTML_RESPONSE";
+  error.response = response;
+  error.config = response?.config || {};
+  return error;
+};
+
+const getAlternateApiBaseUrl = (baseUrl) => {
+  const normalized = ensureTrailingSlash(baseUrl);
+  if (!normalized) return "";
+  if (normalized.endsWith("/_/backend/api/")) {
+    return normalized.replace(/\/_\/backend\/api\/$/i, "/api/");
+  }
+  if (normalized.endsWith("/api/")) {
+    return normalized.replace(/\/api\/$/i, "/_/backend/api/");
+  }
+  return "";
+};
+
 const isTransientBackendError = (error) => {
   const status = error?.response?.status;
   if (status && RETRIABLE_STATUS_CODES.has(status)) {
@@ -504,6 +546,11 @@ const resolvePendingRequests = (token) => {
 
 API.interceptors.response.use(
   (response) => {
+    if (isUnexpectedHtmlResponse(response)) {
+      clearGetResponseCache();
+      clearPersistedGetCache();
+      return Promise.reject(buildUnexpectedHtmlError(response));
+    }
     const method = String(response?.config?.method || "").toLowerCase();
     if (method && !isIdempotentMethod(method)) {
       clearGetResponseCache();
@@ -537,6 +584,20 @@ API.interceptors.response.use(
       originalRequest.url?.includes("accounts/auth/login/") ||
       originalRequest.url?.includes("accounts/auth/register/") ||
       originalRequest.url?.includes("accounts/auth/token/refresh/");
+
+    if (
+      !isAuthEndpoint &&
+      isIdempotentMethod(method) &&
+      !originalRequest._apiBaseFallbackTried &&
+      (error?.code === "ERR_UNEXPECTED_HTML_RESPONSE" || status === 404)
+    ) {
+      const alternateBaseUrl = getAlternateApiBaseUrl(originalRequest.baseURL || API_BASE_URL);
+      if (alternateBaseUrl) {
+        originalRequest._apiBaseFallbackTried = true;
+        originalRequest.baseURL = alternateBaseUrl;
+        return API(originalRequest);
+      }
+    }
 
     if (status !== 401 || originalRequest._retry || isAuthEndpoint) {
       return Promise.reject(error);

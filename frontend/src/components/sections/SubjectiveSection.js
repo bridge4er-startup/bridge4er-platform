@@ -79,6 +79,7 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
   const [currentFolderParts, setCurrentFolderParts] = useState([]);
   const [openingPath, setOpeningPath] = useState("");
   const deferredQuery = useDeferredValue(searchQuery);
+  const normalizeRows = (value) => (Array.isArray(value) ? value : []);
 
   const closePreview = () => {
     setPreviewFile((current) => {
@@ -149,7 +150,7 @@ export default function SubjectiveSection({ branch = "Civil Engineering", isActi
         forceRefresh: !!forceRefresh,
         persistCache: true,
       });
-      setEntries(res.data || []);
+      setEntries(normalizeRows(res.data));
       setCurrentFolderParts([]);
       closePreview();
     } catch (_error) {

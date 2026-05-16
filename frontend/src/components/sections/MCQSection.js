@@ -15,6 +15,7 @@ export default function MCQSection({ branch = "Civil Engineering", isActive = fa
   const [showAnswer, setShowAnswer] = useState(false);
   const [selectedOption, setSelectedOption] = useState("");
   const [view, setView] = useState("subjects"); // subjects, chapters, exam
+  const normalizeRows = (value) => (Array.isArray(value) ? value : []);
 
   useEffect(() => {
     if (!isActive) return;
@@ -31,7 +32,7 @@ export default function MCQSection({ branch = "Civil Engineering", isActive = fa
       const res = await API.get("exams/subjects/", {
         params: { branch },
       });
-      setSubjects(res.data || []);
+      setSubjects(normalizeRows(res.data));
     } catch (error) {
       toast.error("Failed to load subjects");
       console.error(error);
@@ -47,7 +48,7 @@ export default function MCQSection({ branch = "Civil Engineering", isActive = fa
       const res = await API.get(`exams/subjects/${encodeURIComponent(subject)}/chapters/`, {
         params: { branch },
       });
-      setChapters(res.data || []);
+      setChapters(normalizeRows(res.data));
       setView("chapters");
     } catch (error) {
       toast.error("Failed to load chapters");
@@ -71,7 +72,10 @@ export default function MCQSection({ branch = "Civil Engineering", isActive = fa
         `exams/subjects/${encodeURIComponent(selectedSubject)}/chapters/${encodeURIComponent(chapterToken)}/questions/`,
         { params: { branch } }
       );
-      setQuestions(res.data?.results || res.data || []);
+      const rows = Array.isArray(res.data?.results)
+        ? res.data.results
+        : normalizeRows(res.data);
+      setQuestions(rows);
       setCurrentQuestionIndex(0);
       setShowAnswer(false);
       setSelectedOption("");

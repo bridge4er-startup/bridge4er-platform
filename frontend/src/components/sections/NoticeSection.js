@@ -29,6 +29,7 @@ export default function NoticeSection({ branch = "Civil Engineering", isActive =
   const [searchQuery, setSearchQuery] = useState("");
   const [preview, setPreview] = useState(null);
   const [openingPath, setOpeningPath] = useState("");
+  const normalizeRows = (value) => (Array.isArray(value) ? value : []);
 
   const closePreview = () => {
     setPreview((current) => {
@@ -64,8 +65,9 @@ export default function NoticeSection({ branch = "Civil Engineering", isActive =
         },
         persistCache: true,
       });
-      setFiles(res.data || []);
-      setFilteredFiles(res.data || []);
+      const nextRows = normalizeRows(res.data);
+      setFiles(nextRows);
+      setFilteredFiles(nextRows);
     } catch (error) {
       toast.error("Failed to load notices");
       console.error(error);
