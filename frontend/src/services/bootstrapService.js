@@ -36,12 +36,6 @@ export async function warmInitialStudentContent(branch, isAuthenticated) {
         persistCache: true,
         persistTtlMs: BOOTSTRAP_CACHE_TTL_MS,
       }),
-      prefetchGet("storage/files/sync-status/", {
-        params: { branch: normalizedBranch },
-        ttlMs: BOOTSTRAP_CACHE_TTL_MS,
-        persistCache: true,
-        persistTtlMs: BOOTSTRAP_CACHE_TTL_MS,
-      }),
     ];
 
     let subjects = [];

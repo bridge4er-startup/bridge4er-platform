@@ -15,6 +15,11 @@ export default function ContentSyncBar({ branch = "Civil Engineering", isActive 
   const [syncing, setSyncing] = useState(false);
 
   const loadStatus = async () => {
+    if (!isAdmin) {
+      setStatus(null);
+      setLoadingStatus(false);
+      return;
+    }
     setLoadingStatus(true);
     try {
       const data = await getContentSyncStatus(branch);
@@ -27,28 +32,29 @@ export default function ContentSyncBar({ branch = "Civil Engineering", isActive 
   };
 
   useEffect(() => {
-    if (!isActive) return;
+    if (!isActive || !isAdmin) return;
     loadStatus().catch(() => {});
-  }, [branch, isActive]);
+  }, [branch, isActive, isAdmin]);
 
   useEffect(() => {
-    if (!isActive) return () => {};
+    if (!isActive || !isAdmin) return () => {};
     return onContentSyncEvent((event) => {
       const eventBranch = String(event?.branch || "").trim();
       if (eventBranch && eventBranch !== String(branch || "").trim()) return;
       loadStatus().catch(() => {});
     });
-  }, [branch, isActive]);
+  }, [branch, isActive, isAdmin]);
 
   if (!isAuthenticated || !isActive) {
     return null;
   }
 
   const lastSyncedLabel = useMemo(() => {
+    if (!isAdmin) return "On-demand refresh";
     const timestamp = status?.last_synced;
     if (!timestamp) return "Not synced yet";
     return formatNepalDateTime(timestamp);
-  }, [status]);
+  }, [status, isAdmin]);
 
   const handleSync = async () => {
     if (syncing) return;
@@ -80,7 +86,9 @@ export default function ContentSyncBar({ branch = "Civil Engineering", isActive 
       </div>
       <div className="content-sync-right">
         <span className="content-sync-mode-pill">
-          {status?.manual_sync_mode ? "Manual Sync Mode" : "Auto Snapshot Mode"}
+          {isAdmin
+            ? (status?.manual_sync_mode ? "Manual Sync Mode" : "Auto Snapshot Mode")
+            : "Student Refresh Mode"}
         </span>
         <button
           type="button"
@@ -96,4 +104,3 @@ export default function ContentSyncBar({ branch = "Civil Engineering", isActive 
     </section>
   );
 }
-
