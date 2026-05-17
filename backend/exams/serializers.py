@@ -62,7 +62,7 @@ class MCQQuestionPublicSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = MCQQuestion
-        fields = ['id', 'chapter', 'question_header', 'question_text', 'question_image_url', 'options']
+        fields = ['id', 'chapter', 'question_header', 'question_text', 'question_image_url', 'option_a', 'option_b', 'option_c', 'option_d', 'options']
 
 
 class ExamAttemptSerializer(serializers.ModelSerializer):

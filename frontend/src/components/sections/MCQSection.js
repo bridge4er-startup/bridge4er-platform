@@ -15,6 +15,7 @@ export default function MCQSection({ branch = "Civil Engineering", isActive = fa
   const [showAnswer, setShowAnswer] = useState(false);
   const [selectedOption, setSelectedOption] = useState("");
   const [view, setView] = useState("subjects"); // subjects, chapters, exam
+  const [submissionResult, setSubmissionResult] = useState(null);
   const normalizeRows = (value) => (Array.isArray(value) ? value : []);
 
   useEffect(() => {
@@ -104,6 +105,7 @@ export default function MCQSection({ branch = "Civil Engineering", isActive = fa
         selected_option: selectedOption,
       });
 
+      setSubmissionResult(res.data);
       setShowAnswer(true);
     } catch (error) {
       toast.error("Failed to submit answer");
@@ -116,12 +118,14 @@ export default function MCQSection({ branch = "Civil Engineering", isActive = fa
       setCurrentQuestionIndex(currentQuestionIndex + 1);
       setShowAnswer(false);
       setSelectedOption("");
+      setSubmissionResult(null);
     } else {
       toast.success("Exam completed!");
       setView("subjects");
       setSelectedSubject("");
       setSelectedChapter("");
       setQuestions([]);
+      setSubmissionResult(null);
     }
   };
 
@@ -130,6 +134,7 @@ export default function MCQSection({ branch = "Civil Engineering", isActive = fa
       setCurrentQuestionIndex(currentQuestionIndex - 1);
       setShowAnswer(false);
       setSelectedOption("");
+      setSubmissionResult(null);
     }
   };
 
@@ -261,7 +266,7 @@ export default function MCQSection({ branch = "Civil Engineering", isActive = fa
                   <span
                     className={`option-text ${
                       showAnswer
-                        ? option === currentQuestion.correct_option
+                        ? option === submissionResult?.correct_option
                           ? "correct"
                           : option === selectedOption
                           ? "incorrect"
@@ -279,10 +284,10 @@ export default function MCQSection({ branch = "Civil Engineering", isActive = fa
             {showAnswer && (
               <div className="answer-display">
                 <div className="explanation-box">
-                  <h4>✓ Correct Answer: {currentQuestion.correct_option.toUpperCase()}</h4>
-                  {currentQuestion.explanation && (
+                  <h4>✓ Correct Answer: {submissionResult?.correct_option?.toUpperCase()}</h4>
+                  {submissionResult?.explanation && (
                     <p>
-                      <strong>Explanation:</strong> {currentQuestion.explanation}
+                      <strong>Explanation:</strong> {submissionResult.explanation}
                     </p>
                   )}
                 </div>
