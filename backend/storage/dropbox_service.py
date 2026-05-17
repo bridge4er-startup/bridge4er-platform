@@ -211,10 +211,10 @@ def _supabase_query_object_rows(prefix_key=""):
                 SELECT name, metadata->>'size' AS size_text, updated_at
                 FROM storage.objects
                 WHERE bucket_id = %s
-                  AND (name = %s OR name LIKE %s)
+                  AND (LOWER(name) = %s OR LOWER(name) LIKE %s)
                 ORDER BY name ASC
                 """,
-                [_supabase_bucket(), normalized_prefix, like_value],
+                [_supabase_bucket(), normalized_prefix.lower(), like_value.lower()],
             )
         else:
             cursor.execute(
@@ -223,7 +223,7 @@ def _supabase_query_object_rows(prefix_key=""):
                 FROM storage.objects
                 WHERE bucket_id = %s
                 ORDER BY name ASC
-                """,
+               """,
                 [_supabase_bucket()],
             )
         rows = cursor.fetchall()
@@ -291,10 +291,10 @@ def _first_existing_key(candidates):
                 """
                 SELECT 1
                 FROM storage.objects
-                WHERE bucket_id = %s AND name = %s
+                WHERE bucket_id = %s AND LOWER(name) = %s
                 LIMIT 1
                 """,
-                [_supabase_bucket(), candidate],
+                [_supabase_bucket(), candidate.lower()],
             )
             if cursor.fetchone():
                 return candidate
@@ -304,10 +304,10 @@ def _first_existing_key(candidates):
                 """
                 SELECT 1
                 FROM storage.objects
-                WHERE bucket_id = %s AND name LIKE %s
+                WHERE bucket_id = %s AND LOWER(name) LIKE %s
                 LIMIT 1
                 """,
-                [_supabase_bucket(), like_value],
+                [_supabase_bucket(), like_value.lower()],
             )
             if cursor.fetchone():
                 return candidate
@@ -477,10 +477,10 @@ def _supabase_get_file_metadata(path):
                 """
                 SELECT name, metadata->>'size' AS size_text, updated_at
                 FROM storage.objects
-                WHERE bucket_id = %s AND name = %s
+                WHERE bucket_id = %s AND LOWER(name) = %s
                 LIMIT 1
                 """,
-                [_supabase_bucket(), key],
+                [_supabase_bucket(), key.lower()],
             )
             row = cursor.fetchone()
             if not row:
@@ -773,9 +773,7 @@ def _dropbox_list_folder_entries(path, recursive=False):
     entries = list(result.entries)
     while result.has_more:
         cursor = result.cursor
-        result = _execute_with_auth_retry(
-            lambda client, next_cursor=cursor: client.files_list_folder_continue(next_cursor)
-        )
+        result = _execute_with_auth_retry(lambda client, next_cursor=cursor: client.files_list_folder_continue(next_cursor))
         entries.extend(result.entries)
     return entries
 
