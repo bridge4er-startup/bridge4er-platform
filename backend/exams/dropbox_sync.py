@@ -116,68 +116,7 @@ def _import_mcq_with_resource(chapter, normalized_questions):
 
 
 def _import_exam_set_with_resource(exam_set, normalized_rows):
-    if not DJANGO_IMPORT_EXPORT_AVAILABLE or ExamQuestionResource is None:
-        return _manual_import_exam_set(exam_set, normalized_rows)
-
-    resource = ExamQuestionResource()
-    dataset = Dataset(
-        headers=[
-            "id",
-            "exam_set_id",
-            "order",
-            "question_header",
-            "question_text",
-            "question_image_url",
-            "option_a",
-            "option_b",
-            "option_c",
-            "option_d",
-            "correct_option",
-            "explanation",
-            "marks",
-        ]
-    )
-    skipped_rows = 0
-    for row in normalized_rows:
-        if not row["question_text"]:
-            skipped_rows += 1
-            continue
-        if exam_set.exam_type == "mcq" and row.get("correct_option") not in {"a", "b", "c", "d"}:
-            skipped_rows += 1
-            continue
-
-        dataset.append(
-            [
-                row.get("id") or "",
-                exam_set.id,
-                max(1, row["order"]),
-                row["question_header"],
-                row["question_text"],
-                row["question_image_url"],
-                row.get("option_a", ""),
-                row.get("option_b", ""),
-                row.get("option_c", ""),
-                row.get("option_d", ""),
-                row.get("correct_option") or None,
-                row["explanation"],
-                max(1, row["marks"]),
-            ]
-        )
-
-    if len(dataset) == 0:
-        return {"new": 0, "updated": 0, "imported": 0, "skipped": skipped_rows, "error_rows": 0}
-
-    result = resource.import_data(dataset, dry_run=False, raise_errors=False, use_transactions=True)
-    totals = getattr(result, "totals", {}) or {}
-    new_rows = int(totals.get("new", 0))
-    updated_rows = int(totals.get("update", 0))
-    return {
-        "new": new_rows,
-        "updated": updated_rows,
-        "imported": new_rows + updated_rows,
-        "skipped": skipped_rows + int(totals.get("skip", 0)),
-        "error_rows": int(totals.get("error", 0)),
-    }
+    return _manual_import_exam_set(exam_set, normalized_rows)
 
 
 def _manual_import_objective(chapter: Chapter, normalized_questions: list[dict]) -> dict:
@@ -212,7 +151,7 @@ def _manual_import_objective(chapter: Chapter, normalized_questions: list[dict])
 
 
 def _manual_import_exam_set(exam_set: ExamSet, normalized_rows: list[dict]) -> dict:
-    created = 0
+    questions = []
     skipped = 0
     for row in normalized_rows:
         if not row["question_text"]:
@@ -222,21 +161,25 @@ def _manual_import_exam_set(exam_set: ExamSet, normalized_rows: list[dict]) -> d
             skipped += 1
             continue
 
-        ExamQuestion.objects.create(
-            exam_set=exam_set,
-            order=max(1, row["order"]),
-            question_header=row["question_header"],
-            question_text=row["question_text"],
-            question_image_url=row["question_image_url"],
-            option_a=row.get("option_a", ""),
-            option_b=row.get("option_b", ""),
-            option_c=row.get("option_c", ""),
-            option_d=row.get("option_d", ""),
-            correct_option=row.get("correct_option") or None,
-            explanation=row["explanation"],
-            marks=max(1, row["marks"]),
+        questions.append(
+            ExamQuestion(
+                exam_set=exam_set,
+                order=max(1, row["order"]),
+                question_header=row["question_header"],
+                question_text=row["question_text"],
+                question_image_url=row["question_image_url"],
+                option_a=row.get("option_a", ""),
+                option_b=row.get("option_b", ""),
+                option_c=row.get("option_c", ""),
+                option_d=row.get("option_d", ""),
+                correct_option=row.get("correct_option") or None,
+                explanation=row["explanation"],
+                marks=max(1, row["marks"]),
+            )
         )
-        created += 1
+    if questions:
+        ExamQuestion.objects.bulk_create(questions, batch_size=500)
+    created = len(questions)
     return {"new": created, "updated": 0, "imported": created, "skipped": skipped, "error_rows": 0}
 
 
@@ -262,7 +205,7 @@ def _resolve_exam_set_for_file(branch: str, exam_type: str, source_set_name: str
         .order_by("-id")
         .first()
     )
-    if by_source_name:
+    if by_source_name and by_source_name.source_file_path in {"", file_path}:
         return by_source_name, False
 
     if desired_name and desired_name != source_set_name:
@@ -276,7 +219,7 @@ def _resolve_exam_set_for_file(branch: str, exam_type: str, source_set_name: str
             .order_by("-id")
             .first()
         )
-        if by_desired_name:
+        if by_desired_name and by_desired_name.source_file_path in {"", file_path}:
             return by_desired_name, False
 
     return None, True
