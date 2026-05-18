@@ -213,7 +213,7 @@ export const mcqService = {
     }
   },
 
-  // Sync all objective and exam-set questions from Dropbox paths for a branch (admin only)
+  // Sync all objective and exam-set questions from configured storage for a branch (admin only)
   syncDropboxQuestionBank: async (
     branch = "Civil Engineering",
     replaceExisting = true,
@@ -233,7 +233,7 @@ export const mcqService = {
       );
       return response.data;
     } catch (error) {
-      console.error("Error syncing Dropbox question bank:", error);
+      console.error("Error syncing question bank:", error);
       throw error;
     }
   },

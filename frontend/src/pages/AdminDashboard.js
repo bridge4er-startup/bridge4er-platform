@@ -49,7 +49,7 @@ const BULK_SYNC_SCOPE_LABELS = {
   objective: "Objective MCQ Bank",
   exam_sets: "Exam Hall Sets",
   resources: "Resource Files",
-  all: "All Dropbox Content",
+  all: "All Storage Content",
 };
 const DEFAULT_CONTRIBUTION_CATEGORIES = ["PSC", "NEC", "MSC", "GK/IQ", "NTC", "NEA", "Other"];
 
@@ -646,16 +646,16 @@ export default function AdminDashboard() {
         toast.error(`Sync partially failed. ${errors.join(" | ")}`);
       }
       if (summaryParts.length > 0) {
-        toast.success(`${BULK_SYNC_SCOPE_LABELS[scope] || "Dropbox"} sync complete. ${summaryParts.join(" | ")}`);
+        toast.success(`${BULK_SYNC_SCOPE_LABELS[scope] || "Storage"} sync complete. ${summaryParts.join(" | ")}`);
       } else if (errors.length === 0) {
-        toast.success(`${BULK_SYNC_SCOPE_LABELS[scope] || "Dropbox"} sync complete.`);
+        toast.success(`${BULK_SYNC_SCOPE_LABELS[scope] || "Storage"} sync complete.`);
       }
     } catch (error) {
       const errorRows = error?.response?.data?.errors;
       const details = Array.isArray(errorRows)
         ? errorRows.map((row) => `${row.scope}: ${row.error}`).join(" | ")
         : "";
-      const message = error?.response?.data?.error || details || "Failed to sync question files from Dropbox";
+      const message = error?.response?.data?.error || details || "Failed to sync question files from storage";
       toast.error(message);
       console.error(error);
     } finally {
@@ -707,9 +707,12 @@ export default function AdminDashboard() {
 
       if (syncedRows.length > 0) {
         const summary = syncedRows
-          .map((row) => `${row.content_type}: ${row.file_count} files`)
+          .map((row) => {
+            const deleted = Number(row.files_deleted || 0) + Number(row.folders_deleted || 0);
+            return `${row.content_type}: ${row.file_count} files${deleted ? `, ${deleted} removed` : ""}`;
+          })
           .join(" | ");
-        toast.success(`Dropbox sync complete. ${summary}`);
+        toast.success(`Storage sync complete. ${summary}`);
       }
       if (errors.length > 0) {
         const details = errors.map((row) => `${row.content_type}: ${row.error}`).join(" | ");
@@ -718,7 +721,7 @@ export default function AdminDashboard() {
 
       await handleLoadManagedFiles();
     } catch (error) {
-      const message = error?.response?.data?.error || "Failed to sync Dropbox content";
+      const message = error?.response?.data?.error || "Failed to sync storage content";
       toast.error(message);
     } finally {
       setSyncingManagedContent(false);
@@ -726,7 +729,7 @@ export default function AdminDashboard() {
   };
 
   const handleDeleteManagedFile = async (path) => {
-    if (!window.confirm(`Delete this path from Dropbox?\n${path}`)) {
+    if (!window.confirm(`Delete this path from storage?\n${path}`)) {
       return;
     }
     try {
@@ -776,7 +779,7 @@ export default function AdminDashboard() {
   };
 
   const handleRenameManagedPath = async (item) => {
-    const nextPath = window.prompt("New path (include full Dropbox path)", item.path || "");
+    const nextPath = window.prompt("New path (include full storage path)", item.path || "");
     if (!nextPath || nextPath === item.path) return;
     try {
       await fileService.renamePath(item.path, nextPath);
@@ -788,7 +791,7 @@ export default function AdminDashboard() {
   };
 
   const handleCreateManagedFolder = async () => {
-    const path = window.prompt("New folder path (full Dropbox path)");
+    const path = window.prompt("New folder path (full storage path)");
     if (!path) return;
     try {
       await fileService.createFolder({ path, content_type: manageContentType, branch });
@@ -800,7 +803,7 @@ export default function AdminDashboard() {
   };
 
   const handleSyncManagedPath = async () => {
-    const path = window.prompt("Dropbox path to sync");
+    const path = window.prompt("Storage path to sync");
     if (!path) return;
     try {
       await fileService.syncPath({
@@ -817,7 +820,7 @@ export default function AdminDashboard() {
   };
 
   const handleAttachManagedPath = async () => {
-    const path = window.prompt("Dropbox file path to attach");
+    const path = window.prompt("Storage file path to attach");
     if (!path) return;
     try {
       await fileService.attachPath({ path, content_type: manageContentType, branch });
@@ -830,7 +833,7 @@ export default function AdminDashboard() {
 
   const handleResetManagedContent = async () => {
     const confirmed = window.confirm(
-      "This will remove all Dropbox-indexed files and folders from the website across ALL branches. Dropbox files will not be deleted. Continue?"
+      "This will remove all storage-indexed files and folders from the website across ALL branches. Storage bucket files will not be deleted. Continue?"
     );
     if (!confirmed) return;
 
@@ -980,7 +983,7 @@ export default function AdminDashboard() {
 
     if (
       !window.confirm(
-        `Delete chapter "${chapterObj.name}" and all questions in it? This also removes matching chapter files from Dropbox.`
+        `Delete chapter "${chapterObj.name}" and all questions in it? This also removes matching chapter files from storage.`
       )
     ) {
       return;
@@ -1012,7 +1015,7 @@ export default function AdminDashboard() {
 
     if (
       !window.confirm(
-        `Delete subject "${subjectObj.name}" with all chapters/questions? This also removes its Dropbox subject folder.`
+        `Delete subject "${subjectObj.name}" with all chapters/questions? This also removes its storage subject folder.`
       )
     ) {
       return;
@@ -1042,7 +1045,7 @@ export default function AdminDashboard() {
   const handleImportQuestionsFromDropboxLink = async () => {
     const source = normalizeDropboxQuestionSource(quickDropboxPath);
     if (!source) {
-      toast.error("Please enter Dropbox file path/link");
+      toast.error("Please enter storage file path/link");
       return;
     }
     if (!selectedChapterId) {
@@ -1053,10 +1056,10 @@ export default function AdminDashboard() {
     setImportingQuickDropboxPath(true);
     try {
       const result = await mcqService.bulkUploadQuestionsFromPath(selectedChapterId, source);
-      toast.success(result?.message || "Questions imported from Dropbox link.");
+      toast.success(result?.message || "Questions imported from storage path.");
       setQuickDropboxPath("");
     } catch (error) {
-      toast.error(error?.response?.data?.error || "Failed to import questions from Dropbox link");
+      toast.error(error?.response?.data?.error || "Failed to import questions from storage path");
     } finally {
       setImportingQuickDropboxPath(false);
     }
@@ -2977,9 +2980,9 @@ export default function AdminDashboard() {
 
             <hr style={{ margin: "1.5rem 0" }} />
 
-            <h3 style={{ marginBottom: "0.8rem" }}>Load Questions from Dropbox Link</h3>
+            <h3 style={{ marginBottom: "0.8rem" }}>Load Questions from Storage Path</h3>
             <p style={{ color: "#64748b", marginBottom: "0.8rem" }}>
-              Paste Dropbox file path/link and import questions directly to a chapter.
+              Paste a Supabase/Dropbox file path or link and import questions directly to a chapter.
             </p>
 
             {subjects.length === 0 ? (
@@ -3033,7 +3036,7 @@ export default function AdminDashboard() {
                 ) : null}
 
                 <div style={{ marginBottom: "0.9rem" }}>
-                  <label style={{ display: "block", marginBottom: "0.4rem" }}>Dropbox Path/Link:</label>
+                  <label style={{ display: "block", marginBottom: "0.4rem" }}>Storage Path/Link:</label>
                   <input
                     type="text"
                     placeholder="/bridge4er/.../questions.xlsx or https://www.dropbox.com/..."
@@ -3053,7 +3056,7 @@ export default function AdminDashboard() {
                   onClick={handleImportQuestionsFromDropboxLink}
                   disabled={importingQuickDropboxPath || !selectedChapterId || !quickDropboxPath.trim()}
                 >
-                  {importingQuickDropboxPath ? "Importing..." : "Import Questions from Dropbox"}
+                  {importingQuickDropboxPath ? "Importing..." : "Import Questions from Storage"}
                 </button>
               </>
             )}
@@ -3170,7 +3173,7 @@ export default function AdminDashboard() {
                 className="btn btn-secondary"
                 disabled={syncingManagedContent}
               >
-                Attach Dropbox File
+                Attach Storage File
               </button>
             </div>
 
@@ -3695,7 +3698,7 @@ export default function AdminDashboard() {
             </p>
             <div style={{ marginBottom: "1rem" }}>
               <div style={{ marginBottom: "0.6rem", color: "#475569", fontSize: "0.92rem" }}>
-                Sync by field. New and old Dropbox files/folders will be indexed and visible on website after sync.
+                Sync by field. Supabase/Dropbox files and folders become visible on the website after admin sync.
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
                 <button
@@ -3724,7 +3727,7 @@ export default function AdminDashboard() {
                   disabled={!!syncingDropboxScope}
                   className="btn btn-secondary"
                 >
-                  {syncingDropboxScope === "all" ? "Syncing..." : "Sync All Dropbox Content"}
+                  {syncingDropboxScope === "all" ? "Syncing..." : "Sync All Storage Content"}
                 </button>
               </div>
             </div>
@@ -3825,7 +3828,7 @@ export default function AdminDashboard() {
 
                     <div style={{ marginBottom: "1.5rem" }}>
                       <label style={{ display: "block", marginBottom: "0.5rem" }}>
-                        Or File Path/Link (Backend/Dropbox):
+                        Or File Path/Link (Backend/Storage):
                       </label>
                       <input
                         type="text"

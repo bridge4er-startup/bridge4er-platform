@@ -114,7 +114,7 @@ def _uses_supabase_storage():
 
 
 def _objective_auto_sync_enabled():
-    return _uses_supabase_storage() or _dropbox_auto_sync_enabled()
+    return _dropbox_auto_sync_enabled()
 
 def _objective_cache_ttl_seconds():
     value = getattr(settings, "OBJECTIVE_LIST_CACHE_TTL_SECONDS", 300)
@@ -256,13 +256,15 @@ def _backup_objective_chapter_file(chapter, uploaded_file):
 
 
 def _maybe_sync_objective_on_read(branch, user, force_refresh=False):
-    # Allow auto-sync when using Supabase storage or when Dropbox auto-sync is enabled.
+    # Supabase is intentionally manual-sync only; users read from the indexed DB/cache.
+    if _uses_supabase_storage():
+        return {"status": "skipped", "reason": "manual_sync_mode"}
     if not _objective_auto_sync_enabled():
         return {"status": "skipped", "reason": "disabled"}
-    if not _uses_supabase_storage() and not _is_staff_user(user) and not force_refresh:
+    if not _is_staff_user(user) and not force_refresh:
         return {"status": "skipped", "reason": "non_staff"}
     allowed_force_refresh = bool(force_refresh and _is_staff_user(user))
-    cooldown = 5 if allowed_force_refresh else (60 if _uses_supabase_storage() else AUTO_SYNC_COOLDOWN_SECONDS)
+    cooldown = 5 if allowed_force_refresh else AUTO_SYNC_COOLDOWN_SECONDS
     return auto_sync_dropbox_for_branch(
         branch=branch,
         sync_objective=True,

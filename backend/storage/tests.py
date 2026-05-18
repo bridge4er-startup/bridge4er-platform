@@ -6,6 +6,7 @@ from storage.models import FileMetadata, FolderMetadata
 from storage.views import (
     _filter_files_by_visibility,
     _metadata_listing_fallback,
+    _prune_metadata_not_in_listing,
     _sort_files_by_admin_order,
     _sync_metadata_from_listing,
 )
@@ -149,6 +150,37 @@ class FolderMetadataSyncTests(TestCase):
         self.assertEqual(len(without_dirs), 1)
         self.assertFalse(without_dirs[0]["is_dir"])
         self.assertEqual(without_dirs[0]["path"], file_path)
+
+    def test_prune_metadata_removes_deleted_bucket_entries(self):
+        branch = "Civil Engineering"
+        content_type = "objective_mcq"
+        root = "/bridge4er/Civil Engineering/Objective MCQs"
+        current_folder = f"{root}/NEC"
+        current_file = f"{current_folder}/Chapter 1.json"
+        stale_file = f"{current_folder}/Deleted.json"
+
+        _sync_metadata_from_listing(
+            [
+                {"name": "NEC", "path": current_folder, "is_dir": True},
+                {"name": "Chapter 1.json", "path": current_file, "is_dir": False, "size": 100},
+                {"name": "Deleted.json", "path": stale_file, "is_dir": False, "size": 100},
+            ],
+            content_type=content_type,
+            branch=branch,
+        )
+
+        result = _prune_metadata_not_in_listing(
+            [
+                {"name": "NEC", "path": current_folder, "is_dir": True},
+                {"name": "Chapter 1.json", "path": current_file, "is_dir": False, "size": 100},
+            ],
+            content_type=content_type,
+            branch=branch,
+        )
+
+        self.assertEqual(result["files_deleted"], 1)
+        self.assertTrue(FileMetadata.objects.filter(dropbox_path=current_file).exists())
+        self.assertFalse(FileMetadata.objects.filter(dropbox_path=stale_file).exists())
 
 
 class SupabasePathNormalizationTests(TestCase):

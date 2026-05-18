@@ -52,7 +52,7 @@ export default function DiscussionsSection({ branch = "Civil Engineering", isAct
     setLoadingClassrooms(true);
     try {
       const rows = await discussionsService.listClassrooms(branch);
-      const list = Array.isArray(rows) ? rows : [];
+      const list = Array.isArray(rows) ? rows.filter((row) => row && row.id !== undefined && row.id !== null) : [];
       setClassrooms(list);
       if (!list.length) {
         setSelectedClassroomId(null);
@@ -84,7 +84,9 @@ export default function DiscussionsSection({ branch = "Civil Engineering", isAct
     try {
       const sinceId = reset ? 0 : Number(lastMessageIdRef.current || 0);
       const payload = await discussionsService.listMessages(classroomId, sinceId, 140);
-      const incoming = Array.isArray(payload?.messages) ? payload.messages : [];
+      const incoming = Array.isArray(payload?.messages)
+        ? payload.messages.filter((row) => row && row.id !== undefined && row.id !== null)
+        : [];
       updateLastMessageId(Math.max(Number(lastMessageIdRef.current || 0), Number(payload?.last_message_id || 0)));
       if (reset) {
         setMessages(incoming);
@@ -161,8 +163,12 @@ export default function DiscussionsSection({ branch = "Civil Engineering", isAct
     setSendingMessage(true);
     try {
       const created = await discussionsService.sendMessage(classroomId, text);
-      setMessages((previous) => [...previous, created]);
-      updateLastMessageId(Math.max(Number(lastMessageIdRef.current || 0), Number(created?.id || 0)));
+      if (created && created.id !== undefined && created.id !== null) {
+        setMessages((previous) => [...previous, created]);
+        updateLastMessageId(Math.max(Number(lastMessageIdRef.current || 0), Number(created.id || 0)));
+      } else {
+        await loadMessages(classroomId, true);
+      }
       shouldAutoScrollRef.current = true;
       setMessageText("");
     } catch (error) {
@@ -304,7 +310,7 @@ export default function DiscussionsSection({ branch = "Civil Engineering", isAct
                         }
                       }}
                     >
-                      {deletingClassroomId === room.id ? "..." : "x"}
+                      {Number(deletingClassroomId) === Number(room.id) ? "..." : "x"}
                     </button>
                   ) : null}
                 </div>
@@ -330,7 +336,7 @@ export default function DiscussionsSection({ branch = "Civil Engineering", isAct
               ) : messages.length === 0 ? (
                 <div className="discussion-empty-chat">Start the conversation.</div>
               ) : (
-                messages.map((message) => {
+                messages.filter(Boolean).map((message) => {
                   const mine = Number(message.sender) === Number(user?.id);
                   return (
                     <article
@@ -338,7 +344,7 @@ export default function DiscussionsSection({ branch = "Civil Engineering", isAct
                       className={`discussion-message-bubble ${mine ? "mine" : "theirs"}`}
                     >
                       <div className="discussion-message-author">
-                        {message.sender_name}
+                        {message.sender_name || "Member"}
                         {message.is_admin_sender ? <span>Admin</span> : null}
                       </div>
                       <p>{message.text}</p>

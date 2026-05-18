@@ -57,7 +57,15 @@ def parse_subject_key(subject_key: str) -> dict:
 
 
 def parse_objective_file_path(file_path: str, branch: str) -> dict | None:
-    relative_parts = _relative_parts_after_anchor(file_path, ["bridge4er", branch, "Objective MCQs"])
+    relative_parts: list[str] = []
+    for anchor in (
+        ["bridge4er", branch, "Objective MCQs"],
+        [branch, "Objective MCQs"],
+        ["Objective MCQs"],
+    ):
+        relative_parts = _relative_parts_after_anchor(file_path, anchor)
+        if relative_parts:
+            break
     if not relative_parts:
         return None
     if relative_parts and relative_parts[0].lower() == "subjects":
@@ -105,7 +113,15 @@ def objective_subject_roots(branch: str, subject_key_or_name: str) -> list[str]:
 
 def parse_exam_source_path(source_file_path: str, branch: str, exam_type: str) -> dict:
     exam_folder = "Multiple Choice Exam" if exam_type == "mcq" else "Subjective Exam"
-    relative_parts = _relative_parts_after_anchor(source_file_path, ["bridge4er", branch, "Take Exam", exam_folder])
+    relative_parts: list[str] = []
+    for anchor in (
+        ["bridge4er", branch, "Take Exam", exam_folder],
+        [branch, "Take Exam", exam_folder],
+        ["Take Exam", exam_folder],
+    ):
+        relative_parts = _relative_parts_after_anchor(source_file_path, anchor)
+        if relative_parts:
+            break
 
     if not relative_parts:
         source_name = Path(str(source_file_path or "")).stem.strip()

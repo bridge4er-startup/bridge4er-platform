@@ -11,6 +11,7 @@ from rest_framework.test import APIClient
 
 from .dropbox_sync import _sync_exam_set_type, sync_objective_mcqs_from_dropbox
 from .models import Chapter, ExamPurchase, ExamSet, MCQQuestion, Subject, SubjectiveSubmission
+from .path_utils import parse_objective_file_path
 from .question_normalizers import normalize_mcq_payload
 
 User = get_user_model()
@@ -35,8 +36,19 @@ class DropboxExamSetSyncTests(TestCase):
     def test_objective_sync_does_not_delete_existing_questions_for_invalid_file(self):
         branch = "Civil Engineering"
         file_path = f"/bridge4er/{branch}/Objective MCQs/Institute A/Subject A/Chapter 1.json"
-        subject = Subject.objects.create(name="Institute A :: Subject A", branch=branch)
-        chapter = Chapter.objects.create(subject=subject, name="Chapter 1", order=1)
+        subject = Subject.objects.create(
+            name="Institute A :: Subject A",
+            branch=branch,
+            managed_by_sync=True,
+            source_folder_path=f"/bridge4er/{branch}/Objective MCQs/Institute A/Subject A",
+        )
+        chapter = Chapter.objects.create(
+            subject=subject,
+            name="Chapter 1",
+            order=1,
+            managed_by_sync=True,
+            source_file_path=file_path,
+        )
         question = MCQQuestion.objects.create(
             chapter=chapter,
             question_text="Existing question",
@@ -55,6 +67,59 @@ class DropboxExamSetSyncTests(TestCase):
 
         self.assertEqual(result["skipped_files"], 1)
         self.assertTrue(MCQQuestion.objects.filter(id=question.id).exists())
+
+    def test_objective_sync_prunes_deleted_synced_chapters(self):
+        branch = "Civil Engineering"
+        root = f"/bridge4er/{branch}/Objective MCQs/Institute A/Subject A"
+        active_path = f"{root}/Chapter 1.json"
+        stale_path = f"{root}/Deleted Chapter.json"
+        subject = Subject.objects.create(
+            name="Institute A :: Subject A",
+            branch=branch,
+            managed_by_sync=True,
+            source_folder_path=root,
+        )
+        active_chapter = Chapter.objects.create(
+            subject=subject,
+            name="Chapter 1",
+            order=1,
+            managed_by_sync=True,
+            source_file_path=active_path,
+        )
+        stale_chapter = Chapter.objects.create(
+            subject=subject,
+            name="Deleted Chapter",
+            order=2,
+            managed_by_sync=True,
+            source_file_path=stale_path,
+        )
+        MCQQuestion.objects.create(
+            chapter=stale_chapter,
+            question_text="Old question",
+            option_a="A",
+            option_b="B",
+            option_c="C",
+            option_d="D",
+            correct_option="a",
+        )
+
+        raw_row = {
+            "question": "Current question",
+            "option_a": "A",
+            "option_b": "B",
+            "option_c": "C",
+            "option_d": "D",
+            "answer": "a",
+        }
+        with patch("exams.dropbox_sync._list_supported_files", return_value=[active_path]), patch(
+            "exams.dropbox_sync.parse_rows_from_path",
+            return_value=[raw_row],
+        ):
+            result = sync_objective_mcqs_from_dropbox(branch=branch, replace_existing=True)
+
+        self.assertEqual(result["chapters_deleted"], 1)
+        self.assertFalse(Chapter.objects.filter(id=stale_chapter.id).exists())
+        self.assertTrue(Chapter.objects.filter(id=active_chapter.id).exists())
 
     def test_sync_deactivates_stale_managed_sets(self):
         branch = "Civil Engineering"
@@ -249,6 +314,16 @@ class QuestionNormalizerTests(TestCase):
         self.assertEqual(normalized["option_c"], "Maybe")
         self.assertEqual(normalized["option_d"], "None")
         self.assertEqual(normalized["correct_option"], "a")
+
+    def test_parse_objective_file_path_accepts_rootless_supabase_path(self):
+        parsed = parse_objective_file_path(
+            "Civil Engineering/Objective MCQs/Nepal Engineering Council (NEC)/8. Hydropower/Chapter 8.1.json",
+            "Civil Engineering",
+        )
+
+        self.assertEqual(parsed["institution_display"], "Nepal Engineering Council (NEC)")
+        self.assertEqual(parsed["subject_name"], "8. Hydropower")
+        self.assertEqual(parsed["chapter_name"], "Chapter 8.1")
 
 
 @override_settings(MEDIA_ROOT=TEST_MEDIA_ROOT)

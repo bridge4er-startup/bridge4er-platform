@@ -75,7 +75,7 @@ export default function ContentSyncBar({ branch = "Civil Engineering", isActive 
     <section className="content-sync-bar">
       <div className="content-sync-left">
         <h3>
-          <i className="fas fa-rocket"></i> Fast Content Snapshot
+          <i className="fas fa-rocket"></i> Manual Content Sync
         </h3>
         <p>
           Last sync: <strong>{loadingStatus ? "Checking..." : lastSyncedLabel}</strong>
@@ -83,9 +83,7 @@ export default function ContentSyncBar({ branch = "Civil Engineering", isActive 
       </div>
       <div className="content-sync-right">
         <span className="content-sync-mode-pill">
-          {isAdmin
-            ? (status?.manual_sync_mode ? "Manual Sync Mode" : "Auto Snapshot Mode")
-            : "Student Refresh Mode"}
+          {isAdmin ? "Manual Sync Mode" : "Cached View"}
         </span>
         <button
           type="button"

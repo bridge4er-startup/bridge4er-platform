@@ -61,6 +61,13 @@ def _list_supported_files(root_path: str) -> list[str]:
     return files
 
 
+def _parent_path(path: str) -> str:
+    parts = [segment for segment in str(path or "").strip().replace("\\", "/").split("/") if segment]
+    if len(parts) <= 1:
+        return ""
+    return "/" + "/".join(parts[:-1])
+
+
 def _folder_signature(root_path: str) -> str:
     try:
         entries = list_folder_with_metadata(root_path, include_dirs=False, recursive=True)
@@ -382,13 +389,15 @@ def sync_objective_mcqs_from_dropbox(branch: str, replace_existing: bool = True)
         "processed_files": 0,
         "subjects_created": 0,
         "chapters_created": 0,
+        "subjects_deleted": 0,
+        "chapters_deleted": 0,
+        "questions_deleted": 0,
         "imported_questions": 0,
         "skipped_rows": 0,
         "skipped_files": 0,
         "error_files": 0,
         "files": [],
     }
-
     for file_path in file_paths:
         item = {"path": file_path, "status": "ok", "imported": 0, "skipped": 0}
         try:
@@ -431,6 +440,16 @@ def sync_objective_mcqs_from_dropbox(branch: str, replace_existing: bool = True)
             )
             if subject_created:
                 summary["subjects_created"] += 1
+            subject_updates = []
+            source_folder_path = _parent_path(file_path)
+            if not subject.managed_by_sync:
+                subject.managed_by_sync = True
+                subject_updates.append("managed_by_sync")
+            if source_folder_path and subject.source_folder_path != source_folder_path:
+                subject.source_folder_path = source_folder_path
+                subject_updates.append("source_folder_path")
+            if subject_updates:
+                subject.save(update_fields=sorted(set(subject_updates)))
 
             next_order = (Chapter.objects.filter(subject=subject).aggregate(max_order=Max("order")).get("max_order") or 0) + 1
             chapter, chapter_created = Chapter.objects.get_or_create(
@@ -440,6 +459,15 @@ def sync_objective_mcqs_from_dropbox(branch: str, replace_existing: bool = True)
             )
             if chapter_created:
                 summary["chapters_created"] += 1
+            chapter_updates = []
+            if not chapter.managed_by_sync:
+                chapter.managed_by_sync = True
+                chapter_updates.append("managed_by_sync")
+            if chapter.source_file_path != file_path:
+                chapter.source_file_path = file_path
+                chapter_updates.append("source_file_path")
+            if chapter_updates:
+                chapter.save(update_fields=sorted(set(chapter_updates)))
 
             if replace_existing:
                 MCQQuestion.objects.filter(chapter=chapter).delete()
@@ -466,6 +494,31 @@ def sync_objective_mcqs_from_dropbox(branch: str, replace_existing: bool = True)
             item["error"] = str(exc)
             summary["error_files"] += 1
         summary["files"].append(item)
+
+    if summary["error_files"] == 0:
+        stale_chapters = (
+            Chapter.objects.filter(
+                subject__branch=branch,
+                managed_by_sync=True,
+            )
+            .exclude(source_file_path__in=file_paths)
+            .exclude(source_file_path="")
+        )
+        stale_chapter_ids = list(stale_chapters.values_list("id", flat=True))
+        if stale_chapter_ids:
+            summary["questions_deleted"] = MCQQuestion.objects.filter(chapter_id__in=stale_chapter_ids).count()
+            summary["chapters_deleted"] = len(stale_chapter_ids)
+            stale_chapters.delete()
+
+        stale_subjects = Subject.objects.filter(
+            branch=branch,
+            managed_by_sync=True,
+            chapters__isnull=True,
+        )
+        summary["subjects_deleted"] = stale_subjects.count()
+        stale_subjects.delete()
+    else:
+        summary["prune_skipped"] = "sync_errors"
 
     return summary
 

@@ -128,7 +128,7 @@ export const fileService = {
     }
   },
 
-  // Sync Dropbox metadata/list caches for selected content types (admin only)
+  // Sync storage metadata/list caches for selected content types (admin only)
   syncContent: async (branch = "Civil Engineering", contentTypes = [], warmCache = true) => {
     try {
       const payload = {
@@ -143,7 +143,7 @@ export const fileService = {
       });
       return response.data;
     } catch (error) {
-      console.error("Error syncing Dropbox content:", error);
+      console.error("Error syncing storage content:", error);
       throw error;
     }
   },
@@ -221,7 +221,7 @@ export const fileService = {
       const response = await API.post("storage/files/reset/", payload);
       return response.data;
     } catch (error) {
-      console.error("Error resetting Dropbox metadata:", error);
+      console.error("Error resetting storage metadata:", error);
       throw error;
     }
   },

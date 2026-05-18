@@ -8,6 +8,8 @@ class Subject(models.Model):
     name = models.CharField(max_length=200)
     branch = models.CharField(max_length=200)
     display_order = models.IntegerField(default=0, db_index=True)
+    managed_by_sync = models.BooleanField(default=False)
+    source_folder_path = models.CharField(max_length=1000, blank=True, default="", db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -23,6 +25,8 @@ class Chapter(models.Model):
     subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name='chapters')
     order = models.IntegerField(default=0)
     small_note = models.CharField(max_length=255, blank=True, default="")
+    managed_by_sync = models.BooleanField(default=False)
+    source_file_path = models.CharField(max_length=1000, blank=True, default="", db_index=True)
 
     class Meta:
         ordering = ['order']

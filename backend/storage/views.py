@@ -471,6 +471,49 @@ def _sync_metadata_from_listing(files, content_type, branch):
             parent_path = _parent_dropbox_path(parent_path)
 
 
+def _prune_metadata_not_in_listing(files, content_type, branch):
+    resolved_content_type = content_type or ""
+    resolved_branch = _normalize_branch(branch)
+    root_path = _normalize_dropbox_path(_resolve_content_path(resolved_content_type, resolved_branch) or "")
+    if not root_path:
+        return {"files_deleted": 0, "folders_deleted": 0}
+
+    current_file_paths = set()
+    current_folder_paths = {root_path}
+
+    for item in files:
+        item_path = _normalize_dropbox_path(item.get("path"))
+        if not item_path or not (item_path == root_path or item_path.startswith(f"{root_path}/")):
+            continue
+        if item.get("is_dir"):
+            current_folder_paths.add(item_path)
+            continue
+
+        current_file_paths.add(item_path)
+        parent_path = _parent_dropbox_path(item_path)
+        while parent_path and (parent_path == root_path or parent_path.startswith(f"{root_path}/")):
+            current_folder_paths.add(parent_path)
+            if parent_path == root_path:
+                break
+            parent_path = _parent_dropbox_path(parent_path)
+
+    file_qs = FileMetadata.objects.filter(
+        content_type=resolved_content_type,
+        branch=resolved_branch,
+        dropbox_path__startswith=f"{root_path}/",
+    ).exclude(dropbox_path__in=current_file_paths)
+    folder_qs = FolderMetadata.objects.filter(
+        content_type=resolved_content_type,
+        branch=resolved_branch,
+        dropbox_path__startswith=root_path,
+    ).exclude(dropbox_path__in=current_folder_paths)
+    files_deleted = file_qs.count()
+    folders_deleted = folder_qs.count()
+    file_qs.delete()
+    folder_qs.delete()
+    return {"files_deleted": files_deleted, "folders_deleted": folders_deleted}
+
+
 def _metadata_listing_fallback(content_type, branch, include_dirs):
     resolved_content_type = str(content_type or "").strip()
     resolved_branch = _normalize_branch(branch)
@@ -816,7 +859,7 @@ def _computed_platform_metrics(branch=None):
     ).count()
     db_objective_count = mcq_qs.count()
     objective_count = db_objective_count
-    if resolved_branch and (_uses_supabase_storage() or _dropbox_auto_sync_enabled()):
+    if resolved_branch and _dropbox_auto_sync_enabled():
         objective_count = _cached_objective_question_count_from_source(
             resolved_branch,
             db_fallback=db_objective_count,
@@ -928,6 +971,11 @@ def _sync_dropbox_content_type(content_type, branch, warm_cache=True):
             raise
 
     _sync_metadata_from_listing(files_with_dirs, content_type=resolved_content_type, branch=resolved_branch)
+    prune_summary = _prune_metadata_not_in_listing(
+        files_with_dirs,
+        content_type=resolved_content_type,
+        branch=resolved_branch,
+    )
     _invalidate_list_cache(content_type=resolved_content_type, branch=resolved_branch)
 
     files_only = [row for row in files_with_dirs if not row.get("is_dir")]
@@ -951,6 +999,8 @@ def _sync_dropbox_content_type(content_type, branch, warm_cache=True):
         "path": path,
         "file_count": len(files_only),
         "folder_count": sum(1 for row in files_with_dirs if row.get("is_dir")),
+        "files_deleted": prune_summary["files_deleted"],
+        "folders_deleted": prune_summary["folders_deleted"],
         "cached": bool(warm_cache),
         "include_dirs": include_dirs,
     }
@@ -1022,11 +1072,11 @@ class ListFilesView(APIView):
         if not is_staff:
             include_hidden = False
             refresh = False
-        live_reads_enabled = True if supabase_mode else _dropbox_auto_sync_enabled()
+        live_reads_enabled = _dropbox_auto_sync_enabled()
         allow_dropbox_listing = (
-            True
-            if supabase_mode
-            else (is_staff or bool(getattr(settings, "DROPBOX_ALLOW_PUBLIC_LISTING", False))) and live_reads_enabled
+            (not supabase_mode)
+            and (is_staff or bool(getattr(settings, "DROPBOX_ALLOW_PUBLIC_LISTING", False)))
+            and live_reads_enabled
         )
         if not live_reads_enabled:
             refresh = False
@@ -1034,11 +1084,6 @@ class ListFilesView(APIView):
             metadata_only = True
         if not allow_dropbox_listing:
             metadata_only = True
-        if supabase_mode and metadata_only:
-            # Supabase listing is already fast via storage.objects metadata table.
-            metadata_only = False
-            prefer_metadata = False
-
         try:
             if not _can_access_content_type(request.user, content_type):
                 return Response({"error": "Authentication required"}, status=status.HTTP_401_UNAUTHORIZED)
@@ -1181,7 +1226,7 @@ class ContentSyncStatusView(APIView):
         branch = _normalize_branch(request.query_params.get("branch", "Civil Engineering"))
         provider = _storage_provider()
         sync_log = FileSyncLog.objects.filter(branch=branch).first()
-        live_reads_enabled = True if _uses_supabase_storage() else _dropbox_auto_sync_enabled()
+        live_reads_enabled = _dropbox_auto_sync_enabled()
         manual_sync_mode = not live_reads_enabled
         return Response(
             {
