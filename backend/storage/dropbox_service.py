@@ -75,6 +75,10 @@ def _supabase_timeout_seconds():
         return 45
 
 
+def _supabase_list_api_limit():
+    return 1000
+
+
 def _normalize_key(key):
     return str(key or "").strip().replace("\\", "/").strip("/")
 
@@ -201,47 +205,162 @@ def _coerce_size(value):
         return 0
 
 
-def _supabase_query_object_rows(prefix_key=""):
-    normalized_prefix = str(prefix_key or "").strip().strip("/")
-    with connection.cursor() as cursor:
-        if normalized_prefix:
-            like_value = f"{normalized_prefix}/%"
-            cursor.execute(
-                """
-                SELECT name, metadata->>'size' AS size_text, updated_at
-                FROM storage.objects
-                WHERE bucket_id = %s
-                  AND (LOWER(name) = %s OR LOWER(name) LIKE %s)
-                ORDER BY name ASC
-                """,
-                [_supabase_bucket(), normalized_prefix.lower(), like_value.lower()],
-            )
-        else:
-            cursor.execute(
-                """
-                SELECT name, metadata->>'size' AS size_text, updated_at
-                FROM storage.objects
-                WHERE bucket_id = %s
-                ORDER BY name ASC
-               """,
-                [_supabase_bucket()],
-            )
-        rows = cursor.fetchall()
-
-    normalized_rows = []
-    for row in rows:
-        key = str(row[0] or "").strip()
-        if not key:
-            continue
-        modified_value = row[2].isoformat() if row[2] else ""
-        normalized_rows.append(
-            {
-                "key": key,
-                "size": _coerce_size(row[1]),
-                "modified": modified_value,
-            }
+def _supabase_object_row_from_api_head(key):
+    normalized_key = _normalize_key(key)
+    if not normalized_key or not _supabase_url():
+        return None
+    endpoint = f"{_supabase_url()}/storage/v1/object/{quote(_supabase_bucket(), safe='')}/{quote(normalized_key, safe='/')}"
+    try:
+        response = requests.head(
+            endpoint,
+            headers=_supabase_headers(require_service_key=True),
+            timeout=_supabase_timeout_seconds(),
         )
-    return normalized_rows
+    except Exception:
+        return None
+    if response.status_code == 404:
+        return None
+    if response.status_code >= 400:
+        return None
+    return {
+        "key": normalized_key,
+        "size": _coerce_size(response.headers.get("Content-Length")),
+        "modified": response.headers.get("Last-Modified", ""),
+    }
+
+
+def _supabase_list_api_page(prefix_key="", offset=0):
+    if not _supabase_url():
+        raise RuntimeError("SUPABASE_URL is required for Supabase storage.")
+    endpoint = f"{_supabase_url()}/storage/v1/object/list/{quote(_supabase_bucket(), safe='')}"
+    payload = {
+        "prefix": _normalize_key(prefix_key),
+        "limit": _supabase_list_api_limit(),
+        "offset": max(0, int(offset or 0)),
+        "sortBy": {"column": "name", "order": "asc"},
+    }
+    response = requests.post(
+        endpoint,
+        json=payload,
+        headers=_supabase_headers(require_service_key=True, content_type="application/json"),
+        timeout=_supabase_timeout_seconds(),
+    )
+    response.raise_for_status()
+    data = response.json() if response.content else []
+    if not isinstance(data, list):
+        return []
+    return data
+
+
+def _supabase_item_is_file(item):
+    if not isinstance(item, dict):
+        return False
+    if item.get("id"):
+        return True
+    metadata = item.get("metadata")
+    return isinstance(metadata, dict) and bool(metadata)
+
+
+def _supabase_item_size(item):
+    metadata = item.get("metadata") if isinstance(item, dict) else {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+    for key in ("size", "contentLength", "content_length", "Content-Length"):
+        if key in metadata:
+            return _coerce_size(metadata.get(key))
+    return 0
+
+
+def _supabase_item_modified(item):
+    if not isinstance(item, dict):
+        return ""
+    return (
+        str(item.get("updated_at") or "").strip()
+        or str(item.get("created_at") or "").strip()
+        or str(item.get("last_accessed_at") or "").strip()
+    )
+
+
+def _supabase_query_object_rows_via_api(prefix_key=""):
+    normalized_prefix = _normalize_key(prefix_key)
+    rows = []
+    exact_row = _supabase_object_row_from_api_head(normalized_prefix) if normalized_prefix else None
+    if exact_row:
+        rows.append(exact_row)
+
+    def collect(prefix):
+        offset = 0
+        while True:
+            items = _supabase_list_api_page(prefix, offset=offset)
+            if not items:
+                break
+            for item in items:
+                name = str((item or {}).get("name") or "").strip().strip("/")
+                if not name:
+                    continue
+                key = f"{_normalize_key(prefix)}/{name}".strip("/") if prefix else name
+                if _supabase_item_is_file(item):
+                    rows.append(
+                        {
+                            "key": _normalize_key(key),
+                            "size": _supabase_item_size(item),
+                            "modified": _supabase_item_modified(item),
+                        }
+                    )
+                    continue
+                collect(key)
+            if len(items) < _supabase_list_api_limit():
+                break
+            offset += _supabase_list_api_limit()
+
+    collect(normalized_prefix)
+    return _dedupe_rows_by_key(rows)
+
+
+def _supabase_query_object_rows(prefix_key=""):
+    normalized_prefix = _normalize_key(prefix_key)
+    try:
+        with connection.cursor() as cursor:
+            if normalized_prefix:
+                like_value = f"{normalized_prefix}/%"
+                cursor.execute(
+                    """
+                    SELECT name, metadata->>'size' AS size_text, updated_at
+                    FROM storage.objects
+                    WHERE bucket_id = %s
+                      AND (LOWER(name) = %s OR LOWER(name) LIKE %s)
+                    ORDER BY name ASC
+                    """,
+                    [_supabase_bucket(), normalized_prefix.lower(), like_value.lower()],
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT name, metadata->>'size' AS size_text, updated_at
+                    FROM storage.objects
+                    WHERE bucket_id = %s
+                    ORDER BY name ASC
+                    """,
+                    [_supabase_bucket()],
+                )
+            rows = cursor.fetchall()
+
+        normalized_rows = []
+        for row in rows:
+            key = str(row[0] or "").strip()
+            if not key:
+                continue
+            modified_value = row[2].isoformat() if row[2] else ""
+            normalized_rows.append(
+                {
+                    "key": key,
+                    "size": _coerce_size(row[1]),
+                    "modified": modified_value,
+                }
+            )
+        return normalized_rows
+    except Exception:
+        return _supabase_query_object_rows_via_api(normalized_prefix)
 
 
 def _dedupe_rows_by_key(rows):
@@ -285,31 +404,42 @@ def _first_existing_key(candidates):
     normalized_candidates = [_normalize_key(item) for item in candidates if _normalize_key(item)]
     if not normalized_candidates:
         return ""
-    with connection.cursor() as cursor:
+    try:
+        with connection.cursor() as cursor:
+            for candidate in normalized_candidates:
+                cursor.execute(
+                    """
+                    SELECT 1
+                    FROM storage.objects
+                    WHERE bucket_id = %s AND LOWER(name) = %s
+                    LIMIT 1
+                    """,
+                    [_supabase_bucket(), candidate.lower()],
+                )
+                if cursor.fetchone():
+                    return candidate
+            for candidate in normalized_candidates:
+                like_value = f"{candidate}/%"
+                cursor.execute(
+                    """
+                    SELECT 1
+                    FROM storage.objects
+                    WHERE bucket_id = %s AND LOWER(name) LIKE %s
+                    LIMIT 1
+                    """,
+                    [_supabase_bucket(), like_value.lower()],
+                )
+                if cursor.fetchone():
+                    return candidate
+    except Exception:
         for candidate in normalized_candidates:
-            cursor.execute(
-                """
-                SELECT 1
-                FROM storage.objects
-                WHERE bucket_id = %s AND LOWER(name) = %s
-                LIMIT 1
-                """,
-                [_supabase_bucket(), candidate.lower()],
-            )
-            if cursor.fetchone():
-                return candidate
-        for candidate in normalized_candidates:
-            like_value = f"{candidate}/%"
-            cursor.execute(
-                """
-                SELECT 1
-                FROM storage.objects
-                WHERE bucket_id = %s AND LOWER(name) LIKE %s
-                LIMIT 1
-                """,
-                [_supabase_bucket(), like_value.lower()],
-            )
-            if cursor.fetchone():
+            rows = _supabase_query_object_rows(candidate)
+            candidate_lower = candidate.lower()
+            if any(
+                str(row.get("key") or "").lower() == candidate_lower
+                or str(row.get("key") or "").lower().startswith(f"{candidate_lower}/")
+                for row in rows
+            ):
                 return candidate
     return ""
 
@@ -471,25 +601,37 @@ def _supabase_get_file_metadata(path):
     candidate_keys = _supabase_candidate_keys_from_app_path(path)
     if not candidate_keys:
         return None
-    with connection.cursor() as cursor:
+    try:
+        with connection.cursor() as cursor:
+            for key in candidate_keys:
+                cursor.execute(
+                    """
+                    SELECT name, metadata->>'size' AS size_text, updated_at
+                    FROM storage.objects
+                    WHERE bucket_id = %s AND LOWER(name) = %s
+                    LIMIT 1
+                    """,
+                    [_supabase_bucket(), key.lower()],
+                )
+                row = cursor.fetchone()
+                if not row:
+                    continue
+                return {
+                    "name": str(row[0]).split("/")[-1],
+                    "path": _app_path_from_supabase_key(row[0]),
+                    "size": _coerce_size(row[1]),
+                    "modified": row[2].isoformat() if row[2] else "",
+                }
+    except Exception:
         for key in candidate_keys:
-            cursor.execute(
-                """
-                SELECT name, metadata->>'size' AS size_text, updated_at
-                FROM storage.objects
-                WHERE bucket_id = %s AND LOWER(name) = %s
-                LIMIT 1
-                """,
-                [_supabase_bucket(), key.lower()],
-            )
-            row = cursor.fetchone()
+            row = _supabase_object_row_from_api_head(key)
             if not row:
                 continue
             return {
-                "name": str(row[0]).split("/")[-1],
-                "path": _app_path_from_supabase_key(row[0]),
-                "size": _coerce_size(row[1]),
-                "modified": row[2].isoformat() if row[2] else "",
+                "name": str(row["key"]).split("/")[-1],
+                "path": _app_path_from_supabase_key(row["key"]),
+                "size": _coerce_size(row.get("size")),
+                "modified": row.get("modified") or "",
             }
     return None
 
@@ -501,34 +643,57 @@ def _supabase_search_files(path, query):
     prefix_candidates = _supabase_candidate_keys_from_app_path(path)
 
     rows = []
-    with connection.cursor() as cursor:
-        if prefix_candidates:
-            for prefix in prefix_candidates:
-                like_prefix = f"{prefix}/%"
+    try:
+        with connection.cursor() as cursor:
+            if prefix_candidates:
+                for prefix in prefix_candidates:
+                    like_prefix = f"{prefix}/%"
+                    cursor.execute(
+                        """
+                        SELECT name, metadata->>'size' AS size_text, updated_at
+                        FROM storage.objects
+                        WHERE bucket_id = %s
+                          AND (name = %s OR name LIKE %s)
+                          AND LOWER(name) LIKE %s
+                        ORDER BY updated_at DESC NULLS LAST
+                        """,
+                        [_supabase_bucket(), prefix, like_prefix, f"%{cleaned_query}%"],
+                    )
+                    rows.extend(cursor.fetchall())
+            else:
                 cursor.execute(
                     """
                     SELECT name, metadata->>'size' AS size_text, updated_at
                     FROM storage.objects
                     WHERE bucket_id = %s
-                      AND (name = %s OR name LIKE %s)
                       AND LOWER(name) LIKE %s
                     ORDER BY updated_at DESC NULLS LAST
                     """,
-                    [_supabase_bucket(), prefix, like_prefix, f"%{cleaned_query}%"],
+                    [_supabase_bucket(), f"%{cleaned_query}%"],
                 )
-                rows.extend(cursor.fetchall())
+                rows = cursor.fetchall()
+    except Exception:
+        object_rows = []
+        if prefix_candidates:
+            for prefix in prefix_candidates:
+                object_rows.extend(_supabase_query_object_rows(prefix))
         else:
-            cursor.execute(
-                """
-                SELECT name, metadata->>'size' AS size_text, updated_at
-                FROM storage.objects
-                WHERE bucket_id = %s
-                  AND LOWER(name) LIKE %s
-                ORDER BY updated_at DESC NULLS LAST
-                """,
-                [_supabase_bucket(), f"%{cleaned_query}%"],
+            object_rows = _supabase_query_object_rows("")
+        entries = []
+        for row in _dedupe_rows_by_key(object_rows):
+            key = _normalize_key(row.get("key"))
+            if not key or cleaned_query not in key.lower():
+                continue
+            entries.append(
+                {
+                    "name": key.split("/")[-1],
+                    "path": _app_path_from_supabase_key(key),
+                    "size": _coerce_size(row.get("size")),
+                    "modified": row.get("modified") or "",
+                }
             )
-            rows = cursor.fetchall()
+        entries.sort(key=lambda item: str(item.get("modified") or ""), reverse=True)
+        return entries
 
     deduped_rows = {}
     for row in rows:

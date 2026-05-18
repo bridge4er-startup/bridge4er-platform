@@ -143,7 +143,7 @@ def resolve_correct_option(raw: dict, option_a: str, option_b: str, option_c: st
     candidates = [
         _pick(raw, lookup, "correct_option", "correctOption", "correct option", "correctoption"),
         _pick(raw, lookup, "correct", "correct_answer", "correct answer", "correctAnswer"),
-        _pick(raw, lookup, "answer", "answer_key", "answer key", "ans"),
+        _pick(raw, lookup, "answer", "answer_key", "answer key", "ans", "right_answer", "right answer"),
         _pick(raw, lookup, "answerIndex", "answer_index", "answer index"),
         _pick(raw, lookup, "correctIndex", "correct_index", "correct index"),
     ]
@@ -161,19 +161,71 @@ def normalize_mcq_payload(raw: dict) -> dict:
     options = _parse_options_value(_pick(raw, lookup, "options", "option_list", "option list", "choices"))
 
     option_a = _to_text(
-        _pick(raw, lookup, "option_a", "option a", "optiona", "choice_a", "choice a", "choicea", "a", "1")
+        _pick(
+            raw,
+            lookup,
+            "option_a",
+            "option a",
+            "optiona",
+            "option 1",
+            "choice_a",
+            "choice a",
+            "choicea",
+            "choice 1",
+            "a",
+            "1",
+        )
         or (options[0] if len(options) > 0 else "")
     )
     option_b = _to_text(
-        _pick(raw, lookup, "option_b", "option b", "optionb", "choice_b", "choice b", "choiceb", "b", "2")
+        _pick(
+            raw,
+            lookup,
+            "option_b",
+            "option b",
+            "optionb",
+            "option 2",
+            "choice_b",
+            "choice b",
+            "choiceb",
+            "choice 2",
+            "b",
+            "2",
+        )
         or (options[1] if len(options) > 1 else "")
     )
     option_c = _to_text(
-        _pick(raw, lookup, "option_c", "option c", "optionc", "choice_c", "choice c", "choicec", "c", "3")
+        _pick(
+            raw,
+            lookup,
+            "option_c",
+            "option c",
+            "optionc",
+            "option 3",
+            "choice_c",
+            "choice c",
+            "choicec",
+            "choice 3",
+            "c",
+            "3",
+        )
         or (options[2] if len(options) > 2 else "")
     )
     option_d = _to_text(
-        _pick(raw, lookup, "option_d", "option d", "optiond", "choice_d", "choice d", "choiced", "d", "4")
+        _pick(
+            raw,
+            lookup,
+            "option_d",
+            "option d",
+            "optiond",
+            "option 4",
+            "choice_d",
+            "choice d",
+            "choiced",
+            "choice 4",
+            "d",
+            "4",
+        )
         or (options[3] if len(options) > 3 else "")
     )
 
@@ -199,6 +251,11 @@ def normalize_mcq_payload(raw: dict) -> dict:
                 "question_text",
                 "question text",
                 "question",
+                "question_statement",
+                "question statement",
+                "statement",
+                "prompt",
+                "mcq",
                 "text",
                 "questiontitle",
                 "question_title",
@@ -236,7 +293,19 @@ def normalize_exam_question_payload(raw: dict, exam_type: str) -> dict:
             _pick(raw, lookup, "question_header", "question header", "header", "questionHeader", "section")
         ),
         "question_text": _to_text(
-            _pick(raw, lookup, "question_text", "question text", "question", "text", "question_title")
+            _pick(
+                raw,
+                lookup,
+                "question_text",
+                "question text",
+                "question",
+                "question_statement",
+                "question statement",
+                "statement",
+                "prompt",
+                "text",
+                "question_title",
+            )
         ),
         "question_image_url": _to_text(
             _pick(
@@ -276,19 +345,19 @@ def normalize_exam_question_payload(raw: dict, exam_type: str) -> dict:
     if exam_type == "mcq":
         options = _parse_options_value(_pick(raw, lookup, "options", "option_list", "choices"))
         option_a = _to_text(
-            _pick(raw, lookup, "option_a", "option a", "optiona", "choice_a", "choice a", "a", "1")
+            _pick(raw, lookup, "option_a", "option a", "optiona", "option 1", "choice_a", "choice a", "choice 1", "a", "1")
             or (options[0] if len(options) > 0 else "")
         )
         option_b = _to_text(
-            _pick(raw, lookup, "option_b", "option b", "optionb", "choice_b", "choice b", "b", "2")
+            _pick(raw, lookup, "option_b", "option b", "optionb", "option 2", "choice_b", "choice b", "choice 2", "b", "2")
             or (options[1] if len(options) > 1 else "")
         )
         option_c = _to_text(
-            _pick(raw, lookup, "option_c", "option c", "optionc", "choice_c", "choice c", "c", "3")
+            _pick(raw, lookup, "option_c", "option c", "optionc", "option 3", "choice_c", "choice c", "choice 3", "c", "3")
             or (options[2] if len(options) > 2 else "")
         )
         option_d = _to_text(
-            _pick(raw, lookup, "option_d", "option d", "optiond", "choice_d", "choice d", "d", "4")
+            _pick(raw, lookup, "option_d", "option d", "optiond", "option 4", "choice_d", "choice d", "choice 4", "d", "4")
             or (options[3] if len(options) > 3 else "")
         )
         payload.update(

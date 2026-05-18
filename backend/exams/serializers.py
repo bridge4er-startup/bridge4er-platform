@@ -49,7 +49,7 @@ class MCQQuestionSerializer(serializers.ModelSerializer):
 
 
 class MCQQuestionPublicSerializer(serializers.ModelSerializer):
-    """Serializer without showing correct answer"""
+    """Serializer for objective practice questions."""
     options = serializers.SerializerMethodField()
 
     def get_options(self, obj):
@@ -62,7 +62,20 @@ class MCQQuestionPublicSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = MCQQuestion
-        fields = ['id', 'chapter', 'question_header', 'question_text', 'question_image_url', 'option_a', 'option_b', 'option_c', 'option_d', 'options']
+        fields = [
+            'id',
+            'chapter',
+            'question_header',
+            'question_text',
+            'question_image_url',
+            'option_a',
+            'option_b',
+            'option_c',
+            'option_d',
+            'options',
+            'correct_option',
+            'explanation',
+        ]
 
 
 class ExamAttemptSerializer(serializers.ModelSerializer):

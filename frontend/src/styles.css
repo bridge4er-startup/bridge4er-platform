@@ -9492,8 +9492,10 @@ body[data-branch-theme="computer-engineering"] {
   display: grid;
   grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1.5fr);
   gap: 0.85rem;
-  min-height: min(72vh, 700px);
-  max-height: min(72vh, 700px);
+  height: clamp(420px, 64vh, 680px);
+  min-height: 0;
+  max-height: 680px;
+  overflow: hidden;
 }
 
 .discussion-room-list {
@@ -9521,6 +9523,8 @@ body[data-branch-theme="computer-engineering"] {
   gap: 0.5rem;
   text-align: left;
   cursor: pointer;
+  min-width: 0;
+  width: 100%;
 }
 
 .discussion-room-item.active {
@@ -9531,18 +9535,23 @@ body[data-branch-theme="computer-engineering"] {
 .discussion-room-meta strong {
   color: #0f172a;
   display: block;
+  overflow-wrap: anywhere;
 }
 
 .discussion-room-meta span {
   color: #64748b;
   font-size: 0.78rem;
+  overflow-wrap: anywhere;
 }
 
 .discussion-room-delete {
+  border: 0;
+  background: transparent;
   color: #ef4444;
   font-weight: 700;
   cursor: pointer;
   padding: 0.1rem 0.35rem;
+  line-height: 1;
 }
 
 .discussion-chat-pane {
@@ -9556,6 +9565,7 @@ body[data-branch-theme="computer-engineering"] {
   min-height: 0;
   height: 100%;
   max-height: 100%;
+  overflow: hidden;
 }
 
 .discussion-chat-head {
@@ -9596,6 +9606,7 @@ body[data-branch-theme="computer-engineering"] {
 
 .discussion-message-bubble {
   max-width: min(86%, 660px);
+  min-width: 0;
   border-radius: 14px;
   padding: 0.58rem 0.7rem;
   display: grid;
@@ -9636,6 +9647,7 @@ body[data-branch-theme="computer-engineering"] {
   margin: 0;
   color: #0f172a;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   line-height: 1.45;
 }
 
@@ -9671,6 +9683,7 @@ body[data-branch-theme="computer-engineering"] {
   border: 1px solid #cbd5e1;
   border-radius: 999px;
   padding: 0.6rem 0.85rem;
+  min-width: 0;
 }
 
 .discussion-chat-input input:disabled {
@@ -9692,8 +9705,10 @@ body[data-branch-theme="computer-engineering"] {
 
   .discussion-shell {
     grid-template-columns: 1fr;
+    height: auto;
     min-height: 0;
     max-height: none;
+    overflow: visible;
   }
 
   .discussion-room-list {

@@ -1,4 +1,5 @@
 from django.test import TestCase, override_settings
+from unittest.mock import patch
 
 from storage import dropbox_service
 from storage.models import FileMetadata, FolderMetadata
@@ -166,3 +167,60 @@ class SupabasePathNormalizationTests(TestCase):
 
         self.assertEqual(rooted, "/bridge4er/Civil Engineering/Notice/file.pdf")
         self.assertEqual(rootless, "/bridge4er/Civil Engineering/Notice/file.pdf")
+
+    @override_settings(
+        STORAGE_PROVIDER="supabase",
+        SUPABASE_URL="https://example.supabase.co",
+        SUPABASE_SERVICE_ROLE_KEY="service-role",
+        SUPABASE_STORAGE_BUCKET="bridge4ER",
+        SUPABASE_STORAGE_ROOT_PREFIX="bridge4er",
+    )
+    def test_supabase_listing_falls_back_to_storage_rest_api(self):
+        class FakeResponse:
+            def __init__(self, payload, status_code=200):
+                self._payload = payload
+                self.status_code = status_code
+                self.content = b"[]"
+                self.headers = {}
+
+            def json(self):
+                return self._payload
+
+            def raise_for_status(self):
+                if self.status_code >= 400:
+                    raise RuntimeError(f"status {self.status_code}")
+
+        def fake_post(_url, json=None, **_kwargs):
+            prefix = (json or {}).get("prefix")
+            payloads = {
+                "bridge4er/Civil Engineering/Objective MCQs": [],
+                "Civil Engineering/Objective MCQs": [
+                    {"name": "Nepal Engineering Council (NEC)", "id": None, "metadata": None},
+                ],
+                "Civil Engineering/Objective MCQs/Nepal Engineering Council (NEC)": [
+                    {
+                        "name": "Chapter 1.json",
+                        "id": "object-1",
+                        "metadata": {"size": 128},
+                        "updated_at": "2026-05-18T00:00:00Z",
+                    },
+                ],
+            }
+            return FakeResponse(payloads.get(prefix, []))
+
+        with patch("storage.dropbox_service.connection.cursor", side_effect=RuntimeError("no storage schema")), patch(
+            "storage.dropbox_service.requests.head",
+            return_value=FakeResponse({}, status_code=404),
+        ), patch("storage.dropbox_service.requests.post", side_effect=fake_post):
+            rows = dropbox_service.list_folder_with_metadata(
+                "/bridge4er/Civil Engineering/Objective MCQs",
+                include_dirs=True,
+                recursive=True,
+            )
+
+        paths = {row["path"] for row in rows}
+        self.assertIn("/bridge4er/Civil Engineering/Objective MCQs/Nepal Engineering Council (NEC)", paths)
+        self.assertIn(
+            "/bridge4er/Civil Engineering/Objective MCQs/Nepal Engineering Council (NEC)/Chapter 1.json",
+            paths,
+        )

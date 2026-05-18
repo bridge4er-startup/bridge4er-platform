@@ -9,7 +9,7 @@ from django.test import TestCase, override_settings
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from .dropbox_sync import _sync_exam_set_type
+from .dropbox_sync import _sync_exam_set_type, sync_objective_mcqs_from_dropbox
 from .models import Chapter, ExamPurchase, ExamSet, MCQQuestion, Subject, SubjectiveSubmission
 from .question_normalizers import normalize_mcq_payload
 
@@ -32,6 +32,30 @@ def _update_payload(name):
 
 
 class DropboxExamSetSyncTests(TestCase):
+    def test_objective_sync_does_not_delete_existing_questions_for_invalid_file(self):
+        branch = "Civil Engineering"
+        file_path = f"/bridge4er/{branch}/Objective MCQs/Institute A/Subject A/Chapter 1.json"
+        subject = Subject.objects.create(name="Institute A :: Subject A", branch=branch)
+        chapter = Chapter.objects.create(subject=subject, name="Chapter 1", order=1)
+        question = MCQQuestion.objects.create(
+            chapter=chapter,
+            question_text="Existing question",
+            option_a="A",
+            option_b="B",
+            option_c="C",
+            option_d="D",
+            correct_option="a",
+        )
+
+        with patch("exams.dropbox_sync._list_supported_files", return_value=[file_path]), patch(
+            "exams.dropbox_sync.parse_rows_from_path",
+            return_value=[{"question": "", "option_a": "A", "option_b": "B", "option_c": "C", "option_d": "D"}],
+        ):
+            result = sync_objective_mcqs_from_dropbox(branch=branch, replace_existing=True)
+
+        self.assertEqual(result["skipped_files"], 1)
+        self.assertTrue(MCQQuestion.objects.filter(id=question.id).exists())
+
     def test_sync_deactivates_stale_managed_sets(self):
         branch = "Civil Engineering"
         root = f"/bridge4er/{branch}/Take Exam/Multiple Choice Exam"
@@ -203,6 +227,8 @@ class SubjectLookupApiTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data.get("count"), 1)
         self.assertEqual(len(response.data.get("results", [])), 1)
+        self.assertEqual(response.data["results"][0]["correct_option"], "a")
+        self.assertEqual(response.data["results"][0]["explanation"], "basic math")
 
 
 class QuestionNormalizerTests(TestCase):

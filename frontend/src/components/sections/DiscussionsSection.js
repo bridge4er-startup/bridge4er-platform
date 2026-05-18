@@ -63,7 +63,7 @@ export default function DiscussionsSection({ branch = "Civil Engineering", isAct
       setSelectedClassroomId((current) => {
         const hasCurrent = list.some((item) => Number(item.id) === Number(current));
         if (hasCurrent) return current;
-        return null;
+        return list[0]?.id || null;
       });
     } catch (error) {
       toast.error(error?.response?.data?.error || "Failed to load classrooms.");
@@ -266,13 +266,21 @@ export default function DiscussionsSection({ branch = "Civil Engineering", isAct
             {classrooms.map((room) => {
               const isActiveRoom = Number(selectedClassroomId) === Number(room.id);
               return (
-                <button
+                <div
                   key={room.id}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   className={`discussion-room-item ${isActiveRoom ? "active" : ""}`}
                   onClick={() => {
                     shouldAutoScrollRef.current = true;
                     setSelectedClassroomId(room.id);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      shouldAutoScrollRef.current = true;
+                      setSelectedClassroomId(room.id);
+                    }
                   }}
                 >
                   <div className="discussion-room-meta">
@@ -280,10 +288,9 @@ export default function DiscussionsSection({ branch = "Civil Engineering", isAct
                     <span>{room.description || "Classroom"}</span>
                   </div>
                   {isAdmin ? (
-                    <span
+                    <button
+                      type="button"
                       className="discussion-room-delete"
-                      role="button"
-                      tabIndex={0}
                       onClick={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
@@ -298,9 +305,9 @@ export default function DiscussionsSection({ branch = "Civil Engineering", isAct
                       }}
                     >
                       {deletingClassroomId === room.id ? "..." : "x"}
-                    </span>
+                    </button>
                   ) : null}
-                </button>
+                </div>
               );
             })}
           </aside>

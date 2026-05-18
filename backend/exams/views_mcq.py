@@ -104,6 +104,18 @@ AUTO_SYNC_COOLDOWN_SECONDS = _auto_sync_cooldown_seconds()
 def _dropbox_auto_sync_enabled():
     return bool(getattr(settings, "DROPBOX_AUTO_SYNC_ENABLED", False))
 
+
+def _storage_provider():
+    return str(getattr(settings, "STORAGE_PROVIDER", "dropbox") or "dropbox").strip().lower()
+
+
+def _uses_supabase_storage():
+    return _is_supabase_provider()
+
+
+def _objective_auto_sync_enabled():
+    return _uses_supabase_storage() or _dropbox_auto_sync_enabled()
+
 def _objective_cache_ttl_seconds():
     value = getattr(settings, "OBJECTIVE_LIST_CACHE_TTL_SECONDS", 300)
     try:
@@ -245,12 +257,12 @@ def _backup_objective_chapter_file(chapter, uploaded_file):
 
 def _maybe_sync_objective_on_read(branch, user, force_refresh=False):
     # Allow auto-sync when using Supabase storage or when Dropbox auto-sync is enabled.
-    if not _dropbox_auto_sync_enabled() and not _is_supabase_provider():
+    if not _objective_auto_sync_enabled():
         return {"status": "skipped", "reason": "disabled"}
-    if not _is_staff_user(user) and not force_refresh:
+    if not _uses_supabase_storage() and not _is_staff_user(user) and not force_refresh:
         return {"status": "skipped", "reason": "non_staff"}
     allowed_force_refresh = bool(force_refresh and _is_staff_user(user))
-    cooldown = 5 if allowed_force_refresh else AUTO_SYNC_COOLDOWN_SECONDS
+    cooldown = 5 if allowed_force_refresh else (60 if _uses_supabase_storage() else AUTO_SYNC_COOLDOWN_SECONDS)
     return auto_sync_dropbox_for_branch(
         branch=branch,
         sync_objective=True,
@@ -271,6 +283,26 @@ def _objective_subject_root_paths(branch, subject_name):
 
 def _normalized_lookup_token(value):
     return " ".join(str(value or "").strip().split()).lower()
+
+
+def _is_empty_objective_cache_payload(value):
+    if value is None:
+        return True
+    if isinstance(value, list):
+        return len(value) == 0
+    if isinstance(value, dict):
+        if "results" in value:
+            return int(value.get("count") or 0) == 0 and len(value.get("results") or []) == 0
+        return len(value) == 0
+    return False
+
+
+def _can_return_objective_cache(value):
+    if value is None:
+        return False
+    if _uses_supabase_storage() and _is_empty_objective_cache_payload(value):
+        return False
+    return True
 
 
 def _resolve_subject_record(branch, subject_value):
@@ -296,7 +328,7 @@ def _resolve_subject_record(branch, subject_value):
             return Subject.objects.filter(id=row["id"]).first()
 
         parsed = parse_subject_key(row_name)
-        if _normalized_LOOKUP_TOKEN(parsed.get("subject_name")) == normalized_token:
+        if _normalized_lookup_token(parsed.get("subject_name")) == normalized_token:
             return Subject.objects.filter(id=row["id"]).first()
 
     return None
@@ -320,7 +352,7 @@ def _resolve_chapter_record(subject_obj, chapter_value):
     normalized_token = _normalized_lookup_token(token)
     for row in queryset.values("id", "name"):
         row_name = str(row.get("name") or "")
-        if _normalized_LOOKUP_TOKEN(row_name) == normalized_token:
+        if _normalized_lookup_token(row_name) == normalized_token:
             return queryset.filter(id=row["id"]).first()
 
     return None
@@ -380,7 +412,7 @@ class SubjectListView(APIView):
         cache_key = _objective_cache_key("subjects", branch)
         if not force_refresh:
             cached = cache.get(cache_key)
-            if cached is not None:
+            if _can_return_objective_cache(cached):
                 return Response(cached)
 
         _maybe_sync_objective_on_read(branch=branch, user=request.user, force_refresh=force_refresh)
@@ -446,7 +478,7 @@ class ChapterListView(APIView):
         cache_key = _objective_cache_key("chapters", branch, subject)
         if not force_refresh:
             cached = cache.get(cache_key)
-            if cached is not None:
+            if _can_return_objective_cache(cached):
                 return Response(cached)
 
         _maybe_sync_objective_on_read(branch=branch, user=request.user, force_refresh=force_refresh)
@@ -488,7 +520,7 @@ class QuestionListView(APIView):
         cache_key = _objective_cache_key("questions", branch, subject, chapter, page, page_size)
         if not force_refresh:
             cached = cache.get(cache_key)
-            if cached is not None:
+            if _can_return_objective_cache(cached):
                 return Response(cached)
 
         _maybe_sync_objective_on_read(branch=branch, user=request.user, force_refresh=force_refresh)
@@ -501,16 +533,19 @@ class QuestionListView(APIView):
         if not chapter_obj:
             return Response({"error": "Chapter not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        _ensure_demo_questions(chapter_obj)
+        if bool(getattr(settings, "ENABLE_DEMO_OBJECTIVE_QUESTIONS", getattr(settings, "ENABLE_DEMO_EXAM_SETS", False))):
+            _ensure_demo_questions(chapter_obj)
         questions_qs = MCQQuestion.objects.filter(chapter=chapter_obj).order_by("id")
 
         total = questions_qs.count()
+        total_pages = (total + page_size - 1) // page_size if total else 1
+        if page > total_pages:
+            page = total_pages
         start = (page - 1) * page_size
         end = start + page_size
         question_items = questions_qs[start:end]
         serializer = MCQQuestionPublicSerializer(question_items, many=True)
 
-        total_pages = (total + page_size - 1) // page_size if total else 1
         payload = {
             "count": total,
             "page": page,
@@ -686,3 +721,287 @@ class CreateChapterView(APIView):
 
     def post(self, request):
         subject_id = request.data.get("subject_id")
+        name = request.data.get("name")
+        order = request.data.get("order")
+        small_note = str(request.data.get("small_note") or "").strip()
+
+        if not subject_id or not name:
+            return Response(
+                {"error": "subject_id and name required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            subject = Subject.objects.get(id=subject_id)
+            if order in (None, ""):
+                order_value = int((Chapter.objects.filter(subject=subject).aggregate(max_order=Max("order")).get("max_order") or 0) + 1)
+            else:
+                try:
+                    order_value = int(order)
+                except (TypeError, ValueError):
+                    return Response({"error": "order must be an integer"}, status=status.HTTP_400_BAD_REQUEST)
+
+            chapter = Chapter.objects.create(
+                subject=subject,
+                name=name,
+                order=order_value,
+                small_note=small_note[:255],
+            )
+            return Response(
+                {
+                    "id": chapter.id,
+                    "name": chapter.name,
+                    "order": chapter.order,
+                    "small_note": chapter.small_note,
+                },
+                status=status.HTTP_201_CREATED,
+            )
+        except Subject.DoesNotExist:
+            return Response({"error": "Subject not found"}, status=status.HTTP_404_NOT_FOUND)
+
+
+class UpdateChapterView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def patch(self, request, chapter_id):
+        try:
+            chapter = Chapter.objects.get(id=chapter_id)
+        except Chapter.DoesNotExist:
+            return Response({"error": "Chapter not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        update_fields = []
+
+        if "name" in request.data:
+            new_name = str(request.data.get("name") or "").strip()
+            if not new_name:
+                return Response({"error": "name cannot be empty"}, status=status.HTTP_400_BAD_REQUEST)
+            chapter.name = new_name
+            update_fields.append("name")
+
+        if "order" in request.data:
+            try:
+                chapter.order = int(request.data.get("order"))
+            except (TypeError, ValueError):
+                return Response({"error": "order must be an integer"}, status=status.HTTP_400_BAD_REQUEST)
+            update_fields.append("order")
+
+        if "small_note" in request.data:
+            chapter.small_note = str(request.data.get("small_note") or "").strip()[:255]
+            update_fields.append("small_note")
+
+        if not update_fields:
+            return Response(
+                {"error": "At least one of name, order, or small_note is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        chapter.save(update_fields=sorted(set(update_fields)))
+        return Response(
+            {
+                "id": chapter.id,
+                "name": chapter.name,
+                "order": chapter.order,
+                "small_note": chapter.small_note,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class DeleteChapterView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def post(self, request, chapter_id):
+        delete_source_files = _as_bool(request.data.get("delete_source_files"), True)
+        try:
+            chapter = Chapter.objects.select_related("subject").get(id=chapter_id)
+        except Chapter.DoesNotExist:
+            return Response({"error": "Chapter not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        question_count = MCQQuestion.objects.filter(chapter=chapter).count()
+        branch = chapter.subject.branch
+        subject_name = chapter.subject.name
+        deleted_paths = []
+        source_errors = []
+
+        if delete_source_files:
+            try:
+                matching_paths = _list_matching_chapter_paths(branch, subject_name, chapter.name)
+                for path in matching_paths:
+                    try:
+                        delete_file(path)
+                        deleted_paths.append(path)
+                    except Exception as exc:
+                        if not _is_not_found_error(exc):
+                            source_errors.append(str(exc))
+                if deleted_paths:
+                    FileMetadata.objects.filter(dropbox_path__in=deleted_paths).delete()
+            except Exception as exc:
+                if not _is_not_found_error(exc):
+                    source_errors.append(str(exc))
+
+        chapter_name = chapter.name
+        chapter.delete()
+        payload = {
+            "message": "Chapter deleted successfully",
+            "chapter_name": chapter_name,
+            "questions_deleted": question_count,
+            "source_paths_deleted": deleted_paths,
+            "source_delete_errors": source_errors,
+        }
+        return Response(payload, status=status.HTTP_200_OK)
+
+
+class DeleteSubjectView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def post(self, request, subject_id):
+        delete_source_folder = _as_bool(request.data.get("delete_source_folder"), True)
+        try:
+            subject = Subject.objects.get(id=subject_id)
+        except Subject.DoesNotExist:
+            return Response({"error": "Subject not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        chapter_count = Chapter.objects.filter(subject=subject).count()
+        question_count = MCQQuestion.objects.filter(chapter__subject=subject).count()
+
+        source_paths = _objective_subject_root_paths(subject.branch, subject.name)
+        source_deleted_paths = []
+        source_errors = []
+        if delete_source_folder:
+            for source_path in source_paths:
+                try:
+                    delete_file(source_path)
+                    source_deleted_paths.append(source_path)
+                    FileMetadata.objects.filter(dropbox_path=source_path).delete()
+                    FileMetadata.objects.filter(dropbox_path__startswith=f"{source_path}/").delete()
+                except Exception as exc:
+                    if not _is_not_found_error(exc):
+                        source_errors.append(str(exc))
+
+        subject_name = subject.name
+        subject.delete()
+
+        payload = {
+            "message": "Subject deleted successfully",
+            "subject_name": subject_name,
+            "chapters_deleted": chapter_count,
+            "questions_deleted": question_count,
+            "source_folder_paths": source_paths,
+            "source_folders_deleted": source_deleted_paths,
+        }
+        if source_errors:
+            payload["source_delete_errors"] = source_errors
+        return Response(payload, status=status.HTTP_200_OK)
+
+
+class BulkUploadQuestionsView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def post(self, request):
+        chapter_id = request.data.get("chapter_id")
+        uploaded_file = request.FILES.get("questions_file")
+        file_path = request.data.get("file_path")
+        questions_data = request.data.get("questions")
+
+        if not chapter_id:
+            return Response({"error": "chapter_id required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            chapter = Chapter.objects.get(id=chapter_id)
+
+            if uploaded_file:
+                normalized_questions = _read_questions_from_file(uploaded_file)
+            elif file_path:
+                normalized_questions = _read_questions_from_path(file_path)
+            else:
+                if isinstance(questions_data, str):
+                    questions_data = json.loads(questions_data)
+                if not isinstance(questions_data, list):
+                    return Response(
+                        {"error": "Provide questions_file, file_path, or a questions list"},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                normalized_questions = [_normalize_question_payload(item) for item in questions_data]
+
+            payload = None
+            if DJANGO_IMPORT_EXPORT_AVAILABLE and MCQQuestionResource is not None:
+                summary = _import_questions_with_resource(chapter, normalized_questions)
+                payload = {
+                    "message": f"Imported {summary['imported']} questions",
+                    "summary": summary,
+                }
+            else:
+                created_questions = []
+                with transaction.atomic():
+                    for q_data in normalized_questions:
+                        if not q_data["question_text"] or q_data["correct_option"] not in {"a", "b", "c", "d"}:
+                            continue
+
+                        question = MCQQuestion.objects.create(
+                            chapter=chapter,
+                            question_header=q_data["question_header"],
+                            question_text=q_data["question_text"],
+                            question_image_url=q_data["question_image_url"],
+                            option_a=q_data["option_a"],
+                            option_b=q_data["option_b"],
+                            option_c=q_data["option_c"],
+                            option_d=q_data["option_d"],
+                            correct_option=q_data["correct_option"],
+                            explanation=q_data["explanation"],
+                        )
+                        created_questions.append(MCQQuestionSerializer(question).data)
+
+                payload = {
+                    "message": f"Created {len(created_questions)} questions",
+                    "questions": created_questions,
+                }
+
+            dropbox_path = ""
+            dropbox_error = ""
+            if uploaded_file:
+                try:
+                    dropbox_path = _backup_objective_chapter_file(chapter, uploaded_file)
+                except Exception as exc:
+                    dropbox_error = str(exc)
+
+            if dropbox_path:
+                payload["dropbox_backup_path"] = dropbox_path
+            if dropbox_error:
+                payload["dropbox_backup_error"] = dropbox_error
+
+            return Response(payload, status=status.HTTP_201_CREATED)
+        except Chapter.DoesNotExist:
+            return Response({"error": "Chapter not found"}, status=status.HTTP_404_NOT_FOUND)
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class UserProgressView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, subject, chapter):
+        branch = request.GET.get("branch", "Civil Engineering")
+
+        try:
+            subject_obj = _resolve_subject_record(branch=branch, subject_value=subject)
+            if not subject_obj:
+                return Response({"error": "Subject not found"}, status=status.HTTP_404_NOT_FOUND)
+            chapter_obj = _resolve_chapter_record(subject_obj=subject_obj, chapter_value=chapter)
+            if not chapter_obj:
+                return Response({"error": "Chapter not found"}, status=status.HTTP_404_NOT_FOUND)
+            total_questions = MCQQuestion.objects.filter(chapter=chapter_obj).count()
+            correct_answers = 0
+
+            return Response(
+                {
+                    "total_questions": total_questions,
+                    "correct_answers": correct_answers,
+                    "percentage": (correct_answers / total_questions * 100) if total_questions > 0 else 0,
+                }
+            )
+        except Subject.DoesNotExist:
+            return Response({"error": "Subject not found"}, status=status.HTTP_404_NOT_FOUND)
+        except Chapter.DoesNotExist:
+            return Response({"error": "Chapter not found"}, status=status.HTTP_404_NOT_FOUND)

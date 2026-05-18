@@ -59,6 +59,7 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
   const [selectedSubject, setSelectedSubject] = useState("");
   const [selectedSubjectLabel, setSelectedSubjectLabel] = useState("");
   const [selectedChapter, setSelectedChapter] = useState("");
+  const [selectedChapterToken, setSelectedChapterToken] = useState("");
   const [view, setView] = useState("institutions");
 
   const [loading, setLoading] = useState(true);
@@ -111,6 +112,7 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
     setSelectedSubject("");
     setSelectedSubjectLabel("");
     setSelectedChapter("");
+    setSelectedChapterToken("");
     setChapters([]);
     resetQuestionSession();
   }, [branch, isActive]);
@@ -152,6 +154,7 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
     setSelectedSubject("");
     setSelectedSubjectLabel("");
     setSelectedChapter("");
+    setSelectedChapterToken("");
     setChapters([]);
     resetQuestionSession();
     setView("subjects");
@@ -164,6 +167,7 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
     setSelectedSubject(subjectToken);
     setSelectedSubjectLabel(displayName);
     setSelectedChapter("");
+    setSelectedChapterToken("");
     resetQuestionSession();
 
     const chaptersEndpoint = `exams/subjects/${encodeURIComponent(subjectToken)}/chapters/`;
@@ -253,6 +257,7 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
       return;
     }
     setSelectedChapter(chapterName || chapterToken);
+    setSelectedChapterToken(chapterToken);
     resetQuestionSession();
     await loadQuestionPage(selectedSubject, chapterToken, 1, pageSize);
     setView("questions");
@@ -260,6 +265,28 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
 
   const handleSelectOption = async (question, optionKey) => {
     if (attempts[question.id]?.locked) return;
+    const localCorrectOption = String(question.correct_option || question.correctOption || "")
+      .trim()
+      .toLowerCase();
+    if (["a", "b", "c", "d"].includes(localCorrectOption)) {
+      setAttempts((prev) => ({
+        ...prev,
+        [question.id]: {
+          locked: true,
+          selected_option: optionKey,
+          correct_option: localCorrectOption,
+          is_correct: optionKey === localCorrectOption,
+          explanation: question.explanation || "",
+        },
+      }));
+      API.post("exams/questions/submit/", {
+        question_id: question.id,
+        selected_option: optionKey,
+      }).catch((error) => {
+        console.error("Answer submit failed after local reveal:", error);
+      });
+      return;
+    }
     try {
       const res = await API.post("exams/questions/submit/", {
         question_id: question.id,
@@ -284,22 +311,25 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
   const handlePageSizeChange = async (value) => {
     const nextSize = Math.max(5, Number(value || 5));
     setPageSize(nextSize);
-    if (!selectedSubject || !selectedChapter) return;
-    await loadQuestionPage(selectedSubject, selectedChapter, 1, nextSize);
+    const chapterToken = selectedChapterToken || selectedChapter;
+    if (!selectedSubject || !chapterToken) return;
+    await loadQuestionPage(selectedSubject, chapterToken, 1, nextSize);
   };
 
   const goToPage = async (targetPage) => {
     const safePage = Math.max(1, Math.min(totalPages, targetPage));
     if (safePage === page) return;
-    await loadQuestionPage(selectedSubject, selectedChapter, safePage, pageSize);
+    await loadQuestionPage(selectedSubject, selectedChapterToken || selectedChapter, safePage, pageSize);
   };
 
   const getOptionClassName = (questionId, optionKey) => {
     const attempt = attempts[questionId];
     if (!attempt?.locked) return "mcq-option";
-    if (optionKey === attempt.correct_option) return "mcq-option correct";
-    if (optionKey === attempt.selected_option && !attempt.is_correct) return "mcq-option incorrect";
-    if (optionKey === attempt.selected_option) return "mcq-option selected";
+    const correctOption = String(attempt.correct_option || "").toLowerCase();
+    const selectedOption = String(attempt.selected_option || "").toLowerCase();
+    if (optionKey === correctOption) return "mcq-option correct";
+    if (optionKey === selectedOption && !attempt.is_correct) return "mcq-option incorrect";
+    if (optionKey === selectedOption) return "mcq-option selected";
     return "mcq-option";
   };
 
@@ -380,6 +410,7 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
               setSelectedSubject("");
               setSelectedSubjectLabel("");
               setSelectedChapter("");
+              setSelectedChapterToken("");
               setChapters([]);
               resetQuestionSession();
             }}
@@ -427,6 +458,7 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
               setSelectedSubject("");
               setSelectedSubjectLabel("");
               setSelectedChapter("");
+              setSelectedChapterToken("");
               setChapters([]);
               resetQuestionSession();
             }}
@@ -485,6 +517,7 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
             onClick={() => {
               setView("chapters");
               setSelectedChapter("");
+              setSelectedChapterToken("");
               resetQuestionSession();
             }}
             style={{ marginBottom: "1rem" }}
@@ -494,11 +527,23 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
 
           {loading ? (
             <TimedLoadingState baseMessage="Loading questions..." />
+          ) : questions.length === 0 ? (
+            <div className="empty-state">
+              <i className="fas fa-inbox"></i>
+              <h4>No questions found in this question set</h4>
+              <p>Ask an admin to sync the latest Objective MCQ files for this field.</p>
+            </div>
           ) : (
             <>
               {questions.map((question, index) => {
                 const attempt = attempts[question.id];
-                const options = question.options || {};
+                const options = question.options || {
+                  a: question.option_a,
+                  b: question.option_b,
+                  c: question.option_c,
+                  d: question.option_d,
+                };
+                const correctLabel = String(attempt?.correct_option || "").toUpperCase();
                 return (
                   <div key={question.id} className="mcq-question-container">
                     <div className="question-number-badge">Q {(page - 1) * pageSize + index + 1}</div>
@@ -530,8 +575,14 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
 
                     {attempt?.locked ? (
                       <div className="mcq-explanation show">
-                        <h4>Explanation:</h4>
-                        {attempt.explanation ? <p>{attempt.explanation}</p> : null}
+                        <h4>
+                          {attempt.is_correct ? "Correct." : "Correct answer:"} {correctLabel}
+                        </h4>
+                        {attempt.explanation ? (
+                          <p>{attempt.explanation}</p>
+                        ) : (
+                          <p>No explanation has been added for this question yet.</p>
+                        )}
                       </div>
                     ) : null}
                   </div>

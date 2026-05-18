@@ -816,7 +816,7 @@ def _computed_platform_metrics(branch=None):
     ).count()
     db_objective_count = mcq_qs.count()
     objective_count = db_objective_count
-    if resolved_branch and _dropbox_auto_sync_enabled():
+    if resolved_branch and (_uses_supabase_storage() or _dropbox_auto_sync_enabled()):
         objective_count = _cached_objective_question_count_from_source(
             resolved_branch,
             db_fallback=db_objective_count,

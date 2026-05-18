@@ -1,0 +1,13 @@
+venv/
+.venv/
+cache/
+media/
+staticfiles/
+db.sqlite3
+*.sqlite3
+*.sqlite3-journal
+__pycache__/
+*.pyc
+.env
+.env.*
+.vercel/
