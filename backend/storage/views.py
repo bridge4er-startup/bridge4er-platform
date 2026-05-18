@@ -238,8 +238,13 @@ def _folder_depth(path, content_type, branch):
     return max(0, len(relative_parts))
 
 
+def _cache_safe_value(value):
+    normalized = str(value or "").strip().lower()
+    return hashlib.sha1(normalized.encode("utf-8")).hexdigest()
+
+
 def _list_cache_token_key(content_type, branch):
-    return f"{FILE_LIST_CACHE_KEY_PREFIX}:token:{content_type}:{str(branch).lower()}"
+    return f"{FILE_LIST_CACHE_KEY_PREFIX}:token:{content_type}:{_cache_safe_value(branch)}"
 
 
 def _list_cache_token(content_type, branch):
@@ -275,8 +280,7 @@ def _invalidate_list_cache(content_type, branch):
 
 
 def _metadata_sync_cache_key(content_type, branch):
-    normalized_branch = _normalize_branch(branch).lower()
-    return f"{FILE_LIST_CACHE_KEY_PREFIX}:metadata-sync:{content_type}:{normalized_branch}"
+    return f"{FILE_LIST_CACHE_KEY_PREFIX}:metadata-sync:{content_type}:{_cache_safe_value(_normalize_branch(branch))}"
 
 
 def _should_sync_metadata(content_type, branch, force=False):
