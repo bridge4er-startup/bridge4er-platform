@@ -7,6 +7,7 @@ from pathlib import Path
 
 from django.core.cache import cache
 from django.db.models import Max
+from django.utils import timezone
 
 from storage.dropbox_service import list_folder_with_metadata
 
@@ -111,60 +112,7 @@ def _is_valid_exam_row(row: dict, exam_type: str) -> bool:
 
 
 def _import_mcq_with_resource(chapter, normalized_questions):
-    if not DJANGO_IMPORT_EXPORT_AVAILABLE or MCQQuestionResource is None:
-        return _manual_import_objective(chapter, normalized_questions)
-
-    resource = MCQQuestionResource()
-    dataset = Dataset(
-        headers=[
-            "id",
-            "chapter_id",
-            "question_header",
-            "question_text",
-            "question_image_url",
-            "option_a",
-            "option_b",
-            "option_c",
-            "option_d",
-            "correct_option",
-            "explanation",
-        ]
-    )
-    skipped_rows = 0
-    for row in normalized_questions:
-        if not row["question_text"] or row["correct_option"] not in {"a", "b", "c", "d"}:
-            skipped_rows += 1
-            continue
-        dataset.append(
-            [
-                row.get("id") or "",
-                chapter.id,
-                row["question_header"],
-                row["question_text"],
-                row["question_image_url"],
-                row["option_a"],
-                row["option_b"],
-                row["option_c"],
-                row["option_d"],
-                row["correct_option"],
-                row["explanation"],
-            ]
-        )
-
-    if len(dataset) == 0:
-        return {"new": 0, "updated": 0, "imported": 0, "skipped": skipped_rows, "error_rows": 0}
-
-    result = resource.import_data(dataset, dry_run=False, raise_errors=False, use_transactions=True)
-    totals = getattr(result, "totals", {}) or {}
-    new_rows = int(totals.get("new", 0))
-    updated_rows = int(totals.get("update", 0))
-    return {
-        "new": new_rows,
-        "updated": updated_rows,
-        "imported": new_rows + updated_rows,
-        "skipped": skipped_rows + int(totals.get("skip", 0)),
-        "error_rows": int(totals.get("error", 0)),
-    }
+    return _manual_import_objective(chapter, normalized_questions)
 
 
 def _import_exam_set_with_resource(exam_set, normalized_rows):
@@ -233,26 +181,33 @@ def _import_exam_set_with_resource(exam_set, normalized_rows):
 
 
 def _manual_import_objective(chapter: Chapter, normalized_questions: list[dict]) -> dict:
-    created = 0
+    questions = []
     skipped = 0
+    now = timezone.now()
     for q_data in normalized_questions:
         if not q_data["question_text"] or q_data["correct_option"] not in {"a", "b", "c", "d"}:
             skipped += 1
             continue
 
-        MCQQuestion.objects.create(
-            chapter=chapter,
-            question_header=q_data["question_header"],
-            question_text=q_data["question_text"],
-            question_image_url=q_data["question_image_url"],
-            option_a=q_data["option_a"],
-            option_b=q_data["option_b"],
-            option_c=q_data["option_c"],
-            option_d=q_data["option_d"],
-            correct_option=q_data["correct_option"],
-            explanation=q_data["explanation"],
+        questions.append(
+            MCQQuestion(
+                chapter=chapter,
+                question_header=q_data["question_header"],
+                question_text=q_data["question_text"],
+                question_image_url=q_data["question_image_url"],
+                option_a=q_data["option_a"],
+                option_b=q_data["option_b"],
+                option_c=q_data["option_c"],
+                option_d=q_data["option_d"],
+                correct_option=q_data["correct_option"],
+                explanation=q_data["explanation"],
+                created_at=now,
+                updated_at=now,
+            )
         )
-        created += 1
+    if questions:
+        MCQQuestion.objects.bulk_create(questions, batch_size=500)
+    created = len(questions)
     return {"new": created, "updated": 0, "imported": created, "skipped": skipped, "error_rows": 0}
 
 
