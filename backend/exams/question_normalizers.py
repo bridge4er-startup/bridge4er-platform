@@ -76,6 +76,20 @@ def _parse_options_value(options):
     return []
 
 
+def _parse_list_value(value):
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except (TypeError, ValueError):
+            try:
+                value = ast.literal_eval(value)
+            except (ValueError, SyntaxError):
+                value = None
+    if isinstance(value, (list, tuple)):
+        return list(value)
+    return []
+
+
 def _normalize_for_compare(value: str) -> str:
     return " ".join(_to_text(value).lower().split())
 
@@ -251,6 +265,7 @@ def normalize_mcq_payload(raw: dict) -> dict:
                 "question_text",
                 "question text",
                 "question",
+                "questions",
                 "question_statement",
                 "question statement",
                 "statement",
@@ -288,7 +303,7 @@ def normalize_exam_question_payload(raw: dict, exam_type: str) -> dict:
     lookup = _build_lookup(raw)
     payload = {
         "id": _to_text(_pick(raw, lookup, "id")),
-        "order": _to_int(_pick(raw, lookup, "order", "no", "index", "qno", "question no"), 0),
+        "order": _to_int(_pick(raw, lookup, "order", "no", "index", "qno", "question no", "sn", "s.n.", "s n"), 0),
         "question_header": _to_text(
             _pick(raw, lookup, "question_header", "question header", "header", "questionHeader", "section")
         ),
@@ -299,6 +314,7 @@ def normalize_exam_question_payload(raw: dict, exam_type: str) -> dict:
                 "question_text",
                 "question text",
                 "question",
+                "questions",
                 "question_statement",
                 "question statement",
                 "statement",
@@ -331,12 +347,7 @@ def normalize_exam_question_payload(raw: dict, exam_type: str) -> dict:
 
     subquestions = _pick(raw, lookup, "subquestions", "sub_questions", "sub questions")
     if isinstance(subquestions, str):
-        try:
-            parsed_sub = json.loads(subquestions)
-            if isinstance(parsed_sub, list):
-                subquestions = parsed_sub
-        except (TypeError, ValueError):
-            subquestions = []
+        subquestions = _parse_list_value(subquestions)
     if not payload["question_text"] and isinstance(subquestions, list):
         lines = [_to_text(item) for item in subquestions if _to_text(item)]
         if lines:
