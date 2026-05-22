@@ -320,6 +320,37 @@ def _is_exam_set_path(path):
     return "/take exam/multiple choice exam/" in lowered or "/take exam/subjective exam/" in lowered
 
 
+def _is_objective_question_path(path):
+    return "/objective mcqs/" in (path or "").lower()
+
+
+def _sync_questions_for_changed_path(path, prune_missing=False):
+    normalized_path = _normalize_dropbox_path(path)
+    branch = _extract_branch_from_path(normalized_path)
+    payload = {}
+    if _is_objective_question_path(normalized_path):
+        from exams.dropbox_sync import sync_objective_mcqs_from_dropbox
+
+        payload["objective_sync"] = sync_objective_mcqs_from_dropbox(
+            branch=branch,
+            replace_existing=True,
+            source_path="" if prune_missing else normalized_path,
+            prune_missing=bool(prune_missing),
+        )
+    if _is_exam_set_path(normalized_path):
+        payload["exam_sets_sync"] = _sync_exam_sets_for_branch(branch) if prune_missing else None
+        if not prune_missing:
+            from exams.dropbox_sync import sync_exam_sets_from_dropbox
+
+            payload["exam_sets_sync"] = sync_exam_sets_from_dropbox(
+                branch=branch,
+                replace_existing=True,
+                source_path=normalized_path,
+                prune_missing=False,
+            )
+    return payload
+
+
 def _extract_branch_from_path(path):
     parts = _path_parts(path)
     if len(parts) >= 2 and parts[0].lower() == "bridge4er":
@@ -1846,7 +1877,12 @@ class SyncPathView(APIView):
                 size=file_meta.get("size"),
             )
             _invalidate_list_cache(content_type=resolved_content_type, branch=resolved_branch)
-            return Response({"message": "File synced", "path": normalized_path}, status=status.HTTP_200_OK)
+            question_sync = {}
+            try:
+                question_sync = _sync_questions_for_changed_path(normalized_path, prune_missing=False)
+            except Exception as sync_error:
+                question_sync = {"question_sync_error": str(sync_error)}
+            return Response({"message": "File synced", "path": normalized_path, **question_sync}, status=status.HTTP_200_OK)
 
         resolved_content_type = _infer_content_type_from_path(normalized_path)
         resolved_branch = _extract_branch_from_path(normalized_path)
@@ -1862,12 +1898,18 @@ class SyncPathView(APIView):
         )
         _sync_metadata_from_listing(entries, content_type=resolved_content_type, branch=resolved_branch)
         _invalidate_list_cache(content_type=resolved_content_type, branch=resolved_branch)
+        question_sync = {}
+        try:
+            question_sync = _sync_questions_for_changed_path(normalized_path, prune_missing=False)
+        except Exception as sync_error:
+            question_sync = {"question_sync_error": str(sync_error)}
         return Response(
             {
                 "message": "Path synced",
                 "path": normalized_path,
                 "file_count": len([row for row in entries if not row.get("is_dir")]),
                 "folder_count": len([row for row in entries if row.get("is_dir")]),
+                **question_sync,
             },
             status=status.HTTP_200_OK,
         )
@@ -1981,8 +2023,11 @@ class DeleteFileView(APIView):
             ).delete()
             _invalidate_list_cache_for_path(normalized_path)
             payload = {"message": "File deleted successfully"}
-            if _is_exam_set_path(normalized_path):
-                payload["exam_sets_sync"] = _sync_exam_sets_for_branch(_extract_branch_from_path(normalized_path))
+            if _is_objective_question_path(normalized_path) or _is_exam_set_path(normalized_path):
+                try:
+                    payload.update(_sync_questions_for_changed_path(normalized_path, prune_missing=True))
+                except Exception as sync_error:
+                    payload["question_sync_error"] = str(sync_error)
             return Response(payload)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)

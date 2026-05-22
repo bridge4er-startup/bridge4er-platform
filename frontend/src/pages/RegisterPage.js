@@ -22,6 +22,8 @@ export default function RegisterPage() {
   });
   const [submitting, setSubmitting] = useState(false);
   const [heroImageUrl, setHeroImageUrl] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -168,22 +170,42 @@ export default function RegisterPage() {
           </select>
 
           <label htmlFor="password">Password</label>
-          <input
-            id="password"
-            type="password"
-            value={form.password}
-            onChange={(e) => setField("password", e.target.value)}
-            placeholder="Create password"
-          />
+          <div className="auth-password-field">
+            <input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              value={form.password}
+              onChange={(e) => setField("password", e.target.value)}
+              placeholder="Create password"
+            />
+            <button
+              type="button"
+              className="auth-password-toggle"
+              onClick={() => setShowPassword((value) => !value)}
+              aria-label={showPassword ? "Hide password" : "Show password"}
+            >
+              {showPassword ? "Hide" : "Show"}
+            </button>
+          </div>
 
           <label htmlFor="confirm_password">Re-enter Password</label>
-          <input
-            id="confirm_password"
-            type="password"
-            value={form.confirm_password}
-            onChange={(e) => setField("confirm_password", e.target.value)}
-            placeholder="Re-enter password"
-          />
+          <div className="auth-password-field">
+            <input
+              id="confirm_password"
+              type={showConfirmPassword ? "text" : "password"}
+              value={form.confirm_password}
+              onChange={(e) => setField("confirm_password", e.target.value)}
+              placeholder="Re-enter password"
+            />
+            <button
+              type="button"
+              className="auth-password-toggle"
+              onClick={() => setShowConfirmPassword((value) => !value)}
+              aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+            >
+              {showConfirmPassword ? "Hide" : "Show"}
+            </button>
+          </div>
 
           <label htmlFor="robot_verified" className="robot-check">
             <input

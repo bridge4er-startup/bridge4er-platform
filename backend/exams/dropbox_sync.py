@@ -43,9 +43,21 @@ def _is_supported_file(path: str) -> bool:
     return Path(path).suffix.lower() in SUPPORTED_IMPORT_EXTENSIONS
 
 
-def _list_supported_files(root_path: str) -> list[str]:
+def _normalize_storage_path(path: str) -> str:
+    value = str(path or "").strip().replace("\\", "/")
+    if not value:
+        return ""
+    parts = [segment for segment in value.split("/") if segment]
+    return "/" + "/".join(parts)
+
+
+def _list_supported_files(root_path: str, source_path: str = "") -> list[str]:
+    scan_path = _normalize_storage_path(source_path) or root_path
     try:
-        entries = list_folder_with_metadata(root_path, include_dirs=False, recursive=True)
+        if _is_supported_file(scan_path):
+            entries = [{"path": scan_path, "is_dir": False}]
+        else:
+            entries = list_folder_with_metadata(scan_path, include_dirs=False, recursive=True)
     except Exception as exc:
         lowered = str(exc).lower()
         if "not_found" in lowered or "path" in lowered:
@@ -277,12 +289,18 @@ def _ensure_unique_exam_set_name(
     return f"{base[:180].rstrip()} #{digest}"[:200]
 
 
-def sync_objective_mcqs_from_dropbox(branch: str, replace_existing: bool = True) -> dict:
+def sync_objective_mcqs_from_dropbox(
+    branch: str,
+    replace_existing: bool = True,
+    source_path: str = "",
+    prune_missing: bool = True,
+) -> dict:
     root_path = f"/bridge4er/{branch}/Objective MCQs"
-    file_paths = _list_supported_files(root_path)
+    file_paths = _list_supported_files(root_path, source_path=source_path)
 
     summary = {
         "root_path": root_path,
+        "source_path": _normalize_storage_path(source_path),
         "discovered_files": len(file_paths),
         "processed_files": 0,
         "subjects_created": 0,
@@ -393,7 +411,7 @@ def sync_objective_mcqs_from_dropbox(branch: str, replace_existing: bool = True)
             summary["error_files"] += 1
         summary["files"].append(item)
 
-    if summary["error_files"] == 0:
+    if summary["error_files"] == 0 and prune_missing and not source_path:
         stale_chapters = (
             Chapter.objects.filter(
                 subject__branch=branch,
@@ -415,20 +433,30 @@ def sync_objective_mcqs_from_dropbox(branch: str, replace_existing: bool = True)
         )
         summary["subjects_deleted"] = stale_subjects.count()
         stale_subjects.delete()
-    else:
+    elif summary["error_files"] != 0:
         summary["prune_skipped"] = "sync_errors"
+    elif source_path:
+        summary["prune_skipped"] = "selected_path_sync"
 
     return summary
 
 
-def _sync_exam_set_type(branch: str, exam_type: str, root_path: str, replace_existing: bool) -> dict:
-    file_paths = _list_supported_files(root_path)
+def _sync_exam_set_type(
+    branch: str,
+    exam_type: str,
+    root_path: str,
+    replace_existing: bool,
+    source_path: str = "",
+    prune_missing: bool = True,
+) -> dict:
+    file_paths = _list_supported_files(root_path, source_path=source_path)
     next_display_order = (
         ExamSet.objects.filter(branch=branch, exam_type=exam_type).aggregate(max_order=Max("display_order")).get("max_order")
         or 0
     ) + 1
     result = {
         "root_path": root_path,
+        "source_path": _normalize_storage_path(source_path),
         "discovered_files": len(file_paths),
         "processed_files": 0,
         "sets_created": 0,
@@ -557,7 +585,7 @@ def _sync_exam_set_type(branch: str, exam_type: str, root_path: str, replace_exi
             result["error_files"] += 1
         result["files"].append(item)
 
-    if result["error_files"] == 0:
+    if result["error_files"] == 0 and prune_missing and not source_path:
         stale_qs = (
             ExamSet.objects.filter(
                 branch=branch,
@@ -568,18 +596,47 @@ def _sync_exam_set_type(branch: str, exam_type: str, root_path: str, replace_exi
             .exclude(id__in=list(synced_set_ids))
         )
         result["sets_deactivated"] = stale_qs.update(is_active=False)
-    else:
+    elif result["error_files"] != 0:
         result["prune_skipped"] = "sync_errors"
+    elif source_path:
+        result["prune_skipped"] = "selected_path_sync"
 
     return result
 
 
-def sync_exam_sets_from_dropbox(branch: str, replace_existing: bool = True) -> dict:
+def sync_exam_sets_from_dropbox(
+    branch: str,
+    replace_existing: bool = True,
+    source_path: str = "",
+    prune_missing: bool = True,
+) -> dict:
     mcq_root = f"/bridge4er/{branch}/Take Exam/Multiple Choice Exam"
     subjective_root = f"/bridge4er/{branch}/Take Exam/Subjective Exam"
+    normalized_source = _normalize_storage_path(source_path)
+    lowered_source = normalized_source.lower()
+    sync_mcq = not normalized_source or "/multiple choice exam" in lowered_source
+    sync_subjective = not normalized_source or "/subjective exam" in lowered_source
     return {
-        "mcq": _sync_exam_set_type(branch, "mcq", mcq_root, replace_existing),
-        "subjective": _sync_exam_set_type(branch, "subjective", subjective_root, replace_existing),
+        "mcq": _sync_exam_set_type(
+            branch,
+            "mcq",
+            mcq_root,
+            replace_existing,
+            source_path=normalized_source if sync_mcq else "",
+            prune_missing=prune_missing,
+        )
+        if sync_mcq
+        else {"root_path": mcq_root, "source_path": normalized_source, "skipped": "source_path_outside_scope"},
+        "subjective": _sync_exam_set_type(
+            branch,
+            "subjective",
+            subjective_root,
+            replace_existing,
+            source_path=normalized_source if sync_subjective else "",
+            prune_missing=prune_missing,
+        )
+        if sync_subjective
+        else {"root_path": subjective_root, "source_path": normalized_source, "skipped": "source_path_outside_scope"},
     }
 
 

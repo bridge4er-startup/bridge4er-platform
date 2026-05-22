@@ -10,6 +10,7 @@ export default function LoginPage() {
   const { login } = useAuth();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [notRobot, setNotRobot] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [heroImageUrl, setHeroImageUrl] = useState("");
@@ -84,13 +85,23 @@ export default function LoginPage() {
           />
 
           <label htmlFor="password">Password</label>
-          <input
-            id="password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Enter password"
-          />
+          <div className="auth-password-field">
+            <input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Enter password"
+            />
+            <button
+              type="button"
+              className="auth-password-toggle"
+              onClick={() => setShowPassword((value) => !value)}
+              aria-label={showPassword ? "Hide password" : "Show password"}
+            >
+              {showPassword ? "Hide" : "Show"}
+            </button>
+          </div>
 
           <label htmlFor="robot_verified" className="robot-check">
             <input

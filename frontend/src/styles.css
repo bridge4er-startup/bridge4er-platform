@@ -5276,6 +5276,34 @@ footer {
   box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.15);
 }
 
+.auth-password-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.auth-password-field input {
+  width: 100%;
+  padding-right: 4.4rem;
+}
+
+.auth-password-toggle {
+  position: absolute;
+  right: 0.45rem;
+  min-width: 3.35rem;
+  height: 2rem;
+  border: 0;
+  border-radius: 8px;
+  background: #e0f2fe;
+  color: #075985;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.auth-password-toggle:hover {
+  background: #bae6fd;
+}
+
 .robot-check {
   display: inline-flex;
   align-items: center;

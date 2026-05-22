@@ -23,6 +23,7 @@ class SyncDropboxQuestionBankView(APIView):
         replace_existing = _as_bool(request.data.get("replace_existing"), True)
         sync_objective = _as_bool(request.data.get("sync_objective"), True)
         sync_exam_sets = _as_bool(request.data.get("sync_exam_sets"), True)
+        source_path = str(request.data.get("source_path") or request.data.get("path") or "").strip()
 
         if not sync_objective and not sync_exam_sets:
             return Response(
@@ -33,6 +34,7 @@ class SyncDropboxQuestionBankView(APIView):
         payload = {
             "branch": branch,
             "replace_existing": replace_existing,
+            "source_path": source_path,
             "errors": [],
         }
         if sync_objective:
@@ -41,6 +43,8 @@ class SyncDropboxQuestionBankView(APIView):
                     payload["objective"] = sync_objective_mcqs_from_dropbox(
                         branch=branch,
                         replace_existing=replace_existing,
+                        source_path=source_path,
+                        prune_missing=not bool(source_path),
                     )
             except Exception as exc:
                 payload["errors"].append({"scope": "objective", "error": str(exc)})
@@ -51,6 +55,8 @@ class SyncDropboxQuestionBankView(APIView):
                     payload["exam_sets"] = sync_exam_sets_from_dropbox(
                         branch=branch,
                         replace_existing=replace_existing,
+                        source_path=source_path,
+                        prune_missing=not bool(source_path),
                     )
             except Exception as exc:
                 payload["errors"].append({"scope": "exam_sets", "error": str(exc)})

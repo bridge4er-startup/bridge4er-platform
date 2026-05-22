@@ -218,7 +218,8 @@ export const mcqService = {
     branch = "Civil Engineering",
     replaceExisting = true,
     syncObjective = true,
-    syncExamSets = true
+    syncExamSets = true,
+    sourcePath = ""
   ) => {
     try {
       const response = await API.post(
@@ -228,6 +229,7 @@ export const mcqService = {
           replace_existing: replaceExisting,
           sync_objective: syncObjective,
           sync_exam_sets: syncExamSets,
+          source_path: sourcePath,
         },
         { timeout: API_SYNC_TIMEOUT_MS }
       );

@@ -702,6 +702,18 @@ export default function AdminDashboard() {
     try {
       const targetTypes = syncAll ? MANAGED_CONTENT_TYPES : [manageContentType];
       const result = await fileService.syncContent(branch, targetTypes, true);
+      const shouldSyncObjective = targetTypes.includes("objective_mcq");
+      const shouldSyncExamSets =
+        targetTypes.includes("take_exam_mcq") || targetTypes.includes("take_exam_subjective");
+      const questionResult =
+        shouldSyncObjective || shouldSyncExamSets
+          ? await mcqService.syncDropboxQuestionBank(
+              branch,
+              true,
+              shouldSyncObjective,
+              shouldSyncExamSets
+            )
+          : null;
       const syncedRows = Array.isArray(result?.synced) ? result.synced : [];
       const errors = Array.isArray(result?.errors) ? result.errors : [];
 
@@ -712,7 +724,11 @@ export default function AdminDashboard() {
             return `${row.content_type}: ${row.file_count} files${deleted ? `, ${deleted} removed` : ""}`;
           })
           .join(" | ");
-        toast.success(`Storage sync complete. ${summary}`);
+        const imported =
+          Number(questionResult?.objective?.imported_questions || 0)
+          + Number(questionResult?.exam_sets?.mcq?.imported_questions || 0)
+          + Number(questionResult?.exam_sets?.subjective?.imported_questions || 0);
+        toast.success(`Storage sync complete. ${summary}${imported ? ` | ${imported} questions imported` : ""}`);
       }
       if (errors.length > 0) {
         const details = errors.map((row) => `${row.content_type}: ${row.error}`).join(" | ");
@@ -729,12 +745,23 @@ export default function AdminDashboard() {
   };
 
   const handleDeleteManagedFile = async (path) => {
-    if (!window.confirm(`Delete this path from storage?\n${path}`)) {
+    if (
+      !window.confirm(
+        `Delete this path from storage, website display, and synced question data?\n\n${path}\n\nThis cannot be undone.`
+      )
+    ) {
       return;
     }
     try {
-      await fileService.deleteFile(path);
-      toast.success("Path deleted successfully");
+      const result = await fileService.deleteFile(path);
+      const objectiveDeleted = Number(result?.objective_sync?.questions_deleted || 0);
+      const mcqDeactivated = Number(result?.exam_sets_sync?.mcq?.sets_deactivated || 0);
+      const subjectiveDeactivated = Number(result?.exam_sets_sync?.subjective?.sets_deactivated || 0);
+      const details = [];
+      if (objectiveDeleted) details.push(`${objectiveDeleted} objective questions removed`);
+      if (mcqDeactivated) details.push(`${mcqDeactivated} MCQ sets hidden`);
+      if (subjectiveDeactivated) details.push(`${subjectiveDeactivated} subjective sets hidden`);
+      toast.success(`Path deleted successfully${details.length ? `. ${details.join(" | ")}` : ""}`);
       await handleLoadManagedFiles();
     } catch (error) {
       toast.error(error?.response?.data?.error || "Failed to delete file/folder");
@@ -806,13 +833,17 @@ export default function AdminDashboard() {
     const path = window.prompt("Storage path to sync");
     if (!path) return;
     try {
-      await fileService.syncPath({
+      const result = await fileService.syncPath({
         path,
         include_dirs: true,
         content_type: manageContentType,
         branch,
       });
-      toast.success("Path synced.");
+      const objectiveImported = Number(result?.objective_sync?.imported_questions || 0);
+      const mcqImported = Number(result?.exam_sets_sync?.mcq?.imported_questions || 0);
+      const subjectiveImported = Number(result?.exam_sets_sync?.subjective?.imported_questions || 0);
+      const imported = objectiveImported + mcqImported + subjectiveImported;
+      toast.success(imported ? `Path synced and ${imported} questions imported.` : "Path synced.");
       await handleLoadManagedFiles();
     } catch (error) {
       toast.error(error?.response?.data?.error || "Failed to sync path.");
@@ -3075,6 +3106,22 @@ export default function AdminDashboard() {
             }}
           >
             <h2>Manage Files and Folders</h2>
+            <div
+              style={{
+                border: "1px solid #bfdbfe",
+                background: "#eff6ff",
+                color: "#1e3a8a",
+                borderRadius: "8px",
+                padding: "0.9rem",
+                margin: "0.8rem 0 1.2rem",
+                lineHeight: 1.5,
+              }}
+            >
+              <strong>Admin flow:</strong> storage files are indexed into backend metadata, then the website reads
+              that metadata. Sync Selected Type imports the selected section. Sync Folder Path imports one folder/file;
+              for Objective MCQs and Exam Hall it also extracts questions. Delete removes the storage item and clears
+              its website/database records.
+            </div>
 
             <div style={{ marginBottom: "1rem" }}>
               <label style={{ display: "block", marginBottom: "0.5rem" }}>
