@@ -28,8 +28,8 @@ const MANAGED_CONTENT_TYPES = [
   "notice",
   "syllabus",
   "old_question",
-  "subjective",
   "objective_mcq",
+  "subjective",
   "take_exam_mcq",
   "take_exam_subjective",
 ];
@@ -51,6 +51,15 @@ const BULK_SYNC_SCOPE_LABELS = {
   resources: "Resource Files",
   all: "All Storage Content",
 };
+const CONTENT_TYPE_OPTIONS = [
+  { value: "notice", label: "Notice", group: "Notice" },
+  { value: "syllabus", label: "Syllabus", group: "Syllabus" },
+  { value: "old_question", label: "Old Questions", group: "Old Questions" },
+  { value: "objective_mcq", label: "Objective MCQs", group: "Objective MCQs" },
+  { value: "subjective", label: "Library", group: "Library" },
+  { value: "take_exam_mcq", label: "Exam Hall - MCQ Sets", group: "Exam Hall" },
+  { value: "take_exam_subjective", label: "Exam Hall - Subjective Sets", group: "Exam Hall" },
+];
 const DEFAULT_CONTRIBUTION_CATEGORIES = ["PSC", "NEC", "MSC", "GK/IQ", "NTC", "NEA", "Other"];
 
 export default function AdminDashboard() {
@@ -115,6 +124,7 @@ export default function AdminDashboard() {
   const [deletingObjectiveAction, setDeletingObjectiveAction] = useState("");
   const [manageObjectiveChapterNoteDraft, setManageObjectiveChapterNoteDraft] = useState("");
   const [savingManageObjectiveChapterNote, setSavingManageObjectiveChapterNote] = useState(false);
+  const [syncPathInput, setSyncPathInput] = useState("");
 
   // Homepage Metrics State
   const [homepageMetrics, setHomepageMetrics] = useState({
@@ -369,8 +379,12 @@ export default function AdminDashboard() {
 
     setUploadingFile(true);
     try {
-      await fileService.uploadFile(file, contentType, branch, uploadFolderPath.trim());
-      toast.success("File uploaded successfully!");
+      const result = await fileService.uploadFile(file, contentType, branch, uploadFolderPath.trim());
+      const objectiveImported = Number(result?.objective_sync?.imported_questions || 0);
+      const mcqImported = Number(result?.exam_sets_sync?.mcq?.imported_questions || 0);
+      const subjectiveImported = Number(result?.exam_sets_sync?.subjective?.imported_questions || 0);
+      const imported = objectiveImported + mcqImported + subjectiveImported;
+      toast.success(imported ? `File uploaded and ${imported} questions imported.` : "File uploaded successfully!");
       setFile(null);
       setUploadFolderPath("");
       document.getElementById("file-input").value = "";
@@ -830,7 +844,7 @@ export default function AdminDashboard() {
   };
 
   const handleSyncManagedPath = async () => {
-    const path = window.prompt("Storage path to sync");
+    const path = syncPathInput.trim();
     if (!path) return;
     try {
       const result = await fileService.syncPath({
@@ -844,6 +858,7 @@ export default function AdminDashboard() {
       const subjectiveImported = Number(result?.exam_sets_sync?.subjective?.imported_questions || 0);
       const imported = objectiveImported + mcqImported + subjectiveImported;
       toast.success(imported ? `Path synced and ${imported} questions imported.` : "Path synced.");
+      setSyncPathInput("");
       await handleLoadManagedFiles();
     } catch (error) {
       toast.error(error?.response?.data?.error || "Failed to sync path.");
@@ -1592,40 +1607,6 @@ export default function AdminDashboard() {
             }}
           >
             File Manager
-          </button>
-          <button
-            onClick={() => setActiveTab("manage-mcqs")}
-            style={{
-              padding: "0.5rem 1.5rem",
-              backgroundColor:
-                activeTab === "manage-mcqs" ? "#007bff" : "transparent",
-              color: activeTab === "manage-mcqs" ? "white" : "#333",
-              border: "none",
-              cursor: "pointer",
-              borderBottom:
-                activeTab === "manage-mcqs" ? "3px solid #007bff" : "none",
-              marginBottom: "-2px",
-            }}
-          >
-            Add MCQs
-          </button>
-          <button
-            onClick={() => setActiveTab("bulk-upload-mcqs")}
-            style={{
-              padding: "0.5rem 1.5rem",
-              backgroundColor:
-                activeTab === "bulk-upload-mcqs" ? "#007bff" : "transparent",
-              color: activeTab === "bulk-upload-mcqs" ? "white" : "#333",
-              border: "none",
-              cursor: "pointer",
-              borderBottom:
-                activeTab === "bulk-upload-mcqs"
-                  ? "3px solid #007bff"
-                  : "none",
-              marginBottom: "-2px",
-            }}
-          >
-            Bulk Upload MCQs
           </button>
           <button
             onClick={() => {
@@ -2946,12 +2927,11 @@ export default function AdminDashboard() {
                   border: "1px solid #ddd",
                 }}
               >
-                <option value="notice">Notice</option>
-                <option value="syllabus">Syllabus</option>
-                <option value="old_question">Old Question</option>
-                <option value="subjective">Library</option>
-                <option value="take_exam_mcq">Exam Hall - MCQ Sets</option>
-                <option value="take_exam_subjective">Exam Hall - Subjective Sets</option>
+                {CONTENT_TYPE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -2972,7 +2952,8 @@ export default function AdminDashboard() {
                 }}
               />
               <p style={{ color: "#64748b", fontSize: "0.85rem", marginTop: "0.4rem" }}>
-                Example: /bridge4er/civil/subjective/Institute A/Notes
+                Use a full bucket path or a relative folder/subfolder name. Question files in Objective MCQs or Exam Hall
+                are extracted automatically after upload.
               </p>
             </div>
 
@@ -3008,89 +2989,6 @@ export default function AdminDashboard() {
             >
               {uploadingFile ? "Uploading..." : "Upload File"}
             </button>
-
-            <hr style={{ margin: "1.5rem 0" }} />
-
-            <h3 style={{ marginBottom: "0.8rem" }}>Load Questions from Storage Path</h3>
-            <p style={{ color: "#64748b", marginBottom: "0.8rem" }}>
-              Paste a Supabase/Dropbox file path or link and import questions directly to a chapter.
-            </p>
-
-            {subjects.length === 0 ? (
-              <button className="btn btn-secondary" onClick={handleLoadSubjects} style={{ marginBottom: "1rem" }}>
-                Load Subjects
-              </button>
-            ) : (
-              <>
-                <div style={{ marginBottom: "0.9rem" }}>
-                  <label style={{ display: "block", marginBottom: "0.4rem" }}>Subject:</label>
-                  <select
-                    value={selectedSubject}
-                    onChange={(e) => handleSelectSubject(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: "0.5rem",
-                      borderRadius: "4px",
-                      border: "1px solid #ddd",
-                    }}
-                  >
-                    <option value="">Choose a subject...</option>
-                    {subjects.map((s) => (
-                      <option key={s.id || s.name} value={s.name || s}>
-                        {s.name || s}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {selectedSubject ? (
-                  <div style={{ marginBottom: "0.9rem" }}>
-                    <label style={{ display: "block", marginBottom: "0.4rem" }}>Chapter:</label>
-                    <select
-                      value={selectedChapterId}
-                      onChange={(e) => setSelectedChapterId(e.target.value)}
-                      style={{
-                        width: "100%",
-                        padding: "0.5rem",
-                        borderRadius: "4px",
-                        border: "1px solid #ddd",
-                      }}
-                    >
-                      <option value="">Choose a chapter...</option>
-                      {chapters.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ) : null}
-
-                <div style={{ marginBottom: "0.9rem" }}>
-                  <label style={{ display: "block", marginBottom: "0.4rem" }}>Storage Path/Link:</label>
-                  <input
-                    type="text"
-                    placeholder="/bridge4er/.../questions.xlsx or https://www.dropbox.com/..."
-                    value={quickDropboxPath}
-                    onChange={(e) => setQuickDropboxPath(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: "0.5rem",
-                      borderRadius: "4px",
-                      border: "1px solid #ddd",
-                    }}
-                  />
-                </div>
-
-                <button
-                  className="btn btn-primary"
-                  onClick={handleImportQuestionsFromDropboxLink}
-                  disabled={importingQuickDropboxPath || !selectedChapterId || !quickDropboxPath.trim()}
-                >
-                  {importingQuickDropboxPath ? "Importing..." : "Import Questions from Storage"}
-                </button>
-              </>
-            )}
           </div>
         )}
 
@@ -3162,14 +3060,30 @@ export default function AdminDashboard() {
                   border: "1px solid #ddd",
                 }}
               >
-                <option value="notice">Notice</option>
-                <option value="syllabus">Syllabus</option>
-                <option value="old_question">Old Question</option>
-                <option value="subjective">Library</option>
-                <option value="objective_mcq">Objective MCQs - Files/Folders</option>
-                <option value="take_exam_mcq">Exam Hall - MCQ Sets</option>
-                <option value="take_exam_subjective">Exam Hall - Subjective Sets</option>
+                {CONTENT_TYPE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
+            </div>
+
+            <div style={{ marginBottom: "1rem" }}>
+              <label style={{ display: "block", marginBottom: "0.5rem" }}>
+                Folder/File Path to Sync:
+              </label>
+              <input
+                type="text"
+                value={syncPathInput}
+                onChange={(e) => setSyncPathInput(e.target.value)}
+                placeholder="/bridge4er/Civil Engineering/Objective MCQs/... or a relative path"
+                style={{
+                  width: "100%",
+                  padding: "0.5rem",
+                  borderRadius: "4px",
+                  border: "1px solid #ddd",
+                }}
+              />
             </div>
 
             <div style={{ display: "flex", flexWrap: "wrap", gap: "0.6rem", marginBottom: "1rem" }}>
@@ -3211,7 +3125,7 @@ export default function AdminDashboard() {
               <button
                 onClick={handleSyncManagedPath}
                 className="btn btn-secondary"
-                disabled={syncingManagedContent}
+                disabled={syncingManagedContent || !syncPathInput.trim()}
               >
                 Sync Folder Path
               </button>
@@ -3309,676 +3223,6 @@ export default function AdminDashboard() {
               </ul>
             )}
 
-            {manageContentType === "objective_mcq" && (
-              <>
-                <hr style={{ margin: "1.5rem 0" }} />
-                <h3 style={{ marginBottom: "0.6rem" }}>Objective MCQ Database Management</h3>
-                <p style={{ color: "#64748b", marginBottom: "1rem" }}>
-                  Manually delete questions, chapters, and subjects.
-                </p>
-
-                {subjects.length === 0 ? (
-                  <button className="btn btn-secondary" onClick={handleLoadSubjects} style={{ marginBottom: "1rem" }}>
-                    Load Subjects
-                  </button>
-                ) : (
-                  <>
-                    <div style={{ marginBottom: "0.9rem" }}>
-                      <label style={{ display: "block", marginBottom: "0.4rem" }}>Subject:</label>
-                      <select
-                        value={manageObjectiveSubject}
-                        onChange={(e) => handleManageObjectiveSubjectChange(e.target.value)}
-                        style={{
-                          width: "100%",
-                          padding: "0.5rem",
-                          borderRadius: "4px",
-                          border: "1px solid #ddd",
-                        }}
-                      >
-                        <option value="">Choose a subject...</option>
-                        {subjects.map((subject) => (
-                          <option key={subject.id} value={subject.name}>
-                            {subject.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {manageObjectiveSubject ? (
-                      <div style={{ marginBottom: "0.9rem" }}>
-                        <label style={{ display: "block", marginBottom: "0.4rem" }}>Chapter:</label>
-                        {loadingManageObjectiveChapters ? (
-                          <p>Loading chapters...</p>
-                        ) : (
-                          <select
-                            value={manageObjectiveChapterId}
-                            onChange={(e) => {
-                              const nextChapterId = e.target.value;
-                              setManageObjectiveChapterId(nextChapterId);
-                              const nextChapter = manageObjectiveChapters.find(
-                                (chapter) => String(chapter.id) === String(nextChapterId)
-                              );
-                              setManageObjectiveChapterNoteDraft(nextChapter?.small_note || "");
-                              setManageObjectiveQuestions([]);
-                              setManageObjectiveQuestionPage(1);
-                              setManageObjectiveTotalPages(1);
-                              setManageObjectiveQuestionCount(0);
-                            }}
-                            style={{
-                              width: "100%",
-                              padding: "0.5rem",
-                              borderRadius: "4px",
-                              border: "1px solid #ddd",
-                            }}
-                          >
-                            <option value="">Choose a chapter...</option>
-                            {manageObjectiveChapters.map((chapter) => (
-                              <option key={chapter.id} value={chapter.id}>
-                                {chapter.name}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                      </div>
-                    ) : null}
-
-                    {manageObjectiveChapterId ? (
-                      <div style={{ marginBottom: "1rem" }}>
-                        <label style={{ display: "block", marginBottom: "0.4rem" }}>
-                          Chapter Note (Small text shown below chapter name):
-                        </label>
-                        <input
-                          type="text"
-                          value={manageObjectiveChapterNoteDraft}
-                          onChange={(e) => setManageObjectiveChapterNoteDraft(e.target.value)}
-                          maxLength={255}
-                          placeholder="Optional short note"
-                          style={{
-                            width: "100%",
-                            padding: "0.5rem",
-                            borderRadius: "4px",
-                            border: "1px solid #ddd",
-                          }}
-                        />
-                        <div style={{ marginTop: "0.5rem", display: "flex", justifyContent: "space-between", gap: "0.5rem" }}>
-                          <span style={{ color: "#64748b", fontSize: "0.8rem" }}>
-                            {manageObjectiveChapterNoteDraft.length}/255
-                          </span>
-                          <button
-                            className="btn btn-secondary"
-                            onClick={handleUpdateObjectiveChapterNote}
-                            disabled={savingManageObjectiveChapterNote}
-                          >
-                            {savingManageObjectiveChapterNote ? "Saving Note..." : "Save Chapter Note"}
-                          </button>
-                        </div>
-                      </div>
-                    ) : null}
-
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: "0.6rem", marginBottom: "1rem" }}>
-                      <button
-                        className="btn btn-secondary"
-                        onClick={() => handleLoadManageObjectiveQuestions(1)}
-                        disabled={!manageObjectiveChapterId || loadingManageObjectiveQuestions}
-                      >
-                        {loadingManageObjectiveQuestions ? "Loading..." : "Load Chapter Questions"}
-                      </button>
-                      <button
-                        className="btn btn-secondary"
-                        onClick={handleDeleteObjectiveChapter}
-                        disabled={!manageObjectiveChapterId || deletingObjectiveAction.startsWith("chapter-")}
-                      >
-                        {deletingObjectiveAction.startsWith("chapter-")
-                          ? "Deleting Chapter..."
-                          : "Delete Chapter"}
-                      </button>
-                      <button
-                        className="btn btn-primary"
-                        onClick={handleDeleteObjectiveSubject}
-                        disabled={!manageObjectiveSubject || deletingObjectiveAction.startsWith("subject-")}
-                      >
-                        {deletingObjectiveAction.startsWith("subject-")
-                          ? "Deleting Subject..."
-                          : "Delete Subject"}
-                      </button>
-                    </div>
-
-                    {loadingManageObjectiveQuestions ? (
-                      <p>Loading questions...</p>
-                    ) : manageObjectiveQuestions.length > 0 ? (
-                      <>
-                        <p style={{ marginBottom: "0.8rem", color: "#475569" }}>
-                          Total questions: {manageObjectiveQuestionCount} | Page {manageObjectiveQuestionPage} of{" "}
-                          {manageObjectiveTotalPages}
-                        </p>
-                        <ul className="file-list">
-                          {manageObjectiveQuestions.map((question) => (
-                            <li key={question.id} className="file-item">
-                              <div className="file-info">
-                                <div className="file-details">
-                                  <h4>Question #{question.id}</h4>
-                                  <p style={{ whiteSpace: "pre-wrap" }}>{question.question_text}</p>
-                                </div>
-                              </div>
-                              <div className="file-actions">
-                                <button
-                                  className="btn btn-primary"
-                                  onClick={() => handleDeleteObjectiveQuestion(question.id)}
-                                  disabled={deletingObjectiveAction === `question-${question.id}`}
-                                >
-                                  {deletingObjectiveAction === `question-${question.id}`
-                                    ? "Deleting..."
-                                    : "Delete Question"}
-                                </button>
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
-                        <div style={{ display: "flex", gap: "0.6rem", marginTop: "0.8rem" }}>
-                          <button
-                            className="btn btn-secondary"
-                            onClick={() => handleLoadManageObjectiveQuestions(manageObjectiveQuestionPage - 1)}
-                            disabled={manageObjectiveQuestionPage <= 1 || loadingManageObjectiveQuestions}
-                          >
-                            Previous
-                          </button>
-                          <button
-                            className="btn btn-secondary"
-                            onClick={() => handleLoadManageObjectiveQuestions(manageObjectiveQuestionPage + 1)}
-                            disabled={
-                              manageObjectiveQuestionPage >= manageObjectiveTotalPages ||
-                              loadingManageObjectiveQuestions
-                            }
-                          >
-                            Next
-                          </button>
-                        </div>
-                      </>
-                    ) : manageObjectiveChapterId ? (
-                      <p>No chapter questions loaded yet.</p>
-                    ) : null}
-                  </>
-                )}
-              </>
-            )}
-          </div>
-        )}
-
-        {/* Add MCQs Tab */}
-        {activeTab === "manage-mcqs" && (
-          <div
-            style={{
-              backgroundColor: "white",
-              padding: "2rem",
-              borderRadius: "8px",
-              boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-            }}
-          >
-            <h2>Add MCQ Question One by One</h2>
-
-            {subjects.length === 0 && (
-              <button
-                onClick={handleLoadSubjects}
-                style={{
-                  backgroundColor: "#007bff",
-                  color: "white",
-                  padding: "0.75rem 1.5rem",
-                  border: "none",
-                  borderRadius: "4px",
-                  cursor: "pointer",
-                  marginBottom: "1.5rem",
-                }}
-              >
-                Load Subjects
-              </button>
-            )}
-
-            {subjects.length > 0 && (
-              <>
-                <div style={{ marginBottom: "1.5rem" }}>
-                  <label style={{ display: "block", marginBottom: "0.5rem" }}>
-                    Select Subject:
-                  </label>
-                  <select
-                    value={selectedSubject}
-                    onChange={(e) => handleSelectSubject(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: "0.5rem",
-                      borderRadius: "4px",
-                      border: "1px solid #ddd",
-                    }}
-                  >
-                    <option value="">Choose a subject...</option>
-                    {subjects.map((s) => (
-                      <option key={s.id || s.name} value={s.name || s}>
-                        {s.name || s}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div style={{ marginBottom: "1rem", display: "flex", gap: "0.5rem" }}>
-                  <input
-                    placeholder="New subject name"
-                    value={newSubjectName}
-                    onChange={(e) => setNewSubjectName(e.target.value)}
-                    style={{ flex: 1, padding: "0.5rem", borderRadius: "4px", border: "1px solid #ddd" }}
-                  />
-                  <button className="btn btn-secondary" onClick={handleCreateSubject}>
-                    Add Subject
-                  </button>
-                </div>
-
-                {selectedSubject && (
-                  <>
-                    <div style={{ marginBottom: "1rem", display: "flex", gap: "0.5rem" }}>
-                      <input
-                        placeholder="New chapter name"
-                        value={newChapterName}
-                        onChange={(e) => setNewChapterName(e.target.value)}
-                        style={{ flex: 1, padding: "0.5rem", borderRadius: "4px", border: "1px solid #ddd" }}
-                      />
-                      <button className="btn btn-secondary" onClick={handleCreateChapter}>
-                        Add Chapter
-                      </button>
-                    </div>
-                    <div style={{ marginBottom: "1rem" }}>
-                      <input
-                        placeholder="Short chapter note (optional, shown below chapter name)"
-                        value={newChapterNote}
-                        onChange={(e) => setNewChapterNote(e.target.value)}
-                        maxLength={255}
-                        style={{ width: "100%", padding: "0.5rem", borderRadius: "4px", border: "1px solid #ddd" }}
-                      />
-                    </div>
-                    {loadingChapters ? (
-                      <p>Loading chapters...</p>
-                    ) : (
-                      <div style={{ marginBottom: "1.5rem" }}>
-                        <label style={{ display: "block", marginBottom: "0.5rem" }}>
-                          Select Chapter:
-                        </label>
-                        <select
-                          value={selectedChapterId}
-                          onChange={(e) => setSelectedChapterId(e.target.value)}
-                          style={{
-                            width: "100%",
-                            padding: "0.5rem",
-                            borderRadius: "4px",
-                            border: "1px solid #ddd",
-                          }}
-                        >
-                          <option value="">Choose a chapter...</option>
-                          {chapters.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {selectedChapterId && (
-                  <>
-                    <div style={{ marginBottom: "1.5rem" }}>
-                      <label style={{ display: "block", marginBottom: "0.5rem" }}>
-                        Question:
-                      </label>
-                      <textarea
-                        value={questionData.question_text}
-                        onChange={(e) =>
-                          handleQuestionChange("question_text", e.target.value)
-                        }
-                        style={{
-                          width: "100%",
-                          padding: "0.5rem",
-                          borderRadius: "4px",
-                          border: "1px solid #ddd",
-                          minHeight: "100px",
-                        }}
-                      />
-                    </div>
-
-                    {["a", "b", "c", "d"].map((option) => (
-                      <div key={option} style={{ marginBottom: "1rem" }}>
-                        <label style={{ display: "block", marginBottom: "0.5rem" }}>
-                          Option {option.toUpperCase()}:
-                        </label>
-                        <input
-                          type="text"
-                          value={questionData[`option_${option}`]}
-                          onChange={(e) =>
-                            handleQuestionChange(`option_${option}`, e.target.value)
-                          }
-                          style={{
-                            width: "100%",
-                            padding: "0.5rem",
-                            borderRadius: "4px",
-                            border: "1px solid #ddd",
-                          }}
-                        />
-                      </div>
-                    ))}
-
-                    <div style={{ marginBottom: "1.5rem" }}>
-                      <label style={{ display: "block", marginBottom: "0.5rem" }}>
-                        Correct Option:
-                      </label>
-                      <select
-                        value={questionData.correct_option}
-                        onChange={(e) =>
-                          handleQuestionChange("correct_option", e.target.value)
-                        }
-                        style={{
-                          width: "100%",
-                          padding: "0.5rem",
-                          borderRadius: "4px",
-                          border: "1px solid #ddd",
-                        }}
-                      >
-                        {["a", "b", "c", "d"].map((option) => (
-                          <option key={option} value={option}>
-                            {option.toUpperCase()}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div style={{ marginBottom: "1.5rem" }}>
-                      <label style={{ display: "block", marginBottom: "0.5rem" }}>
-                        Explanation (Optional):
-                      </label>
-                      <textarea
-                        value={questionData.explanation}
-                        onChange={(e) =>
-                          handleQuestionChange("explanation", e.target.value)
-                        }
-                        style={{
-                          width: "100%",
-                          padding: "0.5rem",
-                          borderRadius: "4px",
-                          border: "1px solid #ddd",
-                          minHeight: "80px",
-                        }}
-                      />
-                    </div>
-
-                    <button
-                      onClick={handleCreateQuestion}
-                      disabled={creatingQuestion}
-                      style={{
-                        backgroundColor: creatingQuestion ? "#ccc" : "#28a745",
-                        color: "white",
-                        padding: "0.75rem 1.5rem",
-                        border: "none",
-                        borderRadius: "4px",
-                        cursor: creatingQuestion ? "not-allowed" : "pointer",
-                      }}
-                    >
-                      {creatingQuestion ? "Creating..." : "Create Question"}
-                    </button>
-                  </>
-                )}
-              </>
-            )}
-          </div>
-        )}
-
-        {/* Bulk Upload MCQs Tab */}
-        {activeTab === "bulk-upload-mcqs" && (
-          <div
-            style={{
-              backgroundColor: "white",
-              padding: "2rem",
-              borderRadius: "8px",
-              boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-            }}
-          >
-            <h2>Bulk Upload MCQs from CSV/JSON/Excel</h2>
-            <p style={{ color: "#666", marginBottom: "1rem" }}>
-              Upload a CSV/TSV/JSON/XLSX/XLS file or enter a backend/dropbox file path/link.
-              Columns: question_header, question_text, question_image_url, option_a, option_b,
-              option_c, option_d, correct_option, explanation.
-            </p>
-            <div style={{ marginBottom: "1rem" }}>
-              <div style={{ marginBottom: "0.6rem", color: "#475569", fontSize: "0.92rem" }}>
-                Sync by field. Supabase/Dropbox files and folders become visible on the website after admin sync.
-              </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
-                <button
-                  onClick={() => handleSyncDropboxQuestionBank("objective")}
-                  disabled={!!syncingDropboxScope}
-                  className="btn btn-secondary"
-                >
-                  {syncingDropboxScope === "objective" ? "Syncing..." : "Sync Objective MCQ Bank"}
-                </button>
-                <button
-                  onClick={() => handleSyncDropboxQuestionBank("exam_sets")}
-                  disabled={!!syncingDropboxScope}
-                  className="btn btn-secondary"
-                >
-                  {syncingDropboxScope === "exam_sets" ? "Syncing..." : "Sync Exam Hall Sets"}
-                </button>
-                <button
-                  onClick={() => handleSyncDropboxQuestionBank("resources")}
-                  disabled={!!syncingDropboxScope}
-                  className="btn btn-secondary"
-                >
-                  {syncingDropboxScope === "resources" ? "Syncing..." : "Sync Resource Files"}
-                </button>
-                <button
-                  onClick={() => handleSyncDropboxQuestionBank("all")}
-                  disabled={!!syncingDropboxScope}
-                  className="btn btn-secondary"
-                >
-                  {syncingDropboxScope === "all" ? "Syncing..." : "Sync All Storage Content"}
-                </button>
-              </div>
-            </div>
-
-            {subjects.length === 0 && (
-              <button
-                onClick={handleLoadSubjects}
-                style={{
-                  backgroundColor: "#007bff",
-                  color: "white",
-                  padding: "0.75rem 1.5rem",
-                  border: "none",
-                  borderRadius: "4px",
-                  cursor: "pointer",
-                  marginBottom: "1.5rem",
-                }}
-              >
-                Load Subjects
-              </button>
-            )}
-
-            {subjects.length > 0 && (
-              <>
-                <div style={{ marginBottom: "1.5rem" }}>
-                  <label style={{ display: "block", marginBottom: "0.5rem" }}>
-                    Select Subject:
-                  </label>
-                  <select
-                    value={selectedSubject}
-                    onChange={(e) => handleSelectSubject(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: "0.5rem",
-                      borderRadius: "4px",
-                      border: "1px solid #ddd",
-                    }}
-                  >
-                    <option value="">Choose a subject...</option>
-                    {subjects.map((s) => (
-                      <option key={s.id || s.name} value={s.name || s}>
-                        {s.name || s}
-                      </option>
-                ))}
-              </select>
-            </div>
-
-                {selectedSubject ? (
-                  <>
-                    {loadingChapters ? (
-                      <p>Loading chapters...</p>
-                    ) : (
-                      <div style={{ marginBottom: "1.5rem" }}>
-                        <label style={{ display: "block", marginBottom: "0.5rem" }}>
-                          Select Existing Chapter (Optional for new chapter upload):
-                        </label>
-                        <select
-                          value={selectedChapterId}
-                          onChange={(e) => setSelectedChapterId(e.target.value)}
-                          style={{
-                            width: "100%",
-                            padding: "0.5rem",
-                            borderRadius: "4px",
-                            border: "1px solid #ddd",
-                          }}
-                        >
-                          <option value="">Choose a chapter...</option>
-                          {chapters.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-
-                    <div style={{ marginBottom: "1.5rem" }}>
-                      <label style={{ display: "block", marginBottom: "0.5rem" }}>
-                        Select Question File:
-                      </label>
-                      <input
-                        id="bulk-questions-input"
-                        type="file"
-                        accept=".csv,.tsv,.json,.xlsx,.xls"
-                        onChange={(e) => setBulkQuestionsFile(e.target.files[0])}
-                        style={{
-                          width: "100%",
-                          padding: "0.5rem",
-                          borderRadius: "4px",
-                          border: "1px solid #ddd",
-                        }}
-                      />
-                      {bulkQuestionsFile && (
-                        <p style={{ color: "#666", fontSize: "0.9rem" }}>
-                          Selected: {bulkQuestionsFile.name}
-                        </p>
-                      )}
-                    </div>
-
-                    <div style={{ marginBottom: "1.5rem" }}>
-                      <label style={{ display: "block", marginBottom: "0.5rem" }}>
-                        Or File Path/Link (Backend/Storage):
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="exams/objective_questions_template.csv or /bridge4er/.../questions.xlsx or https://www.dropbox.com/..."
-                        value={bulkQuestionsPath}
-                        onChange={(e) => setBulkQuestionsPath(e.target.value)}
-                        style={{
-                          width: "100%",
-                          padding: "0.5rem",
-                          borderRadius: "4px",
-                          border: "1px solid #ddd",
-                        }}
-                      />
-                    </div>
-
-                    <div style={{ marginBottom: "1.5rem" }}>
-                      <label style={{ display: "block", marginBottom: "0.5rem" }}>
-                        New Chapter Name (Optional):
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="If empty, chapter name is auto-derived from file name"
-                        value={newBulkChapterName}
-                        onChange={(e) => setNewBulkChapterName(e.target.value)}
-                        style={{
-                          width: "100%",
-                          padding: "0.5rem",
-                          borderRadius: "4px",
-                          border: "1px solid #ddd",
-                        }}
-                      />
-                    </div>
-
-                    <div style={{ marginBottom: "1.5rem" }}>
-                      <label style={{ display: "block", marginBottom: "0.5rem" }}>
-                        New Chapter Note (Optional):
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="Small note shown below chapter name"
-                        value={newBulkChapterNote}
-                        onChange={(e) => setNewBulkChapterNote(e.target.value)}
-                        maxLength={255}
-                        style={{
-                          width: "100%",
-                          padding: "0.5rem",
-                          borderRadius: "4px",
-                          border: "1px solid #ddd",
-                        }}
-                      />
-                    </div>
-
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: "0.7rem" }}>
-                      <button
-                        onClick={handleBulkUpload}
-                        disabled={
-                          bulkUploading ||
-                          !selectedChapterId ||
-                          (!bulkQuestionsFile && !bulkQuestionsPath.trim())
-                        }
-                        style={{
-                          backgroundColor:
-                            bulkUploading ||
-                            !selectedChapterId ||
-                            (!bulkQuestionsFile && !bulkQuestionsPath.trim())
-                              ? "#ccc"
-                              : "#28a745",
-                          color: "white",
-                          padding: "0.75rem 1.5rem",
-                          border: "none",
-                          borderRadius: "4px",
-                          cursor:
-                            bulkUploading ||
-                            !selectedChapterId ||
-                            (!bulkQuestionsFile && !bulkQuestionsPath.trim())
-                              ? "not-allowed"
-                              : "pointer",
-                        }}
-                      >
-                        {bulkUploading ? "Uploading..." : "Upload to Selected Chapter"}
-                      </button>
-
-                      <button
-                        className="btn btn-primary"
-                        onClick={handleUploadNewChapterFile}
-                        disabled={
-                          creatingNewChapterUpload ||
-                          !selectedSubject ||
-                          (!bulkQuestionsFile && !bulkQuestionsPath.trim())
-                        }
-                      >
-                        {creatingNewChapterUpload
-                          ? "Creating Chapter..."
-                          : "Upload as New Chapter File"}
-                      </button>
-                    </div>
-                    <p style={{ color: "#64748b", marginTop: "0.8rem", marginBottom: 0 }}>
-                      Use the second button to create a new chapter directly from the uploaded file.
-                    </p>
-                  </>
-                ) : null}
-              </>
-            )}
           </div>
         )}
       </div>

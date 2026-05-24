@@ -7043,6 +7043,17 @@ body[data-branch-theme="computer-engineering"] {
   cursor: not-allowed;
 }
 
+.main-header .header-refresh-btn {
+  padding: 0.45rem 0.7rem;
+  min-height: 34px;
+  gap: 0.35rem;
+  line-height: 1;
+}
+
+.main-header .header-refresh-btn i {
+  font-size: 0.85rem;
+}
+
 .auth-page {
   background:
     radial-gradient(circle at 18% 18%, rgba(56, 189, 248, 0.2), transparent 42%),

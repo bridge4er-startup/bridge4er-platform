@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useBranch } from "../../context/BranchContext";
 import { useAuth } from "../../context/AuthContext";
+import { clearGetResponseCache, clearPersistedGetCache } from "../../services/api";
 
 export default function Header() {
   const navigate = useNavigate();
@@ -30,6 +31,20 @@ export default function Header() {
   const handleLogout = () => {
     logout();
     navigate("/");
+  };
+
+  const handleRefreshSite = async () => {
+    clearGetResponseCache();
+    clearPersistedGetCache();
+    if ("caches" in window) {
+      try {
+        const cacheNames = await window.caches.keys();
+        await Promise.all(cacheNames.map((cacheName) => window.caches.delete(cacheName)));
+      } catch (_error) {
+        // Browser cache deletion can fail in private mode; reloading still fetches fresh API data.
+      }
+    }
+    window.location.reload();
   };
 
   return (
@@ -118,6 +133,15 @@ export default function Header() {
                 </span>
               </Link>
               {isAdmin ? <Link className="btn btn-secondary" to="/admin/dashboard">Admin</Link> : null}
+              <button
+                className="btn btn-secondary header-refresh-btn"
+                onClick={handleRefreshSite}
+                type="button"
+                title="Refresh live website"
+              >
+                <i className="fas fa-sync-alt"></i>
+                <span>Refresh</span>
+              </button>
               <button className="btn btn-primary" onClick={handleLogout}>Logout</button>
             </>
           )}

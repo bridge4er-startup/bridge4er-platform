@@ -1520,11 +1520,11 @@ class UploadFileView(APIView):
                 "is_visible": file_meta.is_visible,
             }
 
-            if _is_exam_set_path(path):
+            if _is_objective_question_path(path) or _is_exam_set_path(path):
                 try:
-                    payload["exam_sets_sync"] = _sync_exam_sets_for_branch(branch)
+                    payload.update(_sync_questions_for_changed_path(path, prune_missing=False))
                 except Exception as sync_error:
-                    payload["exam_sets_sync_error"] = str(sync_error)
+                    payload["question_sync_error"] = str(sync_error)
 
             return Response(payload)
         except Exception as e:
