@@ -2,7 +2,7 @@ from datetime import timedelta
 import importlib.util
 import os
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from dotenv import load_dotenv
 from corsheaders.defaults import default_headers
@@ -76,7 +76,7 @@ def build_database_config():
 
     if scheme in {"postgres", "postgresql", "pgsql"}:
         conn_max_age = env_int("CONN_MAX_AGE", 0, minimum=0)
-        return {
+        config = {
             "ENGINE": "django.db.backends.postgresql",
             "NAME": unquote(parsed.path.lstrip("/")),
             "USER": unquote(parsed.username or ""),
@@ -85,6 +85,13 @@ def build_database_config():
             "PORT": str(parsed.port or ""),
             "CONN_MAX_AGE": conn_max_age,
         }
+        query = parse_qs(parsed.query or "")
+        sslmode = (query.get("sslmode") or [""])[0].strip()
+        if not sslmode and (parsed.hostname or "").endswith(".supabase.co"):
+            sslmode = "require"
+        if sslmode:
+            config["OPTIONS"] = {"sslmode": sslmode}
+        return config
 
     if scheme in {"sqlite", "sqlite3"}:
         db_path = unquote(parsed.path or "")
@@ -120,7 +127,10 @@ ALLOWED_HOSTS = env_list("ALLOWED_HOSTS")
 if DEBUG and not ALLOWED_HOSTS:
     ALLOWED_HOSTS = ["127.0.0.1", "localhost"]
 if not DEBUG and not ALLOWED_HOSTS:
-    raise RuntimeError("ALLOWED_HOSTS is required when DEBUG is False.")
+    ALLOWED_HOSTS = [
+        "bridge4er-new-backend.vercel.app",
+        ".vercel.app",
+    ]
 
 # Dropbox
 DROPBOX_ACCESS_TOKEN = env_text("DROPBOX_ACCESS_TOKEN", "")
@@ -129,8 +139,10 @@ DROPBOX_APP_KEY = env_text("DROPBOX_APP_KEY", "")
 DROPBOX_APP_SECRET = env_text("DROPBOX_APP_SECRET", "")
 
 # Storage provider
-STORAGE_PROVIDER = (env_text("STORAGE_PROVIDER", "dropbox") or "dropbox").strip().lower() or "dropbox"
-SUPABASE_URL = (env_text("SUPABASE_URL", "") or "").strip().rstrip("/")
+STORAGE_PROVIDER = (env_text("STORAGE_PROVIDER", "supabase") or "supabase").strip().lower() or "supabase"
+SUPABASE_URL = (
+    env_text("SUPABASE_URL", "https://amjhgookahipybmbtfqx.supabase.co") or ""
+).strip().rstrip("/")
 SUPABASE_STORAGE_BUCKET = (env_text("SUPABASE_STORAGE_BUCKET", "bridge4ER") or "bridge4ER").strip() or "bridge4ER"
 SUPABASE_STORAGE_ROOT_PREFIX = (
     (env_text("SUPABASE_STORAGE_ROOT_PREFIX", "bridge4er") or "bridge4er").strip() or "bridge4er"
@@ -173,14 +185,20 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS")
+CORS_ALLOWED_ORIGINS = env_list(
+    "CORS_ALLOWED_ORIGINS",
+    "https://bridge4er-platform.vercel.app,https://bridge4er-new-frontend.vercel.app",
+)
 if DEBUG:
     CORS_ALLOW_ALL_ORIGINS = env_bool("CORS_ALLOW_ALL_ORIGINS", not CORS_ALLOWED_ORIGINS)
 else:
     CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOW_HEADERS = list(default_headers) + ["cache-control", "pragma"]
 
-CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS")
+CSRF_TRUSTED_ORIGINS = env_list(
+    "CSRF_TRUSTED_ORIGINS",
+    "https://bridge4er-platform.vercel.app,https://bridge4er-new-frontend.vercel.app,https://bridge4er-new-backend.vercel.app",
+)
 
 ROOT_URLCONF = "bridge4er.urls"
 
@@ -326,8 +344,8 @@ DROPBOX_OBJECTIVE_COUNT_CACHE_STALE_TTL_SECONDS = env_int(
 )
 
 # Public URLs used in API responses
-FRONTEND_PUBLIC_URL = env_text("FRONTEND_PUBLIC_URL", "http://localhost:3000").rstrip("/")
-BACKEND_PUBLIC_URL = env_text("BACKEND_PUBLIC_URL", "http://127.0.0.1:8000").rstrip("/")
+FRONTEND_PUBLIC_URL = env_text("FRONTEND_PUBLIC_URL", "https://bridge4er-platform.vercel.app").rstrip("/")
+BACKEND_PUBLIC_URL = env_text("BACKEND_PUBLIC_URL", "https://bridge4er-new-backend.vercel.app").rstrip("/")
 
 # Email settings for notifications
 DEFAULT_FROM_EMAIL = env_text("DEFAULT_FROM_EMAIL", "bridge4er@gmail.com")

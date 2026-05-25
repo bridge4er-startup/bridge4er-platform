@@ -25,7 +25,7 @@ This file documents the formats currently accepted by the website backend for im
 - `chapter_id` (required)
 - one of:
   - `questions_file` (multipart file upload), or
-  - `file_path` (backend path like `exams/objective_questions_template.csv`, or Dropbox path under `/bridge4er/...`), or
+  - `file_path` (backend path like `exams/objective_questions_template.csv`, or storage path under `/bridge4er/...`), or
   - `questions` (JSON array)
 
 ### CSV columns
@@ -101,7 +101,7 @@ The backend can resolve:
 ### Request inputs
 - one of:
   - `file` (multipart upload), or
-  - `file_path` (backend path / Dropbox path)
+  - `file_path` (backend path / storage path)
 - optional:
   - `replace_existing` (`true|false`, default `true`)
 

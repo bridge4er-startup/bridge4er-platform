@@ -31,7 +31,7 @@ const ensureTrailingSlash = (value) => {
 };
 
 const API_BASE_URL =
-  ensureTrailingSlash(process.env.REACT_APP_API_BASE_URL) || "http://127.0.0.1:8000/api/";
+  ensureTrailingSlash(process.env.REACT_APP_API_BASE_URL) || "https://bridge4er-new-backend.vercel.app/api/";
 const RETRIABLE_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504, 520, 522, 524]);
 
 const parsePositiveInt = (value, fallback, minValue = 1) => {

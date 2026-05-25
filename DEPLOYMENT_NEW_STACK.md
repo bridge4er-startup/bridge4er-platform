@@ -1,4 +1,4 @@
-# Bridge4ER New Stack Deployment Guide
+# Bridge4ER Vercel + Supabase Deployment Guide
 
 This project is now updated for a manual QR approval payment flow:
 
@@ -10,8 +10,8 @@ This project is now updated for a manual QR approval payment flow:
 ## 1) Final Target Architecture
 
 - Frontend: React app (`frontend`) on Vercel.
-- Backend API: Django app (`backend`) with PostgreSQL.
-- Database: Supabase Postgres via `DATABASE_URL`.
+- Backend API: Django app (`backend`) on Vercel.
+- Database and file storage: Supabase via `DATABASE_URL` and Storage API.
 - Domain: GoDaddy domain proxied through Cloudflare.
 
 ## 1.1) Fresh Vercel Projects Created
@@ -23,10 +23,16 @@ These new projects were created under your Vercel scope:
 
 ## 2) Supabase Setup
 
-1. Create a new Supabase project.
+1. Use Supabase project `amjhgookahipybmbtfqx`.
 2. Copy the Postgres connection string from Supabase.
 3. Set it as backend env var:
    - `DATABASE_URL=<supabase-postgres-connection-string>`
+4. Set Supabase storage env vars:
+   - `STORAGE_PROVIDER=supabase`
+   - `SUPABASE_URL=https://amjhgookahipybmbtfqx.supabase.co`
+   - `SUPABASE_STORAGE_BUCKET=bridge4ER`
+   - `SUPABASE_STORAGE_ROOT_PREFIX=bridge4er`
+   - `SUPABASE_SERVICE_ROLE_KEY=<service-role-key>`
 
 ## 3) Backend Environment Variables
 
@@ -34,12 +40,12 @@ Set these in backend deployment environment:
 
 - `DEBUG=False`
 - `SECRET_KEY=<long-random-secret>`
-- `ALLOWED_HOSTS=api.your-domain.com`
-- `CORS_ALLOWED_ORIGINS=https://your-domain.com,https://www.your-domain.com`
-- `CSRF_TRUSTED_ORIGINS=https://your-domain.com,https://www.your-domain.com`
+- `ALLOWED_HOSTS=bridge4er-new-backend.vercel.app,.vercel.app`
+- `CORS_ALLOWED_ORIGINS=https://bridge4er-platform.vercel.app,https://bridge4er-new-frontend.vercel.app`
+- `CSRF_TRUSTED_ORIGINS=https://bridge4er-platform.vercel.app,https://bridge4er-new-frontend.vercel.app,https://bridge4er-new-backend.vercel.app`
 - `DATABASE_URL=<supabase-postgres-connection-string>`
-- `FRONTEND_PUBLIC_URL=https://your-domain.com`
-- `BACKEND_PUBLIC_URL=https://api.your-domain.com`
+- `FRONTEND_PUBLIC_URL=https://bridge4er-platform.vercel.app`
+- `BACKEND_PUBLIC_URL=https://bridge4er-new-backend.vercel.app`
 - Optional email vars if needed:
   - `DEFAULT_FROM_EMAIL`
   - `EMAIL_HOST`
@@ -67,7 +73,7 @@ If `ensure_admin` is used, set:
 
 Set on Vercel frontend project:
 
-- `REACT_APP_API_BASE_URL=https://api.your-domain.com/api/`
+- `REACT_APP_API_BASE_URL=https://bridge4er-new-backend.vercel.app/api/`
 
 Then deploy frontend and verify:
 

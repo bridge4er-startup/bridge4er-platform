@@ -20,7 +20,7 @@ Use these formats instead of JSON for easier manual editing.
 Input options:
 - `questions_file` (multipart upload)
 - `file_path` (backend-local path relative to `backend/`, e.g. `exams/objective_questions_template.csv`)
-- `file_path` can also be a Dropbox path under `/bridge4er/...` (example: `/bridge4er/Civil Engineering/Take Exam/Multiple Choice Exam/questions.xlsx`)
+- `file_path` can also be a storage path under `/bridge4er/...` (example: `/bridge4er/Civil Engineering/Take Exam/Multiple Choice Exam/questions.xlsx`)
 
 Columns:
 - `question_header`
@@ -111,7 +111,7 @@ Body:
 - `sync_objective` (`true|false`, default `true`)
 - `sync_exam_sets` (`true|false`, default `true`)
 
-Expected Dropbox paths for a branch:
+Expected storage paths for a branch:
 - Objective chapters: `/bridge4er/<Branch>/Objective MCQs/Subjects/<Subject>/<ChapterFile>.csv|json|xlsx|xls`
 - MCQ exam sets: `/bridge4er/<Branch>/Take Exam/Multiple Choice Exam/<SetFile>.csv|json|xlsx|xls`
 - Subjective exam sets: `/bridge4er/<Branch>/Take Exam/Subjective Exam/<SetFile>.csv|json|xlsx|xls`

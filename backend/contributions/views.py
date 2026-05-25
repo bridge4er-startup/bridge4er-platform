@@ -9,7 +9,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from exams.models import ExamPurchase, ExamSet
-from storage.dropbox_backup import download_file_from_dropbox, sanitize_filename, upload_file_to_dropbox
+from storage.dropbox_service import download_file, upload_file
 from .models import (
     Contribution,
     ContributionComment,
@@ -34,29 +34,40 @@ def _normalize_branch(value):
     return normalized or "Civil Engineering"
 
 
-def _contribution_dropbox_base(branch):
+def _sanitize_filename(filename, fallback="file"):
+    keep = []
+    for char in str(filename or "").strip():
+        if char.isalnum() or char in {".", "-", "_"}:
+            keep.append(char)
+        elif char.isspace():
+            keep.append("_")
+    cleaned = "".join(keep).strip("._-")
+    return cleaned or fallback
+
+
+def _contribution_storage_base(branch):
     return f"/bridge4er/{_normalize_branch(branch)}/Contributions"
 
 
-def _build_contribution_dropbox_path(contribution, filename):
+def _build_contribution_storage_path(contribution, filename):
     submitted_at = contribution.submitted_at or timezone.now()
-    safe_name = sanitize_filename(filename, fallback=f"contribution-{contribution.id}")
+    safe_name = _sanitize_filename(filename, fallback=f"contribution-{contribution.id}")
     return (
-        f"{_contribution_dropbox_base(contribution.branch)}/"
+        f"{_contribution_storage_base(contribution.branch)}/"
         f"{submitted_at:%Y/%m/%d}/contribution_{contribution.id}_{safe_name}"
     )
 
 
 def _backup_contribution_file(contribution, file_obj):
     if not file_obj:
-        raise ValueError("File is missing for Dropbox backup")
+        raise ValueError("File is missing for storage backup")
     base_name = getattr(file_obj, "name", "") or contribution.file_name or f"contribution-{contribution.id}"
-    dropbox_path = contribution.dropbox_path or _build_contribution_dropbox_path(contribution, base_name)
-    upload_file_to_dropbox(dropbox_path, file_obj)
-    if contribution.dropbox_path != dropbox_path:
-        contribution.dropbox_path = dropbox_path
+    storage_path = contribution.dropbox_path or _build_contribution_storage_path(contribution, base_name)
+    upload_file(storage_path, file_obj)
+    if contribution.dropbox_path != storage_path:
+        contribution.dropbox_path = storage_path
         contribution.save(update_fields=["dropbox_path", "updated_at"])
-    return dropbox_path
+    return storage_path
 
 
 def _build_star_map(user_ids):
@@ -231,9 +242,9 @@ class ContributionFileView(APIView):
                 file_handle = None
 
         if file_handle is None:
-            dropbox_path = contribution.dropbox_path or _build_contribution_dropbox_path(contribution, filename)
+            dropbox_path = contribution.dropbox_path or _build_contribution_storage_path(contribution, filename)
             try:
-                file_content = download_file_from_dropbox(dropbox_path)
+                file_content = download_file(dropbox_path)
             except Exception:
                 return Response({"error": "File not found on server"}, status=status.HTTP_404_NOT_FOUND)
 
@@ -290,16 +301,16 @@ class ContributionUploadView(APIView):
         )
         serializer = ContributionOwnerSerializer(contribution)
         payload = serializer.data
-        dropbox_path = ""
-        dropbox_error = ""
+        storage_path = ""
+        storage_error = ""
         try:
-            dropbox_path = _backup_contribution_file(contribution, file_obj)
+            storage_path = _backup_contribution_file(contribution, file_obj)
         except Exception as exc:
-            dropbox_error = str(exc)
-        if dropbox_path:
-            payload["dropbox_backup_path"] = dropbox_path
-        if dropbox_error:
-            payload["dropbox_backup_error"] = dropbox_error
+            storage_error = str(exc)
+        if storage_path:
+            payload["storage_backup_path"] = storage_path
+        if storage_error:
+            payload["storage_backup_error"] = storage_error
         return Response(payload, status=status.HTTP_201_CREATED)
 
 

@@ -24,8 +24,7 @@ from .path_utils import GENERAL_INSTITUTION, objective_subject_roots, parse_subj
 from .question_normalizers import normalize_mcq_payload
 from .resources import MCQQuestionResource
 from .serializers import MCQQuestionPublicSerializer, MCQQuestionSerializer
-from storage.dropbox_service import delete_file, list_folder_with_metadata, _is_supabase_provider
-from storage.dropbox_backup import sanitize_filename, upload_file_to_dropbox
+from storage.dropbox_service import delete_file, list_folder_with_metadata, upload_file, _is_supabase_provider
 from storage.models import FileMetadata
 
 if DJANGO_IMPORT_EXPORT_AVAILABLE:
@@ -106,7 +105,7 @@ def _dropbox_auto_sync_enabled():
 
 
 def _storage_provider():
-    return str(getattr(settings, "STORAGE_PROVIDER", "dropbox") or "dropbox").strip().lower()
+    return str(getattr(settings, "STORAGE_PROVIDER", "supabase") or "supabase").strip().lower()
 
 
 def _uses_supabase_storage():
@@ -244,15 +243,26 @@ def _objective_dropbox_subject_root(branch, subject_name):
     return f"/bridge4er/{branch}/Objective MCQs/Subjects/{parsed['subject_name']}"
 
 
+def _sanitize_filename(filename, fallback="file"):
+    keep = []
+    for char in str(filename or "").strip():
+        if char.isalnum() or char in {".", "-", "_"}:
+            keep.append(char)
+        elif char.isspace():
+            keep.append("_")
+    cleaned = "".join(keep).strip("._-")
+    return cleaned or fallback
+
+
 def _backup_objective_chapter_file(chapter, uploaded_file):
     subject = chapter.subject
     root = _objective_dropbox_subject_root(subject.branch, subject.name)
     extension = Path(str(getattr(uploaded_file, "name", "") or "")).suffix or ".json"
-    safe_name = sanitize_filename(chapter.name, fallback=f"Chapter-{chapter.id}")
+    safe_name = _sanitize_filename(chapter.name, fallback=f"Chapter-{chapter.id}")
     file_name = f"{safe_name}{extension}"
-    dropbox_path = f"{root}/{file_name}"
-    upload_file_to_dropbox(dropbox_path, uploaded_file)
-    return dropbox_path
+    storage_path = f"{root}/{file_name}"
+    upload_file(storage_path, uploaded_file)
+    return storage_path
 
 
 def _maybe_sync_objective_on_read(branch, user, force_refresh=False):
@@ -958,18 +968,18 @@ class BulkUploadQuestionsView(APIView):
                     "questions": created_questions,
                 }
 
-            dropbox_path = ""
-            dropbox_error = ""
+            storage_path = ""
+            storage_error = ""
             if uploaded_file:
                 try:
-                    dropbox_path = _backup_objective_chapter_file(chapter, uploaded_file)
+                    storage_path = _backup_objective_chapter_file(chapter, uploaded_file)
                 except Exception as exc:
-                    dropbox_error = str(exc)
+                    storage_error = str(exc)
 
-            if dropbox_path:
-                payload["dropbox_backup_path"] = dropbox_path
-            if dropbox_error:
-                payload["dropbox_backup_error"] = dropbox_error
+            if storage_path:
+                payload["storage_backup_path"] = storage_path
+            if storage_error:
+                payload["storage_backup_error"] = storage_error
 
             clear_question_content_caches()
             return Response(payload, status=status.HTTP_201_CREATED)

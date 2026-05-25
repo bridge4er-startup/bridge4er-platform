@@ -100,7 +100,7 @@ def _dropbox_auto_sync_enabled():
 
 
 def _storage_provider():
-    return str(getattr(settings, "STORAGE_PROVIDER", "dropbox") or "dropbox").strip().lower()
+    return str(getattr(settings, "STORAGE_PROVIDER", "supabase") or "supabase").strip().lower()
 
 
 def _uses_supabase_storage():
@@ -1383,7 +1383,7 @@ class DownloadFileView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
-        """Download a file from Dropbox"""
+        """Download a file from configured storage."""
         path = request.GET.get("path")
         
         if not path:
@@ -1454,7 +1454,7 @@ class UploadFileView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUser]
 
     def post(self, request):
-        """Upload a file to Dropbox"""
+        """Upload a file to configured storage."""
         file = request.FILES.get('file')
         content_type = request.data.get('content_type')
         branch = _normalize_branch(request.data.get('branch', 'Civil Engineering'))
@@ -1858,7 +1858,7 @@ class SyncPathView(APIView):
         normalized_path = _coerce_dropbox_path(path, content_type=content_type, branch=branch)
         if not _is_safe_path(normalized_path):
             return Response(
-                {"error": "Invalid path. Provide a Dropbox path under /bridge4er/."},
+                {"error": "Invalid path. Provide a storage path under /bridge4er/."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -1928,7 +1928,7 @@ class AttachPathView(APIView):
         normalized_path = _coerce_dropbox_path(path, content_type=content_type, branch=branch)
         if not _is_safe_path(normalized_path):
             return Response(
-                {"error": "Invalid path. Provide a Dropbox path under /bridge4er/."},
+                {"error": "Invalid path. Provide a storage path under /bridge4er/."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -2006,7 +2006,7 @@ class DeleteFileView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUser]
 
     def post(self, request):
-        """Delete a file from Dropbox"""
+        """Delete a file from configured storage."""
         path = request.data.get('path')
         
         if not path:

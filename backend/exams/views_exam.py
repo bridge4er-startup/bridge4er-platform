@@ -32,7 +32,7 @@ from .models import (
 from .question_normalizers import normalize_exam_question_payload
 from .resources import ExamQuestionResource
 from .serializers import ExamQuestionSerializer, ExamSetSerializer, SubjectiveSubmissionSerializer
-from storage.dropbox_backup import download_file_from_dropbox, sanitize_filename, upload_file_to_dropbox
+from storage.dropbox_service import download_file, upload_file
 
 if DJANGO_IMPORT_EXPORT_AVAILABLE:
     from tablib import Dataset
@@ -172,11 +172,22 @@ def _subjective_dropbox_base(branch):
     return f"/bridge4er/{_normalize_branch(branch)}/Exam Hall"
 
 
+def _sanitize_filename(filename, fallback="file"):
+    keep = []
+    for char in str(filename or "").strip():
+        if char.isalnum() or char in {".", "-", "_"}:
+            keep.append(char)
+        elif char.isspace():
+            keep.append("_")
+    cleaned = "".join(keep).strip("._-")
+    return cleaned or fallback
+
+
 def _build_subjective_dropbox_path(submission, filename, is_reviewed):
     branch = _normalize_branch(getattr(submission.exam_set, "branch", None))
     submitted_at = submission.submitted_at or timezone.now()
     date_path = submitted_at.strftime("%Y/%m/%d")
-    safe_name = sanitize_filename(filename, fallback=f"submission-{submission.id}.pdf")
+    safe_name = _sanitize_filename(filename, fallback=f"submission-{submission.id}.pdf")
     folder = "Reviews" if is_reviewed else "Submissions"
     prefix = "reviewed" if is_reviewed else "submission"
     return f"{_subjective_dropbox_base(branch)}/{folder}/{date_path}/{prefix}_{submission.id}_{safe_name}"
@@ -193,7 +204,7 @@ def _backup_subjective_file(submission, file_field_name, path_field_name, is_rev
         is_reviewed,
     )
     with file_field.open("rb") as file_handle:
-        upload_file_to_dropbox(target_path, file_handle)
+        upload_file(target_path, file_handle)
     if getattr(submission, path_field_name) != target_path:
         setattr(submission, path_field_name, target_path)
         submission.save(update_fields=[path_field_name])
@@ -402,7 +413,7 @@ def _build_exam_set_dropbox_path(exam_set: ExamSet, filename: str) -> str:
         return existing_path
     exam_folder = "Multiple Choice Exam" if exam_set.exam_type == "mcq" else "Subjective Exam"
     extension = Path(str(filename or "")).suffix or ".json"
-    safe_name = sanitize_filename(exam_set.name or "Exam Set", fallback=f"exam-set-{exam_set.id}")
+    safe_name = _sanitize_filename(exam_set.name or "Exam Set", fallback=f"exam-set-{exam_set.id}")
     return f"/bridge4er/{_normalize_branch(exam_set.branch)}/Take Exam/{exam_folder}/Manual Uploads/{safe_name}{extension}"
 
 
@@ -748,22 +759,22 @@ class ExamSetImportQuestionsView(APIView):
         if summary is not None:
             payload["summary"] = summary
 
-        dropbox_path = ""
-        dropbox_error = ""
+        storage_path = ""
+        storage_error = ""
         if uploaded_file:
             try:
-                dropbox_path = _build_exam_set_dropbox_path(exam_set, uploaded_file.name)
-                upload_file_to_dropbox(dropbox_path, uploaded_file)
-                if exam_set.source_file_path != dropbox_path:
-                    exam_set.source_file_path = dropbox_path
+                storage_path = _build_exam_set_dropbox_path(exam_set, uploaded_file.name)
+                upload_file(storage_path, uploaded_file)
+                if exam_set.source_file_path != storage_path:
+                    exam_set.source_file_path = storage_path
                     exam_set.save(update_fields=["source_file_path", "updated_at"])
             except Exception as exc:
-                dropbox_error = str(exc)
+                storage_error = str(exc)
 
-        if dropbox_path:
-            payload["dropbox_backup_path"] = dropbox_path
-        if dropbox_error:
-            payload["dropbox_backup_error"] = dropbox_error
+        if storage_path:
+            payload["storage_backup_path"] = storage_path
+        if storage_error:
+            payload["storage_backup_error"] = storage_error
 
         clear_question_content_caches()
         return Response(payload)
@@ -1218,22 +1229,22 @@ class UploadSubjective(APIView):
             status="pending",
         )
         _notify_subjective_submission(submission)
-        dropbox_path = ""
-        dropbox_error = ""
+        storage_path = ""
+        storage_error = ""
         try:
-            dropbox_path, dropbox_error = _backup_subjective_file(
+            storage_path, storage_error = _backup_subjective_file(
                 submission,
                 "answer_pdf",
                 "dropbox_answer_path",
                 False,
             )
         except Exception as exc:
-            dropbox_error = str(exc)
+            storage_error = str(exc)
         payload = {"message": "Uploaded", "submission_id": submission.id}
-        if dropbox_path:
-            payload["dropbox_backup_path"] = dropbox_path
-        if dropbox_error:
-            payload["dropbox_backup_error"] = dropbox_error
+        if storage_path:
+            payload["storage_backup_path"] = storage_path
+        if storage_error:
+            payload["storage_backup_error"] = storage_error
         return Response(payload)
 
 
@@ -1290,23 +1301,23 @@ class SubjectiveSubmissionCreateView(APIView):
             status="pending",
         )
         _notify_subjective_submission(submission)
-        dropbox_path = ""
-        dropbox_error = ""
+        storage_path = ""
+        storage_error = ""
         try:
-            dropbox_path, dropbox_error = _backup_subjective_file(
+            storage_path, storage_error = _backup_subjective_file(
                 submission,
                 "answer_pdf",
                 "dropbox_answer_path",
                 False,
             )
         except Exception as exc:
-            dropbox_error = str(exc)
+            storage_error = str(exc)
         serializer = SubjectiveSubmissionSerializer(submission, context={"request": request})
         payload = serializer.data
-        if dropbox_path:
-            payload["dropbox_backup_path"] = dropbox_path
-        if dropbox_error:
-            payload["dropbox_backup_error"] = dropbox_error
+        if storage_path:
+            payload["storage_backup_path"] = storage_path
+        if storage_error:
+            payload["storage_backup_error"] = storage_error
         return Response(payload, status=status.HTTP_201_CREATED)
 
 
@@ -1354,7 +1365,7 @@ class SubjectiveSubmissionFileView(APIView):
                 False,
             )
             try:
-                file_content = download_file_from_dropbox(dropbox_path)
+                file_content = download_file(dropbox_path)
             except Exception:
                 return Response({"error": "PDF file not found on server"}, status=status.HTTP_404_NOT_FOUND)
 
@@ -1410,7 +1421,7 @@ class SubjectiveSubmissionReviewedFileView(APIView):
                 True,
             )
             try:
-                file_content = download_file_from_dropbox(dropbox_path)
+                file_content = download_file(dropbox_path)
             except Exception:
                 return Response({"error": "Reviewed file not found on server"}, status=status.HTTP_404_NOT_FOUND)
 
@@ -1447,23 +1458,23 @@ class SubjectiveSubmissionReviewedFileView(APIView):
         if submission.status == "reviewed" and not submission.reviewed_at:
             submission.reviewed_at = timezone.now()
         submission.save(update_fields=["reviewed_file", "reviewed_at"])
-        dropbox_path = ""
-        dropbox_error = ""
+        storage_path = ""
+        storage_error = ""
         try:
-            dropbox_path, dropbox_error = _backup_subjective_file(
+            storage_path, storage_error = _backup_subjective_file(
                 submission,
                 "reviewed_file",
                 "dropbox_reviewed_path",
                 True,
             )
         except Exception as exc:
-            dropbox_error = str(exc)
+            storage_error = str(exc)
         serializer = SubjectiveSubmissionSerializer(submission, context={"request": request})
         payload = serializer.data
-        if dropbox_path:
-            payload["dropbox_backup_path"] = dropbox_path
-        if dropbox_error:
-            payload["dropbox_backup_error"] = dropbox_error
+        if storage_path:
+            payload["storage_backup_path"] = storage_path
+        if storage_error:
+            payload["storage_backup_error"] = storage_error
         return Response(payload, status=status.HTTP_200_OK)
 
 
