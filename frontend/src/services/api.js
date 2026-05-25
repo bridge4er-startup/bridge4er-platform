@@ -282,6 +282,24 @@ export const clearGetResponseCache = () => {
   inFlightGetRequests.clear();
 };
 
+const clearPersistedCacheOnBrowserReload = () => {
+  if (!isBrowser) return;
+  try {
+    const [navigationEntry] = window.performance?.getEntriesByType?.("navigation") || [];
+    const isReload =
+      navigationEntry?.type === "reload" ||
+      window.performance?.navigation?.type === 1;
+    if (isReload) {
+      clearGetResponseCache();
+      clearPersistedGetCache();
+    }
+  } catch (_error) {
+    // Cache freshness is best-effort; never block app startup.
+  }
+};
+
+clearPersistedCacheOnBrowserReload();
+
 const resolveBackendOrigin = () => {
   try {
     if (isBrowser) {

@@ -113,8 +113,17 @@ def _supabase_candidate_keys_from_app_path(path):
             trimmed = "/".join(segments[1:])
             if trimmed:
                 candidates.append(trimmed)
+                configured_root_key = f"{root_segment}/{trimmed}"
+                if configured_root_key != joined:
+                    candidates.append(configured_root_key)
+                if root_lower == _DEFAULT_APP_ROOT.lower():
+                    bridge4er_key = f"bridge4ER/{trimmed}"
+                    if bridge4er_key not in candidates:
+                        candidates.append(bridge4er_key)
         else:
             candidates.append(f"{root_segment}/{joined}")
+            if root_lower == _DEFAULT_APP_ROOT.lower():
+                candidates.append(f"bridge4ER/{joined}")
 
     deduped = []
     seen = set()
@@ -136,10 +145,13 @@ def _app_path_from_supabase_key(key):
     normalized = _normalize_key(key)
     root_segment = _storage_root_segment().strip("/")
     if not normalized:
-        return f"/{root_segment}"
+        return f"/{_DEFAULT_APP_ROOT}"
     if _is_rooted_key(normalized):
-        return f"/{normalized}"
-    return f"/{root_segment}/{normalized}"
+        segments = [segment for segment in normalized.split("/") if segment]
+        if not segments:
+            return f"/{_DEFAULT_APP_ROOT}"
+        return "/" + "/".join([_DEFAULT_APP_ROOT, *segments[1:]])
+    return f"/{_DEFAULT_APP_ROOT}/{normalized}"
 
 
 def _supabase_headers(require_service_key=False, content_type=None):

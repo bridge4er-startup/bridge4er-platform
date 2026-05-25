@@ -24,6 +24,14 @@ if DJANGO_IMPORT_EXPORT_AVAILABLE:
 _AUTO_SYNC_KEY_PREFIX = "dropbox_sync:last_run"
 
 
+def clear_question_content_caches():
+    # Admin sync/import changes the public navigation tree; stale cache is worse than a cold read here.
+    try:
+        cache.clear()
+    except Exception:
+        pass
+
+
 def _ensure_institution_folder(branch: str, scope: str, folder_key: str, display_name: str = ""):
     clean_key = str(folder_key or "").strip() or GENERAL_INSTITUTION
     defaults = {"display_name": str(display_name or "").strip()[:255] or clean_key}
@@ -438,6 +446,8 @@ def sync_objective_mcqs_from_dropbox(
     elif source_path:
         summary["prune_skipped"] = "selected_path_sync"
 
+    if summary["processed_files"] or summary["chapters_deleted"] or summary["subjects_deleted"]:
+        clear_question_content_caches()
     return summary
 
 
@@ -601,6 +611,8 @@ def _sync_exam_set_type(
     elif source_path:
         result["prune_skipped"] = "selected_path_sync"
 
+    if result["processed_files"] or result["sets_deactivated"]:
+        clear_question_content_caches()
     return result
 
 

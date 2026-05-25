@@ -18,7 +18,7 @@ from .import_utils import (
     parse_rows_from_path,
     parse_rows_from_uploaded_file,
 )
-from .dropbox_sync import auto_sync_dropbox_for_branch
+from .dropbox_sync import auto_sync_dropbox_for_branch, clear_question_content_caches
 from .models import Chapter, InstitutionFolder, MCQQuestion, Subject
 from .path_utils import GENERAL_INSTITUTION, objective_subject_roots, parse_subject_key
 from .question_normalizers import normalize_mcq_payload
@@ -971,6 +971,7 @@ class BulkUploadQuestionsView(APIView):
             if dropbox_error:
                 payload["dropbox_backup_error"] = dropbox_error
 
+            clear_question_content_caches()
             return Response(payload, status=status.HTTP_201_CREATED)
         except Chapter.DoesNotExist:
             return Response({"error": "Chapter not found"}, status=status.HTTP_404_NOT_FOUND)

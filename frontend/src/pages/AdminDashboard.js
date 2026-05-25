@@ -61,6 +61,12 @@ const CONTENT_TYPE_OPTIONS = [
   { value: "take_exam_subjective", label: "Exam Hall - Subjective Sets", group: "Exam Hall" },
 ];
 const DEFAULT_CONTRIBUTION_CATEGORIES = ["PSC", "NEC", "MSC", "GK/IQ", "NTC", "NEA", "Other"];
+const SUPPORTED_STORAGE_PATH_EXAMPLES = [
+  "/bridge4er/Civil Engineering/Objective MCQs/GK, IQ and Contemporary Issues/Contemporary Issues/UPLOADED TEST FILE.json",
+  "/bridge4er/Civil Engineering/Take Exam/Multiple Choice Exam/NEA Exam/TEST FILE SYNCED.json",
+  "/bridge4er/Civil Engineering/Subjective/PSC-Building and Architecture/Architecture/Test.pdf",
+  "/bridge4er/Civil Engineering/Old Questions/BB.pdf",
+];
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState("upload-files"); // upload-files, manage-mcqs, bulk-upload-mcqs, review-subjective, payment-operations
@@ -2955,6 +2961,14 @@ export default function AdminDashboard() {
                 Use a full bucket path or a relative folder/subfolder name. Question files in Objective MCQs or Exam Hall
                 are extracted automatically after upload.
               </p>
+              <p style={{ color: "#64748b", fontSize: "0.82rem", marginTop: "0.35rem" }}>
+                Supabase bucket: bridge4ER. Key folder may be bridge4ER; website paths use /bridge4er.
+              </p>
+              <ul style={{ color: "#64748b", fontSize: "0.8rem", marginTop: "0.35rem", paddingLeft: "1.2rem" }}>
+                {SUPPORTED_STORAGE_PATH_EXAMPLES.map((example) => (
+                  <li key={example}>{example}</li>
+                ))}
+              </ul>
             </div>
 
             <div style={{ marginBottom: "1.5rem" }}>
@@ -3084,6 +3098,11 @@ export default function AdminDashboard() {
                   border: "1px solid #ddd",
                 }}
               />
+              <ul style={{ color: "#64748b", fontSize: "0.8rem", marginTop: "0.35rem", paddingLeft: "1.2rem" }}>
+                {SUPPORTED_STORAGE_PATH_EXAMPLES.map((example) => (
+                  <li key={example}>{example}</li>
+                ))}
+              </ul>
             </div>
 
             <div style={{ display: "flex", flexWrap: "wrap", gap: "0.6rem", marginBottom: "1rem" }}>

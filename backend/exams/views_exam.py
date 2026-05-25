@@ -21,7 +21,7 @@ from .import_utils import (
     parse_rows_from_uploaded_file,
 )
 from .exam_file_metadata import build_exam_set_update_payload, extract_exam_rows_and_metadata
-from .dropbox_sync import auto_sync_dropbox_for_branch
+from .dropbox_sync import auto_sync_dropbox_for_branch, clear_question_content_caches
 from .models import (
     ExamAttempt,
     ExamPurchase,
@@ -765,6 +765,7 @@ class ExamSetImportQuestionsView(APIView):
         if dropbox_error:
             payload["dropbox_backup_error"] = dropbox_error
 
+        clear_question_content_caches()
         return Response(payload)
 
 
