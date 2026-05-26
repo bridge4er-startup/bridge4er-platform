@@ -82,6 +82,16 @@ FILE_LIST_METADATA_SYNC_COOLDOWN_SECONDS = _as_positive_int(
     900,
     minimum=30,
 )
+FINAL_LIST_CACHE_TTL_SECONDS = _as_positive_int(
+    getattr(settings, "FINAL_LIST_CACHE_TTL_SECONDS", 300),
+    300,
+    minimum=30,
+)
+HOMEPAGE_METRICS_CACHE_TTL_SECONDS = _as_positive_int(
+    getattr(settings, "HOMEPAGE_METRICS_CACHE_TTL_SECONDS", 300),
+    300,
+    minimum=30,
+)
 OBJECTIVE_COUNT_CACHE_KEY_PREFIX = "storage:objective-count:v1"
 OBJECTIVE_COUNT_CACHE_TTL_SECONDS = _as_positive_int(
     getattr(settings, "DROPBOX_OBJECTIVE_COUNT_CACHE_TTL_SECONDS", 1800),
@@ -266,6 +276,17 @@ def _list_cache_keys(content_type, branch, include_dirs, metadata_only=False):
     return payload_key, stale_key
 
 
+def _final_list_cache_key(content_type, branch, include_dirs, include_hidden, metadata_only=False):
+    normalized_branch = _normalize_branch(branch).lower()
+    token = _list_cache_token(content_type, normalized_branch)
+    seed = (
+        f"{content_type}|{normalized_branch}|{int(bool(include_dirs))}|"
+        f"{int(bool(include_hidden))}|{int(bool(metadata_only))}|{token}|final"
+    )
+    digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()
+    return f"{FILE_LIST_CACHE_KEY_PREFIX}:final:{digest}"
+
+
 def _store_list_cache_payload(content_type, branch, include_dirs, files, metadata_only=False):
     cache_key, stale_key = _list_cache_keys(content_type, branch, include_dirs, metadata_only=metadata_only)
     cache.set(cache_key, files, timeout=FILE_LIST_CACHE_TTL_SECONDS)
@@ -281,6 +302,11 @@ def _invalidate_list_cache(content_type, branch):
 
 def _metadata_sync_cache_key(content_type, branch):
     return f"{FILE_LIST_CACHE_KEY_PREFIX}:metadata-sync:{content_type}:{_cache_safe_value(_normalize_branch(branch))}"
+
+
+def _homepage_metrics_cache_key(branch):
+    normalized = (_normalize_branch(branch).lower() if branch else "all")
+    return f"storage:homepage-metrics:v1:{_cache_safe_value(normalized)}"
 
 
 def _should_sync_metadata(content_type, branch, force=False):
@@ -1041,7 +1067,39 @@ def _sync_dropbox_content_type(content_type, branch, warm_cache=True):
     }
 
 
-def sync_dropbox_content_for_branch(branch, content_types=None, warm_cache=True):
+def _sync_questions_for_content_types(branch, content_types):
+    resolved_branch = _normalize_branch(branch)
+    targets = set(_content_types_from_request(content_types))
+    payload = {}
+
+    if "objective_mcq" in targets:
+        from exams.dropbox_sync import sync_objective_mcqs_from_dropbox
+
+        payload["objective"] = sync_objective_mcqs_from_dropbox(
+            branch=resolved_branch,
+            replace_existing=True,
+        )
+
+    exam_targets = {"take_exam_mcq", "take_exam_subjective"} & targets
+    if exam_targets:
+        from exams.dropbox_sync import sync_exam_sets_from_dropbox
+
+        source_path = ""
+        if exam_targets == {"take_exam_mcq"}:
+            source_path = _resolve_content_path("take_exam_mcq", resolved_branch) or ""
+        elif exam_targets == {"take_exam_subjective"}:
+            source_path = _resolve_content_path("take_exam_subjective", resolved_branch) or ""
+        payload["exam_sets"] = sync_exam_sets_from_dropbox(
+            branch=resolved_branch,
+            replace_existing=True,
+            source_path=source_path,
+            prune_missing=not bool(source_path),
+        )
+
+    return payload
+
+
+def sync_dropbox_content_for_branch(branch, content_types=None, warm_cache=True, sync_questions=False):
     resolved_branch = _normalize_branch(branch)
     targets = _content_types_from_request(content_types)
     if not targets:
@@ -1067,6 +1125,17 @@ def sync_dropbox_content_for_branch(branch, content_types=None, warm_cache=True)
             payload["errors"].append(
                 {
                     "content_type": content_type,
+                    "error": str(exc),
+                }
+            )
+
+    if sync_questions:
+        try:
+            payload["question_sync"] = _sync_questions_for_content_types(resolved_branch, targets)
+        except Exception as exc:
+            payload["errors"].append(
+                {
+                    "content_type": "question_sync",
                     "error": str(exc),
                 }
             )
@@ -1126,6 +1195,18 @@ class ListFilesView(APIView):
             path = _resolve_content_path(content_type, branch)
             if not path:
                 return Response({"error": "Invalid content type"}, status=status.HTTP_400_BAD_REQUEST)
+
+            final_cache_key = _final_list_cache_key(
+                content_type,
+                branch,
+                include_dirs,
+                include_hidden,
+                metadata_only=metadata_only,
+            )
+            if not refresh:
+                cached_visible_files = cache.get(final_cache_key)
+                if cached_visible_files is not None:
+                    return Response(cached_visible_files)
 
             list_cache_key, stale_key = _list_cache_keys(
                 content_type,
@@ -1226,6 +1307,8 @@ class ListFilesView(APIView):
                 include_hidden=include_hidden,
             )
             visible_files = _apply_metadata_overrides(visible_files, content_type=content_type, branch=branch)
+            if not refresh:
+                cache.set(final_cache_key, visible_files, timeout=FINAL_LIST_CACHE_TTL_SECONDS)
             return Response(visible_files)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -1238,12 +1321,14 @@ class SyncDropboxContentView(APIView):
         branch = _normalize_branch(request.data.get("branch", "Civil Engineering"))
         content_types = request.data.get("content_types")
         warm_cache = _as_bool(request.data.get("warm_cache"), True)
+        sync_questions = _as_bool(request.data.get("sync_questions"), True)
 
         try:
             payload = sync_dropbox_content_for_branch(
                 branch=branch,
                 content_types=content_types,
                 warm_cache=warm_cache,
+                sync_questions=sync_questions,
             )
             if payload["errors"] and not payload["synced"]:
                 return Response(payload, status=status.HTTP_400_BAD_REQUEST)
@@ -2039,6 +2124,11 @@ class HomePageMetricsView(APIView):
     def get(self, request):
         branch_param = str(request.GET.get("branch", "") or "").strip()
         resolved_branch = _normalize_branch(branch_param) if branch_param else None
+        cache_key = _homepage_metrics_cache_key(resolved_branch)
+        cached_payload = cache.get(cache_key)
+        if cached_payload is not None:
+            return Response(cached_payload)
+
         row = _effective_metrics_row()
         computed = _computed_platform_metrics(branch=resolved_branch)
         use_global_overrides = not bool(resolved_branch)
@@ -2062,6 +2152,7 @@ class HomePageMetricsView(APIView):
             "register_hero_image_url": row.register_hero_image_url or "",
             "updated_at": row.updated_at,
         }
+        cache.set(cache_key, data, timeout=HOMEPAGE_METRICS_CACHE_TTL_SECONDS)
         return Response(data)
 
     def post(self, request):
@@ -2107,6 +2198,8 @@ class HomePageMetricsView(APIView):
 
         if dirty:
             row.save(update_fields=dirty + ["updated_at"])
+            cache.delete(_homepage_metrics_cache_key(None))
+            cache.delete(_homepage_metrics_cache_key(request.data.get("branch")))
 
         return self.get(request)
 

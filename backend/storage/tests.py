@@ -9,6 +9,7 @@ from storage.views import (
     _prune_metadata_not_in_listing,
     _sort_files_by_admin_order,
     _sync_metadata_from_listing,
+    sync_dropbox_content_for_branch,
 )
 
 
@@ -255,4 +256,37 @@ class SupabasePathNormalizationTests(TestCase):
         self.assertIn(
             "/bridge4er/Civil Engineering/Objective MCQs/Nepal Engineering Council (NEC)/Chapter 1.json",
             paths,
+        )
+
+
+class StorageContentSyncTests(TestCase):
+    def test_sync_content_can_import_question_files(self):
+        with patch(
+            "storage.views._sync_dropbox_content_type",
+            return_value={
+                "content_type": "objective_mcq",
+                "path": "/bridge4er/Civil Engineering/Objective MCQs",
+                "file_count": 1,
+                "folder_count": 1,
+                "files_deleted": 0,
+                "folders_deleted": 0,
+                "cached": True,
+                "include_dirs": True,
+            },
+        ), patch(
+            "exams.dropbox_sync.sync_objective_mcqs_from_dropbox",
+            return_value={"imported_questions": 3},
+        ) as sync_objective:
+            payload = sync_dropbox_content_for_branch(
+                branch="Civil Engineering",
+                content_types=["objective_mcq"],
+                warm_cache=True,
+                sync_questions=True,
+            )
+
+        self.assertEqual(payload["errors"], [])
+        self.assertEqual(payload["question_sync"]["objective"]["imported_questions"], 3)
+        sync_objective.assert_called_once_with(
+            branch="Civil Engineering",
+            replace_existing=True,
         )

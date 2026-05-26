@@ -61,7 +61,7 @@ class SyncDropboxQuestionBankView(APIView):
             except Exception as exc:
                 payload["errors"].append({"scope": "exam_sets", "error": str(exc)})
 
-        # Keep storage listings in sync with Dropbox updates triggered by this endpoint.
+        # Keep storage listings in sync with storage updates triggered by this endpoint.
         storage_content_types = []
         if sync_objective:
             storage_content_types.append("objective_mcq")
@@ -75,6 +75,7 @@ class SyncDropboxQuestionBankView(APIView):
                     branch=branch,
                     content_types=storage_content_types,
                     warm_cache=True,
+                    sync_questions=False,
                 )
             except Exception as exc:
                 payload["errors"].append({"scope": "storage", "error": str(exc)})

@@ -129,11 +129,17 @@ export const fileService = {
   },
 
   // Sync storage metadata/list caches for selected content types (admin only)
-  syncContent: async (branch = "Civil Engineering", contentTypes = [], warmCache = true) => {
+  syncContent: async (
+    branch = "Civil Engineering",
+    contentTypes = [],
+    warmCache = true,
+    syncQuestions = true
+  ) => {
     try {
       const payload = {
         branch,
         warm_cache: !!warmCache,
+        sync_questions: !!syncQuestions,
       };
       if (Array.isArray(contentTypes) && contentTypes.length > 0) {
         payload.content_types = contentTypes;

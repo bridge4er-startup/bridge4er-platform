@@ -61,11 +61,16 @@ const CONTENT_TYPE_OPTIONS = [
   { value: "take_exam_subjective", label: "Exam Hall - Subjective Sets", group: "Exam Hall" },
 ];
 const DEFAULT_CONTRIBUTION_CATEGORIES = ["PSC", "NEC", "MSC", "GK/IQ", "NTC", "NEA", "Other"];
-const SUPPORTED_STORAGE_PATH_EXAMPLES = [
+const STORAGE_PATH_EXAMPLES = [
   "/bridge4er/Civil Engineering/Objective MCQs/GK, IQ and Contemporary Issues/Contemporary Issues/UPLOADED TEST FILE.json",
   "/bridge4er/Civil Engineering/Take Exam/Multiple Choice Exam/NEA Exam/TEST FILE SYNCED.json",
   "/bridge4er/Civil Engineering/Subjective/PSC-Building and Architecture/Architecture/Test.pdf",
   "/bridge4er/Civil Engineering/Old Questions/BB.pdf",
+];
+const STORAGE_WORKFLOW_NOTES = [
+  "PDFs and other resource files are stored in the Supabase bucket bridge4ER and indexed in Django metadata.",
+  "Question .json/.csv/.xlsx files are also stored in Supabase, then imported into Django question tables when they are under Objective MCQs or Exam Hall paths.",
+  "You can upload from this panel, or upload files directly in Supabase and run Sync Folder Path or Sync Selected Type.",
 ];
 
 export default function AdminDashboard() {
@@ -107,9 +112,9 @@ export default function AdminDashboard() {
   const [creatingNewChapterUpload, setCreatingNewChapterUpload] = useState(false);
   const [newBulkChapterName, setNewBulkChapterName] = useState("");
   const [newBulkChapterNote, setNewBulkChapterNote] = useState("");
-  const [syncingDropboxScope, setSyncingDropboxScope] = useState("");
-  const [quickDropboxPath, setQuickDropboxPath] = useState("");
-  const [importingQuickDropboxPath, setImportingQuickDropboxPath] = useState(false);
+  const [syncingStorageScope, setSyncingStorageScope] = useState("");
+  const [quickStoragePath, setQuickStoragePath] = useState("");
+  const [importingQuickStoragePath, setImportingQuickStoragePath] = useState(false);
 
   // Manage Files State
   const [manageContentType, setManageContentType] = useState("notice");
@@ -212,7 +217,7 @@ export default function AdminDashboard() {
     return { backgroundColor: "#dbeafe", color: "#1d4ed8" };
   };
 
-  const normalizeDropboxQuestionSource = (value) => {
+  const normalizeStorageQuestionSource = (value) => {
     return String(value || "").trim();
   };
 
@@ -231,7 +236,7 @@ export default function AdminDashboard() {
     if (fromUpload) {
       return fromUpload.replace(/\.[^/.]+$/, "").trim();
     }
-    const sourcePath = normalizeDropboxQuestionSource(bulkQuestionsPath);
+    const sourcePath = normalizeStorageQuestionSource(bulkQuestionsPath);
     if (!sourcePath) {
       return "";
     }
@@ -476,7 +481,7 @@ export default function AdminDashboard() {
 
   const handleBulkUpload = async () => {
     if (!bulkQuestionsFile && !bulkQuestionsPath.trim()) {
-      toast.error("Select a file or provide a backend/dropbox file path");
+      toast.error("Select a file or provide a backend/Supabase storage path");
       return;
     }
 
@@ -506,7 +511,7 @@ export default function AdminDashboard() {
       return;
     }
     if (!bulkQuestionsFile && !bulkQuestionsPath.trim()) {
-      toast.error("Select a file or provide a backend/dropbox file path");
+      toast.error("Select a file or provide a backend/Supabase storage path");
       return;
     }
     const subjectObj = subjects.find((s) => s.name === selectedSubject);
@@ -579,12 +584,12 @@ export default function AdminDashboard() {
     return `${fileCount} files, ${folderCount} folders`;
   };
 
-  const handleSyncDropboxQuestionBank = async (scope = "all") => {
-    if (syncingDropboxScope) {
+  const handleSyncStorageQuestionBank = async (scope = "all") => {
+    if (syncingStorageScope) {
       return;
     }
 
-    setSyncingDropboxScope(scope);
+    setSyncingStorageScope(scope);
     try {
       let objectiveImported = 0;
       let mcqSetImported = 0;
@@ -679,7 +684,7 @@ export default function AdminDashboard() {
       toast.error(message);
       console.error(error);
     } finally {
-      setSyncingDropboxScope("");
+      setSyncingStorageScope("");
     }
   };
 
@@ -722,18 +727,6 @@ export default function AdminDashboard() {
     try {
       const targetTypes = syncAll ? MANAGED_CONTENT_TYPES : [manageContentType];
       const result = await fileService.syncContent(branch, targetTypes, true);
-      const shouldSyncObjective = targetTypes.includes("objective_mcq");
-      const shouldSyncExamSets =
-        targetTypes.includes("take_exam_mcq") || targetTypes.includes("take_exam_subjective");
-      const questionResult =
-        shouldSyncObjective || shouldSyncExamSets
-          ? await mcqService.syncDropboxQuestionBank(
-              branch,
-              true,
-              shouldSyncObjective,
-              shouldSyncExamSets
-            )
-          : null;
       const syncedRows = Array.isArray(result?.synced) ? result.synced : [];
       const errors = Array.isArray(result?.errors) ? result.errors : [];
 
@@ -745,9 +738,9 @@ export default function AdminDashboard() {
           })
           .join(" | ");
         const imported =
-          Number(questionResult?.objective?.imported_questions || 0)
-          + Number(questionResult?.exam_sets?.mcq?.imported_questions || 0)
-          + Number(questionResult?.exam_sets?.subjective?.imported_questions || 0);
+          Number(result?.question_sync?.objective?.imported_questions || 0)
+          + Number(result?.question_sync?.exam_sets?.mcq?.imported_questions || 0)
+          + Number(result?.question_sync?.exam_sets?.subjective?.imported_questions || 0);
         toast.success(`Storage sync complete. ${summary}${imported ? ` | ${imported} questions imported` : ""}`);
       }
       if (errors.length > 0) {
@@ -1094,8 +1087,8 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleImportQuestionsFromDropboxLink = async () => {
-    const source = normalizeDropboxQuestionSource(quickDropboxPath);
+  const handleImportQuestionsFromStoragePath = async () => {
+    const source = normalizeStorageQuestionSource(quickStoragePath);
     if (!source) {
       toast.error("Please enter storage file path/link");
       return;
@@ -1105,15 +1098,15 @@ export default function AdminDashboard() {
       return;
     }
 
-    setImportingQuickDropboxPath(true);
+    setImportingQuickStoragePath(true);
     try {
       const result = await mcqService.bulkUploadQuestionsFromPath(selectedChapterId, source);
       toast.success(result?.message || "Questions imported from storage path.");
-      setQuickDropboxPath("");
+      setQuickStoragePath("");
     } catch (error) {
       toast.error(error?.response?.data?.error || "Failed to import questions from storage path");
     } finally {
-      setImportingQuickDropboxPath(false);
+      setImportingQuickStoragePath(false);
     }
   };
 
@@ -2958,14 +2951,15 @@ export default function AdminDashboard() {
                 }}
               />
               <p style={{ color: "#64748b", fontSize: "0.85rem", marginTop: "0.4rem" }}>
-                Use a full bucket path or a relative folder/subfolder name. Question files in Objective MCQs or Exam Hall
-                are extracted automatically after upload.
+                Use a full bucket path or a relative folder/subfolder name.
               </p>
-              <p style={{ color: "#64748b", fontSize: "0.82rem", marginTop: "0.35rem" }}>
-                Supabase bucket: bridge4ER. Key folder may be bridge4ER; website paths use /bridge4er.
-              </p>
+              <ul style={{ color: "#64748b", fontSize: "0.82rem", marginTop: "0.35rem", paddingLeft: "1.2rem" }}>
+                {STORAGE_WORKFLOW_NOTES.map((note) => (
+                  <li key={note}>{note}</li>
+                ))}
+              </ul>
               <ul style={{ color: "#64748b", fontSize: "0.8rem", marginTop: "0.35rem", paddingLeft: "1.2rem" }}>
-                {SUPPORTED_STORAGE_PATH_EXAMPLES.map((example) => (
+                {STORAGE_PATH_EXAMPLES.map((example) => (
                   <li key={example}>{example}</li>
                 ))}
               </ul>
@@ -3029,10 +3023,10 @@ export default function AdminDashboard() {
                 lineHeight: 1.5,
               }}
             >
-              <strong>Admin flow:</strong> storage files are indexed into backend metadata, then the website reads
-              that metadata. Sync Selected Type imports the selected section. Sync Folder Path imports one folder/file;
-              for Objective MCQs and Exam Hall it also extracts questions. Delete removes the storage item and clears
-              its website/database records.
+              <strong>Admin flow:</strong> upload files here or put them in Supabase first, then sync. PDFs stay in
+              the Supabase bucket and are indexed for the website. JSON/CSV/XLSX question files under Objective MCQs
+              or Exam Hall are also imported into Django question tables. Delete removes the storage item and clears
+              related website/database records.
             </div>
 
             <div style={{ marginBottom: "1rem" }}>
@@ -3099,7 +3093,7 @@ export default function AdminDashboard() {
                 }}
               />
               <ul style={{ color: "#64748b", fontSize: "0.8rem", marginTop: "0.35rem", paddingLeft: "1.2rem" }}>
-                {SUPPORTED_STORAGE_PATH_EXAMPLES.map((example) => (
+                {STORAGE_PATH_EXAMPLES.map((example) => (
                   <li key={example}>{example}</li>
                 ))}
               </ul>
