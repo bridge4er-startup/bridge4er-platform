@@ -301,7 +301,11 @@ USE_TZ = True
 
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
-STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+STATICFILES_STORAGE = env_text(
+    "STATICFILES_STORAGE",
+    "whitenoise.storage.CompressedStaticFilesStorage",
+)
+WHITENOISE_USE_FINDERS = env_bool("WHITENOISE_USE_FINDERS", True)
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", str(BASE_DIR / "media")))

@@ -96,6 +96,13 @@ class Command(BaseCommand):
             if not user.is_superuser:
                 user.is_superuser = True
                 updated_fields.add("is_superuser")
+            if username and user.username != username:
+                username_in_use = User.objects.filter(username=username).exclude(pk=user.pk).exists()
+                if username_in_use:
+                    self.stderr.write("ensure_admin: requested username already in use; keeping existing username.")
+                else:
+                    user.username = username
+                    updated_fields.add("username")
             if user.is_student:
                 user.is_student = False
                 updated_fields.add("is_student")
