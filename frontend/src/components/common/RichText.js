@@ -30,12 +30,25 @@ function escapeHtml(value = "") {
 }
 
 function textWithLineBreaks(value = "") {
-  return escapeHtml(value).replace(/\r\n|\r|\n/g, "<br>");
+  return enhancePlainQuestionText(escapeHtml(value)).replace(/\r\n|\r|\n/g, "<br>");
+}
+
+function enhancePlainQuestionText(value = "") {
+  return String(value || "")
+    .replace(/\^\{([A-Za-z0-9+\-=]+)\}/g, "<sup>$1</sup>")
+    .replace(/\^([A-Za-z0-9+\-=]+)/g, "<sup>$1</sup>")
+    .replace(/_([A-Za-z0-9+\-=]+)/g, "<sub>$1</sub>")
+    .replace(/\bd([23])(?=[A-Z])/g, "d<sup>$1</sup>")
+    .replace(/\b([A-Za-z])([23])(?=(?:[\/)\]\s.,;:]|$))/g, "$1<sup>$2</sup>");
 }
 
 function sanitizeHtml(value = "") {
   const source = String(value || "");
   if (typeof window === "undefined" || typeof window.DOMParser === "undefined") {
+    return textWithLineBreaks(source);
+  }
+
+  if (!/<\/?[a-z][\s\S]*>/i.test(source)) {
     return textWithLineBreaks(source);
   }
 

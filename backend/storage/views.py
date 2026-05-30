@@ -1017,7 +1017,7 @@ def _content_types_from_request(value):
     return resolved
 
 
-def _sync_dropbox_content_type(content_type, branch, warm_cache=True):
+def _sync_dropbox_content_type(content_type, branch, warm_cache=True, prune_missing=False):
     resolved_content_type = str(content_type or "").strip()
     resolved_branch = _normalize_branch(branch)
     path = _resolve_content_path(resolved_content_type, resolved_branch)
@@ -1034,11 +1034,14 @@ def _sync_dropbox_content_type(content_type, branch, warm_cache=True):
             raise
 
     _sync_metadata_from_listing(files_with_dirs, content_type=resolved_content_type, branch=resolved_branch)
-    prune_summary = _prune_metadata_not_in_listing(
-        files_with_dirs,
-        content_type=resolved_content_type,
-        branch=resolved_branch,
-    )
+    if prune_missing:
+        prune_summary = _prune_metadata_not_in_listing(
+            files_with_dirs,
+            content_type=resolved_content_type,
+            branch=resolved_branch,
+        )
+    else:
+        prune_summary = {"files_deleted": 0, "folders_deleted": 0}
     _invalidate_list_cache(content_type=resolved_content_type, branch=resolved_branch)
 
     files_only = [row for row in files_with_dirs if not row.get("is_dir")]
@@ -1101,7 +1104,13 @@ def _sync_questions_for_content_types(branch, content_types):
     return payload
 
 
-def sync_dropbox_content_for_branch(branch, content_types=None, warm_cache=True, sync_questions=False):
+def sync_dropbox_content_for_branch(
+    branch,
+    content_types=None,
+    warm_cache=True,
+    sync_questions=False,
+    prune_missing=False,
+):
     resolved_branch = _normalize_branch(branch)
     targets = _content_types_from_request(content_types)
     if not targets:
@@ -1121,6 +1130,7 @@ def sync_dropbox_content_for_branch(branch, content_types=None, warm_cache=True,
                     content_type=content_type,
                     branch=resolved_branch,
                     warm_cache=warm_cache,
+                    prune_missing=prune_missing,
                 )
             )
         except Exception as exc:
@@ -1324,6 +1334,7 @@ class SyncDropboxContentView(APIView):
         content_types = request.data.get("content_types")
         warm_cache = _as_bool(request.data.get("warm_cache"), True)
         sync_questions = _as_bool(request.data.get("sync_questions"), True)
+        prune_missing = _as_bool(request.data.get("prune_missing"), False)
 
         try:
             payload = sync_dropbox_content_for_branch(
@@ -1331,6 +1342,7 @@ class SyncDropboxContentView(APIView):
                 content_types=content_types,
                 warm_cache=warm_cache,
                 sync_questions=sync_questions,
+                prune_missing=prune_missing,
             )
             if payload["errors"] and not payload["synced"]:
                 return Response(payload, status=status.HTTP_400_BAD_REQUEST)

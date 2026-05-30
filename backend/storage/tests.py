@@ -260,6 +260,42 @@ class SupabasePathNormalizationTests(TestCase):
 
 
 class StorageContentSyncTests(TestCase):
+    def test_sync_content_preserves_existing_metadata_by_default(self):
+        branch = "Civil Engineering"
+        content_type = "objective_mcq"
+        root = "/bridge4ER/Civil Engineering/Objective MCQs"
+        current_file = f"{root}/NEC/Chapter 1.json"
+        existing_file = f"{root}/NEC/Admin Edited.json"
+
+        FileMetadata.objects.create(
+            name="Admin Edited.json",
+            display_name="Admin Edited Display Name",
+            dropbox_path=existing_file,
+            content_type=content_type,
+            branch=branch,
+            file_size=100,
+            is_visible=True,
+        )
+
+        with patch(
+            "storage.views.list_folder_with_metadata",
+            return_value=[{"name": "Chapter 1.json", "path": current_file, "is_dir": False, "size": 128}],
+        ):
+            payload = sync_dropbox_content_for_branch(
+                branch=branch,
+                content_types=[content_type],
+                warm_cache=False,
+                sync_questions=False,
+            )
+
+        self.assertEqual(payload["errors"], [])
+        self.assertEqual(payload["synced"][0]["files_deleted"], 0)
+        self.assertTrue(FileMetadata.objects.filter(dropbox_path=existing_file).exists())
+        self.assertEqual(
+            FileMetadata.objects.get(dropbox_path=existing_file).display_name,
+            "Admin Edited Display Name",
+        )
+
     def test_sync_content_can_import_question_files(self):
         with patch(
             "storage.views._sync_dropbox_content_type",

@@ -19,6 +19,17 @@ except ImportError:
     base_formats = None
     DJANGO_IMPORT_EXPORT_AVAILABLE = False
 
+try:
+    from openpyxl import load_workbook
+    from openpyxl.cell.rich_text import CellRichText, TextBlock
+
+    OPENPYXL_AVAILABLE = True
+except ImportError:
+    load_workbook = None
+    CellRichText = None
+    TextBlock = None
+    OPENPYXL_AVAILABLE = False
+
 
 SUPPORTED_IMPORT_EXTENSIONS = (".csv", ".tsv", ".json", ".xlsx", ".xls")
 _TEXT_EXTENSIONS = {".csv", ".tsv", ".json"}
@@ -186,10 +197,93 @@ def _normalize_row(row: dict[str, Any]) -> dict[str, str]:
     return normalized
 
 
+def _escape_rich_html(value: str) -> str:
+    return (
+        str(value or "")
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&#39;")
+    )
+
+
+def _rich_cell_value(value: Any) -> str:
+    if CellRichText is not None and isinstance(value, CellRichText):
+        chunks: list[str] = []
+        for block in value:
+            text = ""
+            vert_align = ""
+            if TextBlock is not None and isinstance(block, TextBlock):
+                text = str(block.text or "")
+                vert_align = str(getattr(block.font, "vertAlign", "") or "").lower()
+            else:
+                text = str(block or "")
+
+            escaped = _escape_rich_html(text)
+            if vert_align == "superscript":
+                chunks.append(f"<sup>{escaped}</sup>")
+            elif vert_align == "subscript":
+                chunks.append(f"<sub>{escaped}</sub>")
+            else:
+                chunks.append(escaped)
+        return "".join(chunks).strip()
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    return str(value).strip()
+
+
+def _parse_xlsx_with_rich_text(raw_bytes: bytes) -> list[dict[str, str]]:
+    if not OPENPYXL_AVAILABLE or load_workbook is None:
+        raise ValueError(
+            "Excel import requires openpyxl. Install: pip install openpyxl"
+        )
+
+    workbook = load_workbook(io.BytesIO(raw_bytes), data_only=True, read_only=False, rich_text=True)
+    try:
+        worksheet = workbook.active
+        rows = list(worksheet.iter_rows(values_only=False))
+        if not rows:
+            return []
+
+        header_index = None
+        headers: list[str] = []
+        for idx, row in enumerate(rows):
+            candidate_headers = [_rich_cell_value(cell.value) for cell in row]
+            if any(candidate_headers):
+                header_index = idx
+                headers = candidate_headers
+                break
+
+        if header_index is None:
+            return []
+
+        normalized_rows: list[dict[str, str]] = []
+        for row in rows[header_index + 1 :]:
+            values = [_rich_cell_value(cell.value) for cell in row]
+            if not any(values):
+                continue
+            item = {}
+            for column_index, header in enumerate(headers):
+                key = str(header or "").strip()
+                if not key:
+                    continue
+                item[key] = values[column_index] if column_index < len(values) else ""
+            if any(str(value or "").strip() for value in item.values()):
+                normalized_rows.append(item)
+        return normalized_rows
+    finally:
+        workbook.close()
+
+
 def _parse_with_import_export(filename: str, raw_bytes: bytes) -> list[dict[str, str]]:
     extension = Path(filename).suffix.lower()
     if extension == ".json":
         return _parse_json_rows(raw_bytes)
+    if extension == ".xlsx":
+        return _parse_xlsx_with_rich_text(raw_bytes)
 
     format_name = _FORMAT_CLASS_BY_EXTENSION.get(extension)
     if not format_name:
@@ -221,7 +315,9 @@ def _parse_with_import_export(filename: str, raw_bytes: bytes) -> list[dict[str,
 
 def _parse_without_import_export(filename: str, raw_bytes: bytes) -> list[dict[str, str]]:
     extension = Path(filename).suffix.lower()
-    if extension in {".xlsx", ".xls"}:
+    if extension == ".xlsx":
+        return _parse_xlsx_with_rich_text(raw_bytes)
+    if extension == ".xls":
         raise ValueError(
             "Excel import requires django-import-export dependencies. "
             "Install: pip install django-import-export tablib openpyxl xlrd"

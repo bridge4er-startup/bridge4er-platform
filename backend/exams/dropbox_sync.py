@@ -205,11 +205,13 @@ def _manual_import_exam_set(exam_set: ExamSet, normalized_rows: list[dict]) -> d
 
 
 def _resolve_exam_set_for_file(branch: str, exam_type: str, source_set_name: str, desired_name: str, file_path: str):
+    normalized_file_path = str(file_path or "").strip()
+    lowered_file_path = normalized_file_path.lower()
     by_source_path = (
         ExamSet.objects.filter(
             branch=branch,
             exam_type=exam_type,
-            source_file_path=file_path,
+            source_file_path__iexact=normalized_file_path,
         )
         .order_by("-id")
         .first()
@@ -226,7 +228,7 @@ def _resolve_exam_set_for_file(branch: str, exam_type: str, source_set_name: str
         .order_by("-id")
         .first()
     )
-    if by_source_name and by_source_name.source_file_path in {"", file_path}:
+    if by_source_name and (not by_source_name.source_file_path or by_source_name.source_file_path.lower() == lowered_file_path):
         return by_source_name, False
 
     if desired_name and desired_name != source_set_name:
@@ -234,13 +236,13 @@ def _resolve_exam_set_for_file(branch: str, exam_type: str, source_set_name: str
             ExamSet.objects.filter(
                 branch=branch,
                 exam_type=exam_type,
-                name=desired_name,
+                name__iexact=desired_name,
                 managed_by_sync=True,
             )
             .order_by("-id")
             .first()
         )
-        if by_desired_name and by_desired_name.source_file_path in {"", file_path}:
+        if by_desired_name:
             return by_desired_name, False
 
     return None, True

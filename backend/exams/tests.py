@@ -1,4 +1,5 @@
 from decimal import Decimal
+import io
 import os
 import shutil
 from unittest.mock import patch
@@ -8,8 +9,12 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from rest_framework import status
 from rest_framework.test import APIClient
+from openpyxl import Workbook
+from openpyxl.cell.rich_text import CellRichText, TextBlock
+from openpyxl.cell.text import InlineFont
 
 from .dropbox_sync import _sync_exam_set_type, sync_objective_mcqs_from_dropbox
+from .import_utils import parse_rows_from_uploaded_file
 from .models import Chapter, ExamPurchase, ExamSet, MCQQuestion, Subject, SubjectiveSubmission
 from .path_utils import parse_objective_file_path
 from .question_normalizers import normalize_mcq_payload
@@ -324,6 +329,36 @@ class QuestionNormalizerTests(TestCase):
         self.assertEqual(parsed["institution_display"], "Nepal Engineering Council (NEC)")
         self.assertEqual(parsed["subject_name"], "8. Hydropower")
         self.assertEqual(parsed["chapter_name"], "Chapter 8.1")
+
+    def test_xlsx_import_preserves_superscript_and_subscript_text(self):
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.append(["question", "option_a", "correct_option"])
+        sheet["A2"] = CellRichText(
+            [
+                "Use ",
+                TextBlock(InlineFont(vertAlign="superscript"), "2"),
+                " and H",
+                TextBlock(InlineFont(vertAlign="subscript"), "2"),
+                "O",
+            ]
+        )
+        sheet["B2"] = CellRichText(["M", TextBlock(InlineFont(vertAlign="superscript"), "2"), "/2EI"])
+        sheet["C2"] = "a"
+
+        buffer = io.BytesIO()
+        workbook.save(buffer)
+        workbook.close()
+        uploaded = SimpleUploadedFile(
+            "questions.xlsx",
+            buffer.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+        rows = parse_rows_from_uploaded_file(uploaded)
+
+        self.assertEqual(rows[0]["question"], "Use <sup>2</sup> and H<sub>2</sub>O")
+        self.assertEqual(rows[0]["option_a"], "M<sup>2</sup>/2EI")
 
 
 @override_settings(MEDIA_ROOT=TEST_MEDIA_ROOT)

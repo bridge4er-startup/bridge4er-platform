@@ -69,8 +69,9 @@ const STORAGE_PATH_EXAMPLES = [
 ];
 const STORAGE_WORKFLOW_NOTES = [
   "PDFs and other resource files are stored in the Supabase bucket bridge4ER and indexed in Django metadata.",
+  "Full storage paths must start with /bridge4ER/. Paste the folder path only; the selected file name is added automatically.",
   "Question .json/.csv/.xlsx files are also stored in Supabase, then imported into Django question tables when they are under Objective MCQs or Exam Hall paths.",
-  "You can upload from this panel, or upload files directly in Supabase and run Sync Folder Path or Sync Selected Type.",
+  "Sync adds newly found files and folders without overwriting admin-edited display names, sort order, visibility, or pricing.",
 ];
 
 export default function AdminDashboard() {
@@ -400,7 +401,7 @@ export default function AdminDashboard() {
       setUploadFolderPath("");
       document.getElementById("file-input").value = "";
     } catch (error) {
-      toast.error("Failed to upload file");
+      toast.error(error?.response?.data?.error || "Failed to upload file");
       console.error(error);
     } finally {
       setUploadingFile(false);
@@ -733,8 +734,7 @@ export default function AdminDashboard() {
       if (syncedRows.length > 0) {
         const summary = syncedRows
           .map((row) => {
-            const deleted = Number(row.files_deleted || 0) + Number(row.folders_deleted || 0);
-            return `${row.content_type}: ${row.file_count} files${deleted ? `, ${deleted} removed` : ""}`;
+            return `${row.content_type}: ${row.file_count} files`;
           })
           .join(" | ");
         const imported =
@@ -2942,7 +2942,7 @@ export default function AdminDashboard() {
                 type="text"
                 value={uploadFolderPath}
                 onChange={(e) => setUploadFolderPath(e.target.value)}
-                placeholder="/bridge4ER/... folder only (file name is added automatically)"
+                placeholder="/bridge4ER/... folder only; do not include the file name"
                 style={{
                   width: "100%",
                   padding: "0.5rem",
@@ -2951,7 +2951,7 @@ export default function AdminDashboard() {
                 }}
               />
               <p style={{ color: "#64748b", fontSize: "0.85rem", marginTop: "0.4rem" }}>
-                Use a full bucket path or a relative folder/subfolder name.
+                Use the destination folder only. The selected file name is added automatically.
               </p>
               <ul style={{ color: "#64748b", fontSize: "0.82rem", marginTop: "0.35rem", paddingLeft: "1.2rem" }}>
                 {STORAGE_WORKFLOW_NOTES.map((note) => (
@@ -3025,8 +3025,8 @@ export default function AdminDashboard() {
             >
               <strong>Admin flow:</strong> upload files here or put them in Supabase first, then sync. PDFs stay in
               the Supabase bucket and are indexed for the website. JSON/CSV/XLSX question files under Objective MCQs
-              or Exam Hall are also imported into Django question tables. Delete removes the storage item and clears
-              related website/database records.
+              or Exam Hall are also imported into Django question tables. Sync is additive by default so older admin
+              edits stay in place. Delete is the only action here that removes storage and website records.
             </div>
 
             <div style={{ marginBottom: "1rem" }}>
@@ -3084,7 +3084,7 @@ export default function AdminDashboard() {
                 type="text"
                 value={syncPathInput}
                 onChange={(e) => setSyncPathInput(e.target.value)}
-                placeholder="/bridge4ER/Civil Engineering/Objective MCQs/... or a relative path"
+                placeholder="/bridge4ER/Civil Engineering/Objective MCQs/... folder or file path"
                 style={{
                   width: "100%",
                   padding: "0.5rem",
