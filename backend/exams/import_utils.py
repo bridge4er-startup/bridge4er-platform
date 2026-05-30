@@ -22,7 +22,7 @@ except ImportError:
 
 SUPPORTED_IMPORT_EXTENSIONS = (".csv", ".tsv", ".json", ".xlsx", ".xls")
 _TEXT_EXTENSIONS = {".csv", ".tsv", ".json"}
-DROPBOX_ALLOWED_ROOT = "/bridge4er/"
+DROPBOX_ALLOWED_ROOT = "/bridge4ER/"
 DROPBOX_SHARED_HOSTS = {"dropbox.com", "www.dropbox.com", "dl.dropboxusercontent.com"}
 _FORMAT_CLASS_BY_EXTENSION = {
     ".csv": "CSV",
@@ -254,7 +254,7 @@ def parse_rows_from_uploaded_file(uploaded_file) -> list[dict[str, str]]:
 
 
 def _is_dropbox_path(file_path: str) -> bool:
-    return isinstance(file_path, str) and file_path.strip().lower().startswith(DROPBOX_ALLOWED_ROOT)
+    return isinstance(file_path, str) and file_path.strip().lower().startswith(DROPBOX_ALLOWED_ROOT.lower())
 
 
 def _is_dropbox_shared_url(file_path: str) -> bool:

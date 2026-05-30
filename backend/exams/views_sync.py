@@ -20,7 +20,7 @@ class SyncDropboxQuestionBankView(APIView):
 
     def post(self, request):
         branch = (request.data.get("branch") or "Civil Engineering").strip() or "Civil Engineering"
-        replace_existing = _as_bool(request.data.get("replace_existing"), True)
+        replace_existing = _as_bool(request.data.get("replace_existing"), False)
         sync_objective = _as_bool(request.data.get("sync_objective"), True)
         sync_exam_sets = _as_bool(request.data.get("sync_exam_sets"), True)
         source_path = str(request.data.get("source_path") or request.data.get("path") or "").strip()

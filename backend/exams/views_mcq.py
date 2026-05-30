@@ -239,8 +239,8 @@ def _is_staff_user(user):
 def _objective_dropbox_subject_root(branch, subject_name):
     parsed = parse_subject_key(subject_name)
     if parsed.get("institution_path"):
-        return f"/bridge4er/{branch}/Objective MCQs/{parsed['institution_path']}/{parsed['subject_name']}"
-    return f"/bridge4er/{branch}/Objective MCQs/Subjects/{parsed['subject_name']}"
+        return f"/bridge4ER/{branch}/Objective MCQs/{parsed['institution_path']}/{parsed['subject_name']}"
+    return f"/bridge4ER/{branch}/Objective MCQs/Subjects/{parsed['subject_name']}"
 
 
 def _sanitize_filename(filename, fallback="file"):
@@ -279,7 +279,7 @@ def _maybe_sync_objective_on_read(branch, user, force_refresh=False):
         branch=branch,
         sync_objective=True,
         sync_exam_sets=False,
-        replace_existing=True,
+        replace_existing=False,
         cooldown_seconds=cooldown,
     )
 

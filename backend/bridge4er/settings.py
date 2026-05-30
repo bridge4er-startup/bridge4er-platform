@@ -145,7 +145,7 @@ SUPABASE_URL = (
 ).strip().rstrip("/")
 SUPABASE_STORAGE_BUCKET = (env_text("SUPABASE_STORAGE_BUCKET", "bridge4ER") or "bridge4ER").strip() or "bridge4ER"
 SUPABASE_STORAGE_ROOT_PREFIX = (
-    (env_text("SUPABASE_STORAGE_ROOT_PREFIX", "bridge4er") or "bridge4er").strip() or "bridge4er"
+    (env_text("SUPABASE_STORAGE_ROOT_PREFIX", "bridge4ER") or "bridge4ER").strip() or "bridge4ER"
 )
 SUPABASE_STORAGE_PUBLIC = env_bool("SUPABASE_STORAGE_PUBLIC", False)
 SUPABASE_SERVICE_ROLE_KEY = (env_text("SUPABASE_SERVICE_ROLE_KEY", "") or "").strip()

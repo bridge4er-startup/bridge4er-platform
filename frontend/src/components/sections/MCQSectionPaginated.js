@@ -4,6 +4,7 @@ import toast from "react-hot-toast";
 import { getInstitutionIcon, getSubjectIcon } from "../../utils/subjectIcons";
 import TimedLoadingState from "../common/TimedLoadingState";
 import { onContentSyncEvent } from "../../services/contentSyncService";
+import RichText from "../common/RichText";
 
 function normalizeSubjectRecord(subject) {
   if (typeof subject === "string") {
@@ -548,7 +549,7 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
                   <div key={question.id} className="mcq-question-container">
                     <div className="question-number-badge">Q {(page - 1) * pageSize + index + 1}</div>
                     {question.question_header ? <h4>{question.question_header}</h4> : null}
-                    <div className="mcq-question">{question.question_text}</div>
+                    <RichText value={question.question_text} as="div" className="mcq-question" />
                     {question.question_image_url ? (
                       <img
                         src={question.question_image_url}
@@ -568,7 +569,7 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
                           style={{ width: "100%", textAlign: "left" }}
                         >
                           <div className="option-letter">{String.fromCharCode(65 + optionIndex)}</div>
-                          <div>{options[optionKey]}</div>
+                          <RichText value={options[optionKey]} as="div" />
                         </button>
                       ))}
                     </div>
@@ -579,7 +580,7 @@ export default function MCQSectionPaginated({ branch = "Civil Engineering", isAc
                           {attempt.is_correct ? "Correct." : "Correct answer:"} {correctLabel}
                         </h4>
                         {attempt.explanation ? (
-                          <p>{attempt.explanation}</p>
+                          <RichText value={attempt.explanation} as="p" />
                         ) : (
                           <p>No explanation has been added for this question yet.</p>
                         )}

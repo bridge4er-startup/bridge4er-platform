@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import API from "../../services/api";
 import toast from "react-hot-toast";
+import RichText from "../common/RichText";
 
 export default function MCQSection({ branch = "Civil Engineering", isActive = false }) {
   const [subjects, setSubjects] = useState([]);
@@ -249,7 +250,7 @@ export default function MCQSection({ branch = "Civil Engineering", isActive = fa
 
           <div className="question-container">
             <div className="question-text">
-              <h3>{currentQuestion.question_text}</h3>
+              <RichText value={currentQuestion.question_text} as="h3" />
             </div>
 
             <div className="options-container">
@@ -275,7 +276,7 @@ export default function MCQSection({ branch = "Civil Engineering", isActive = fa
                     }`}
                   >
                     <strong>{option.toUpperCase()}.</strong>{" "}
-                    {currentQuestion[`option_${option}`]}
+                    <RichText value={currentQuestion[`option_${option}`]} />
                   </span>
                 </label>
               ))}
@@ -287,7 +288,7 @@ export default function MCQSection({ branch = "Civil Engineering", isActive = fa
                   <h4>✓ Correct Answer: {submissionResult?.correct_option?.toUpperCase()}</h4>
                   {submissionResult?.explanation && (
                     <p>
-                      <strong>Explanation:</strong> {submissionResult.explanation}
+                      <strong>Explanation:</strong> <RichText value={submissionResult.explanation} />
                     </p>
                   )}
                 </div>

@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import { startExamSet } from "../services/examService";
 import { formatNepalDate } from "../utils/dateTime";
+import RichText from "../components/common/RichText";
 
 const SUBMISSION_INFO_TEXT =
   "Info: For paid sets: Send email at bridge4er@gmail.com with heading “Subjective Exam Submission” with your scanned pdf file of your answer sheet. We’ll ask the available experts for review and guide you in your subjective exam submissions. Review scores with corrected answer sheet and guidance to your answers will be provided to you within 7 business working days via. email";
@@ -141,7 +142,7 @@ export default function SubjectiveExamPage() {
                     </div>
                     <p className="subjective-paper-question-line">
                       <span className="subjective-question-number-inline">{question.displayOrder}. </span>
-                      {question.question_text}
+                      <RichText value={question.question_text} />
                     </p>
                   </article>
                 ))}
@@ -158,4 +159,3 @@ export default function SubjectiveExamPage() {
     </div>
   );
 }
-

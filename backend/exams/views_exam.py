@@ -158,7 +158,7 @@ def _maybe_sync_exam_sets_on_read(branch, user, force_refresh=False):
         branch=branch,
         sync_objective=False,
         sync_exam_sets=True,
-        replace_existing=True,
+        replace_existing=False,
         cooldown_seconds=5 if allowed_force_refresh else AUTO_SYNC_COOLDOWN_SECONDS,
     )
 
@@ -169,7 +169,7 @@ def _normalize_branch(value):
 
 
 def _subjective_dropbox_base(branch):
-    return f"/bridge4er/{_normalize_branch(branch)}/Exam Hall"
+    return f"/bridge4ER/{_normalize_branch(branch)}/Exam Hall"
 
 
 def _sanitize_filename(filename, fallback="file"):
@@ -414,7 +414,7 @@ def _build_exam_set_dropbox_path(exam_set: ExamSet, filename: str) -> str:
     exam_folder = "Multiple Choice Exam" if exam_set.exam_type == "mcq" else "Subjective Exam"
     extension = Path(str(filename or "")).suffix or ".json"
     safe_name = _sanitize_filename(exam_set.name or "Exam Set", fallback=f"exam-set-{exam_set.id}")
-    return f"/bridge4er/{_normalize_branch(exam_set.branch)}/Take Exam/{exam_folder}/Manual Uploads/{safe_name}{extension}"
+    return f"/bridge4ER/{_normalize_branch(exam_set.branch)}/Take Exam/{exam_folder}/Manual Uploads/{safe_name}{extension}"
 
 
 

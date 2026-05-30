@@ -22,6 +22,7 @@ if DJANGO_IMPORT_EXPORT_AVAILABLE:
     from tablib import Dataset
 
 _AUTO_SYNC_KEY_PREFIX = "dropbox_sync:last_run"
+STORAGE_APP_ROOT = "/bridge4ER"
 
 
 def clear_question_content_caches():
@@ -303,7 +304,7 @@ def sync_objective_mcqs_from_dropbox(
     source_path: str = "",
     prune_missing: bool = True,
 ) -> dict:
-    root_path = f"/bridge4er/{branch}/Objective MCQs"
+    root_path = f"{STORAGE_APP_ROOT}/{branch}/Objective MCQs"
     file_paths = _list_supported_files(root_path, source_path=source_path)
 
     summary = {
@@ -393,8 +394,20 @@ def sync_objective_mcqs_from_dropbox(
             if chapter_updates:
                 chapter.save(update_fields=sorted(set(chapter_updates)))
 
+            existing_question_count = MCQQuestion.objects.filter(chapter=chapter).count()
             if replace_existing:
                 MCQQuestion.objects.filter(chapter=chapter).delete()
+            elif not chapter_created and existing_question_count:
+                item["status"] = "skipped"
+                item["reason"] = "existing_chapter_preserved"
+                item["institution"] = objective_meta["institution_display"]
+                item["subject"] = subject.name
+                item["subject_display"] = objective_meta["subject_name"]
+                item["chapter"] = chapter.name
+                summary["skipped_files"] += 1
+                summary["processed_files"] += 1
+                summary["files"].append(item)
+                continue
 
             import_summary = _import_mcq_with_resource(chapter, valid_questions)
 
@@ -535,6 +548,19 @@ def _sync_exam_set_type(
             if created:
                 result["sets_created"] += 1
 
+            existing_question_count = exam_set.questions.count() if exam_set.id else 0
+            if not replace_existing and not created and existing_question_count:
+                source_meta = parse_exam_source_path(file_path, branch, exam_type)
+                item["status"] = "skipped"
+                item["reason"] = "existing_exam_set_preserved"
+                item["exam_set"] = exam_set.name
+                item["institution"] = source_meta.get("institution")
+                item["folder_path"] = source_meta.get("folder_path")
+                result["skipped_files"] += 1
+                result["processed_files"] += 1
+                result["files"].append(item)
+                continue
+
             update_fields = []
             for field_name, field_value in set_updates.items():
                 if field_name == "name":
@@ -622,8 +648,8 @@ def sync_exam_sets_from_dropbox(
     source_path: str = "",
     prune_missing: bool = True,
 ) -> dict:
-    mcq_root = f"/bridge4er/{branch}/Take Exam/Multiple Choice Exam"
-    subjective_root = f"/bridge4er/{branch}/Take Exam/Subjective Exam"
+    mcq_root = f"{STORAGE_APP_ROOT}/{branch}/Take Exam/Multiple Choice Exam"
+    subjective_root = f"{STORAGE_APP_ROOT}/{branch}/Take Exam/Subjective Exam"
     normalized_source = _normalize_storage_path(source_path)
     lowered_source = normalized_source.lower()
     sync_mcq = not normalized_source or "/multiple choice exam" in lowered_source
@@ -656,7 +682,7 @@ def auto_sync_dropbox_for_branch(
     branch: str,
     sync_objective: bool = False,
     sync_exam_sets: bool = False,
-    replace_existing: bool = True,
+    replace_existing: bool = False,
     cooldown_seconds: int = 60,
 ):
     if not sync_objective and not sync_exam_sets:
@@ -683,10 +709,10 @@ def auto_sync_dropbox_for_branch(
 
     signatures = {}
     if sync_objective:
-        signatures["objective"] = _folder_signature(f"/bridge4er/{branch}/Objective MCQs")
+        signatures["objective"] = _folder_signature(f"{STORAGE_APP_ROOT}/{branch}/Objective MCQs")
     if sync_exam_sets:
-        signatures["exam_mcq"] = _folder_signature(f"/bridge4er/{branch}/Take Exam/Multiple Choice Exam")
-        signatures["exam_subjective"] = _folder_signature(f"/bridge4er/{branch}/Take Exam/Subjective Exam")
+        signatures["exam_mcq"] = _folder_signature(f"{STORAGE_APP_ROOT}/{branch}/Take Exam/Multiple Choice Exam")
+        signatures["exam_subjective"] = _folder_signature(f"{STORAGE_APP_ROOT}/{branch}/Take Exam/Subjective Exam")
 
     current_signature = hashlib.sha1(json.dumps(signatures, sort_keys=True).encode("utf-8")).hexdigest()
     previous_signature = cache.get(sig_key)

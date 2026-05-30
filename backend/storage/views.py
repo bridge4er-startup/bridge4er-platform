@@ -53,8 +53,8 @@ PUBLIC_CONTENT_TYPES = {
 PUBLIC_PATH_MARKERS = (
     "/notice/",
 )
-ALLOWED_ROOT = "/bridge4er/"
-HERO_IMAGE_BASE_PATH = "/bridge4er/System/Hero Images"
+ALLOWED_ROOT = "/bridge4ER/"
+HERO_IMAGE_BASE_PATH = "/bridge4ER/System/Hero Images"
 HERO_IMAGE_TARGETS = {"login", "register"}
 FILE_LIST_CACHE_KEY_PREFIX = "storage:file-list:v1"
 
@@ -122,8 +122,9 @@ def _is_safe_path(path):
     if not normalized:
         return False
     lowered = normalized.lower()
-    root = ALLOWED_ROOT.rstrip("/")
-    return lowered == root or lowered.startswith(ALLOWED_ROOT)
+    root = ALLOWED_ROOT.rstrip("/").lower()
+    allowed_root = ALLOWED_ROOT.lower()
+    return lowered == root or lowered.startswith(allowed_root)
 
 
 def _normalize_branch(branch):
@@ -135,7 +136,7 @@ def _resolve_content_path(content_type, branch):
     folder = CONTENT_TYPE_FOLDERS.get(content_type)
     if not folder:
         return None
-    return f"/bridge4er/{_normalize_branch(branch)}/{folder}"
+    return f"{ALLOWED_ROOT.rstrip('/')}/{_normalize_branch(branch)}/{folder}"
 
 
 def _normalize_dropbox_path(path):
@@ -151,6 +152,7 @@ def _normalize_dropbox_path(path):
     parts = [segment for segment in value.split("/") if segment]
     for index, segment in enumerate(parts):
         if segment.lower() == "bridge4er":
+            parts[index] = ALLOWED_ROOT.strip("/")
             parts = parts[index:]
             break
     if not parts:
@@ -196,7 +198,7 @@ def _coerce_dropbox_path(raw_path, content_type=None, branch=None):
         return normalized
 
     parts = _path_parts(normalized)
-    if parts and parts[0].lower() == ALLOWED_ROOT.strip("/"):
+    if parts and parts[0].lower() == ALLOWED_ROOT.strip("/").lower():
         return normalized
 
     resolved_branch = _normalize_branch(branch) if branch else None
@@ -359,7 +361,7 @@ def _sync_questions_for_changed_path(path, prune_missing=False):
 
         payload["objective_sync"] = sync_objective_mcqs_from_dropbox(
             branch=branch,
-            replace_existing=True,
+            replace_existing=False,
             source_path="" if prune_missing else normalized_path,
             prune_missing=bool(prune_missing),
         )
@@ -370,7 +372,7 @@ def _sync_questions_for_changed_path(path, prune_missing=False):
 
             payload["exam_sets_sync"] = sync_exam_sets_from_dropbox(
                 branch=branch,
-                replace_existing=True,
+                replace_existing=False,
                 source_path=normalized_path,
                 prune_missing=False,
             )
@@ -881,7 +883,7 @@ def _is_visible_path(path):
 def _sync_exam_sets_for_branch(branch):
     from exams.dropbox_sync import sync_exam_sets_from_dropbox
 
-    return sync_exam_sets_from_dropbox(branch=branch, replace_existing=True)
+    return sync_exam_sets_from_dropbox(branch=branch, replace_existing=False)
 
 
 def _guess_content_type(path):
@@ -1077,7 +1079,7 @@ def _sync_questions_for_content_types(branch, content_types):
 
         payload["objective"] = sync_objective_mcqs_from_dropbox(
             branch=resolved_branch,
-            replace_existing=True,
+            replace_existing=False,
         )
 
     exam_targets = {"take_exam_mcq", "take_exam_subjective"} & targets
@@ -1091,7 +1093,7 @@ def _sync_questions_for_content_types(branch, content_types):
             source_path = _resolve_content_path("take_exam_subjective", resolved_branch) or ""
         payload["exam_sets"] = sync_exam_sets_from_dropbox(
             branch=resolved_branch,
-            replace_existing=True,
+            replace_existing=False,
             source_path=source_path,
             prune_missing=not bool(source_path),
         )
@@ -1566,6 +1568,8 @@ class UploadFileView(APIView):
                     folder = normalized_folder_path
                 else:
                     folder = _normalize_dropbox_path(f"{folder}/{folder_path_input}")
+                if Path(folder).suffix:
+                    folder = _parent_dropbox_path(folder)
 
             path = _normalize_dropbox_path(f"{folder}/{file.name}")
             if not _is_safe_path(path):
@@ -1573,7 +1577,6 @@ class UploadFileView(APIView):
             metadata = upload_file(path, file)
             metadata_size = int((metadata or {}).get("size") or 0)
 
-            # Save metadata to database
             defaults = {
                 'name': file.name,
                 'content_type': content_type,
@@ -1585,10 +1588,20 @@ class UploadFileView(APIView):
             if requested_visibility is not None:
                 defaults["is_visible"] = _as_bool(requested_visibility, True)
 
-            file_meta, _ = FileMetadata.objects.update_or_create(
+            file_meta, created = FileMetadata.objects.get_or_create(
                 dropbox_path=path,
                 defaults=defaults
             )
+            if not created:
+                file_meta.name = file.name
+                file_meta.content_type = content_type
+                file_meta.branch = branch
+                file_meta.file_size = metadata_size
+                update_fields = ["name", "content_type", "branch", "file_size", "modified_at"]
+                if requested_visibility is not None:
+                    file_meta.is_visible = _as_bool(requested_visibility, True)
+                    update_fields.append("is_visible")
+                file_meta.save(update_fields=update_fields)
             if not file_meta.display_name:
                 file_meta.display_name = file.name
                 file_meta.save(update_fields=["display_name", "modified_at"])
@@ -1943,7 +1956,7 @@ class SyncPathView(APIView):
         normalized_path = _coerce_dropbox_path(path, content_type=content_type, branch=branch)
         if not _is_safe_path(normalized_path):
             return Response(
-                {"error": "Invalid path. Provide a storage path under /bridge4er/."},
+                {"error": "Invalid path. Provide a storage path under /bridge4ER/."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -2013,7 +2026,7 @@ class AttachPathView(APIView):
         normalized_path = _coerce_dropbox_path(path, content_type=content_type, branch=branch)
         if not _is_safe_path(normalized_path):
             return Response(
-                {"error": "Invalid path. Provide a storage path under /bridge4er/."},
+                {"error": "Invalid path. Provide a storage path under /bridge4ER/."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 

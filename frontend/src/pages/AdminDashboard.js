@@ -62,10 +62,10 @@ const CONTENT_TYPE_OPTIONS = [
 ];
 const DEFAULT_CONTRIBUTION_CATEGORIES = ["PSC", "NEC", "MSC", "GK/IQ", "NTC", "NEA", "Other"];
 const STORAGE_PATH_EXAMPLES = [
-  "/bridge4er/Civil Engineering/Objective MCQs/GK, IQ and Contemporary Issues/Contemporary Issues/UPLOADED TEST FILE.json",
-  "/bridge4er/Civil Engineering/Take Exam/Multiple Choice Exam/NEA Exam/TEST FILE SYNCED.json",
-  "/bridge4er/Civil Engineering/Subjective/PSC-Building and Architecture/Architecture/Test.pdf",
-  "/bridge4er/Civil Engineering/Old Questions/BB.pdf",
+  "/bridge4ER/Civil Engineering/Objective MCQs/GK, IQ and Contemporary Issues/Contemporary Issues/UPLOADED TEST FILE.json",
+  "/bridge4ER/Civil Engineering/Take Exam/Multiple Choice Exam/NEA Exam/TEST FILE SYNCED.json",
+  "/bridge4ER/Civil Engineering/Subjective/PSC-Building and Architecture/Architecture/Test.pdf",
+  "/bridge4ER/Civil Engineering/Old Questions/BB.pdf",
 ];
 const STORAGE_WORKFLOW_NOTES = [
   "PDFs and other resource files are stored in the Supabase bucket bridge4ER and indexed in Django metadata.",
@@ -2942,7 +2942,7 @@ export default function AdminDashboard() {
                 type="text"
                 value={uploadFolderPath}
                 onChange={(e) => setUploadFolderPath(e.target.value)}
-                placeholder="/bridge4er/... (leave blank to use default folder)"
+                placeholder="/bridge4ER/... folder only (file name is added automatically)"
                 style={{
                   width: "100%",
                   padding: "0.5rem",
@@ -3084,7 +3084,7 @@ export default function AdminDashboard() {
                 type="text"
                 value={syncPathInput}
                 onChange={(e) => setSyncPathInput(e.target.value)}
-                placeholder="/bridge4er/Civil Engineering/Objective MCQs/... or a relative path"
+                placeholder="/bridge4ER/Civil Engineering/Objective MCQs/... or a relative path"
                 style={{
                   width: "100%",
                   padding: "0.5rem",

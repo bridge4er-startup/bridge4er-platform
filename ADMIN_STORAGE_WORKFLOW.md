@@ -20,19 +20,19 @@ If the uploaded file is a question file under Objective MCQs or Exam Hall, the b
 ## Sync Files Already In Supabase
 
 1. Put files in Supabase Storage bucket `bridge4ER`.
-2. Use paths that start with `/bridge4er/...` in the admin UI. The backend maps that to the configured Supabase storage root.
+2. Use paths that start with `/bridge4ER/...` in the admin UI. The backend maps that to the configured Supabase storage root.
 3. In **Manage Files and Folders**, click **Sync Selected Type** to sync a whole content type, or enter a specific file/folder path and click **Sync Folder Path**.
 
 ## Recommended Paths
 
 ```text
-/bridge4er/Civil Engineering/Notice/<file.pdf-or-image>
-/bridge4er/Civil Engineering/Syllabus/<file.pdf>
-/bridge4er/Civil Engineering/Old Questions/<file.pdf>
-/bridge4er/Civil Engineering/Subjective/<Institution>/<Subject>/<file.pdf>
-/bridge4er/Civil Engineering/Objective MCQs/<Institution>/<Subject>/<Chapter>.json
-/bridge4er/Civil Engineering/Take Exam/Multiple Choice Exam/<Institution>/<Set>.json
-/bridge4er/Civil Engineering/Take Exam/Subjective Exam/<Institution>/<Set>.json
+/bridge4ER/Civil Engineering/Notice/<file.pdf-or-image>
+/bridge4ER/Civil Engineering/Syllabus/<file.pdf>
+/bridge4ER/Civil Engineering/Old Questions/<file.pdf>
+/bridge4ER/Civil Engineering/Subjective/<Institution>/<Subject>/<file.pdf>
+/bridge4ER/Civil Engineering/Objective MCQs/<Institution>/<Subject>/<Chapter>.json
+/bridge4ER/Civil Engineering/Take Exam/Multiple Choice Exam/<Institution>/<Set>.json
+/bridge4ER/Civil Engineering/Take Exam/Subjective Exam/<Institution>/<Set>.json
 ```
 
 Replace `Civil Engineering` with another supported branch name when needed.

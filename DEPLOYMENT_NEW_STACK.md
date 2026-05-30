@@ -31,7 +31,7 @@ These new projects were created under your Vercel scope:
    - `STORAGE_PROVIDER=supabase`
    - `SUPABASE_URL=https://amjhgookahipybmbtfqx.supabase.co`
    - `SUPABASE_STORAGE_BUCKET=bridge4ER`
-   - `SUPABASE_STORAGE_ROOT_PREFIX=bridge4er`
+   - `SUPABASE_STORAGE_ROOT_PREFIX=bridge4ER`
    - `SUPABASE_SERVICE_ROLE_KEY=<service-role-key>`
 
 ## 3) Backend Environment Variables

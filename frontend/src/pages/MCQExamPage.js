@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { startExamSet, submitExamSet } from "../services/examService";
 import toast from "react-hot-toast";
 import { formatNepalDateTime } from "../utils/dateTime";
+import RichText from "../components/common/RichText";
 
 function formatTimer(timeLeft = 0) {
   const absTime = Math.abs(timeLeft);
@@ -317,7 +318,7 @@ export default function MCQExamPage() {
                     className={`answer-review-item ${item.is_correct ? "review-correct" : "review-wrong"}`}
                   >
                     <h4>Q{index + 1}</h4>
-                    <p>{item.question_text}</p>
+                    <RichText value={item.question_text} as="p" />
                     <div className="answer-review-meta">
                       <span
                         className={`answer-review-value ${
@@ -334,7 +335,11 @@ export default function MCQExamPage() {
                         Correct Answer: {answerValueLabel(questionById[String(item.question_id)], item.correct_option)}
                       </span>
                     </div>
-                    {item.explanation ? <p className="answer-review-explain">Explanation: {item.explanation}</p> : null}
+                    {item.explanation ? (
+                      <p className="answer-review-explain">
+                        Explanation: <RichText value={item.explanation} />
+                      </p>
+                    ) : null}
                   </article>
                 ))}
               </div>
@@ -414,7 +419,7 @@ export default function MCQExamPage() {
               </span>
             </div>
             {currentQuestion.question_header ? <h4>{currentQuestion.question_header}</h4> : null}
-            <div className="mcq-question">{currentQuestion.question_text}</div>
+            <RichText value={currentQuestion.question_text} as="div" className="mcq-question" />
             {currentQuestion.question_image_url ? (
               <img
                 src={currentQuestion.question_image_url}
@@ -434,7 +439,7 @@ export default function MCQExamPage() {
                     onClick={() => selectOption(currentQuestion.id, optionKey)}
                   >
                     <div className="option-letter">{String.fromCharCode(65 + optionIndex)}</div>
-                    <div>{optionValue}</div>
+                    <RichText value={optionValue} as="div" />
                   </button>
                 );
               })}

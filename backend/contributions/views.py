@@ -46,7 +46,7 @@ def _sanitize_filename(filename, fallback="file"):
 
 
 def _contribution_storage_base(branch):
-    return f"/bridge4er/{_normalize_branch(branch)}/Contributions"
+    return f"/bridge4ER/{_normalize_branch(branch)}/Contributions"
 
 
 def _build_contribution_storage_path(contribution, filename):

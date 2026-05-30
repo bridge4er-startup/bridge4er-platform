@@ -9,7 +9,7 @@ from django.db import connection
 
 _DROPBOX_PROVIDER = "dropbox"
 _SUPABASE_PROVIDER = "supabase"
-_DEFAULT_APP_ROOT = "bridge4er"
+_DEFAULT_APP_ROOT = "bridge4ER"
 _SUPABASE_BUCKET_PUBLIC_CACHE_SECONDS = 300
 
 
@@ -42,6 +42,8 @@ def _path_segments(path):
 
 def _storage_root_segment():
     configured = str(getattr(settings, "SUPABASE_STORAGE_ROOT_PREFIX", _DEFAULT_APP_ROOT) or _DEFAULT_APP_ROOT).strip()
+    if configured.lower() == _DEFAULT_APP_ROOT.lower():
+        return _DEFAULT_APP_ROOT
     return configured or _DEFAULT_APP_ROOT
 
 
@@ -105,6 +107,11 @@ def _supabase_candidate_keys_from_app_path(path):
 
     root_segment = _storage_root_segment().strip("/")
     root_lower = root_segment.lower()
+    root_aliases = []
+    for alias in (root_segment, "bridge4ER", "bridge4er"):
+        cleaned_alias = _normalize_key(alias)
+        if cleaned_alias and cleaned_alias not in root_aliases:
+            root_aliases.append(cleaned_alias)
     joined = "/".join(segments)
     candidates = [joined]
 
@@ -113,17 +120,13 @@ def _supabase_candidate_keys_from_app_path(path):
             trimmed = "/".join(segments[1:])
             if trimmed:
                 candidates.append(trimmed)
-                configured_root_key = f"{root_segment}/{trimmed}"
-                if configured_root_key != joined:
-                    candidates.append(configured_root_key)
-                if root_lower == _DEFAULT_APP_ROOT.lower():
-                    bridge4er_key = f"bridge4ER/{trimmed}"
-                    if bridge4er_key not in candidates:
-                        candidates.append(bridge4er_key)
+                for alias in root_aliases:
+                    alias_key = f"{alias}/{trimmed}"
+                    if alias_key not in candidates:
+                        candidates.append(alias_key)
         else:
-            candidates.append(f"{root_segment}/{joined}")
-            if root_lower == _DEFAULT_APP_ROOT.lower():
-                candidates.append(f"bridge4ER/{joined}")
+            for alias in root_aliases:
+                candidates.append(f"{alias}/{joined}")
 
     deduped = []
     seen = set()

@@ -5,6 +5,7 @@ from pathlib import Path
 GENERAL_INSTITUTION = "General"
 SUBJECT_KEY_SEPARATOR = " :: "
 INSTITUTION_KEY_SEPARATOR = " > "
+STORAGE_APP_ROOT = "bridge4ER"
 
 
 def _split_path(path: str) -> list[str]:
@@ -98,9 +99,9 @@ def objective_subject_roots(branch: str, subject_key_or_name: str) -> list[str]:
     subject_name = parsed["subject_name"]
     candidates: list[str] = []
     if parsed["institution_path"]:
-        candidates.append(f"/bridge4er/{branch}/Objective MCQs/{parsed['institution_path']}/{subject_name}")
-    candidates.append(f"/bridge4er/{branch}/Objective MCQs/Subjects/{subject_name}")
-    candidates.append(f"/bridge4er/{branch}/Objective MCQs/{subject_name}")
+        candidates.append(f"/{STORAGE_APP_ROOT}/{branch}/Objective MCQs/{parsed['institution_path']}/{subject_name}")
+    candidates.append(f"/{STORAGE_APP_ROOT}/{branch}/Objective MCQs/Subjects/{subject_name}")
+    candidates.append(f"/{STORAGE_APP_ROOT}/{branch}/Objective MCQs/{subject_name}")
     seen: set[str] = set()
     ordered: list[str] = []
     for item in candidates:

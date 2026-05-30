@@ -17,7 +17,7 @@ class FolderMetadataSyncTests(TestCase):
     def test_sync_listing_creates_nested_folder_metadata(self):
         branch = "Civil Engineering"
         content_type = "objective_mcq"
-        institution_path = "/bridge4er/Civil Engineering/Objective MCQs/Public Service Commission (PSC)"
+        institution_path = "/bridge4ER/Civil Engineering/Objective MCQs/Public Service Commission (PSC)"
         subject_path = f"{institution_path}/Concrete Technology"
         files = [
             {
@@ -44,7 +44,7 @@ class FolderMetadataSyncTests(TestCase):
     def test_hidden_folder_hides_descendant_files(self):
         branch = "Civil Engineering"
         content_type = "objective_mcq"
-        hidden_folder = "/bridge4er/Civil Engineering/Objective MCQs/PSC Civil Sub-Engineer"
+        hidden_folder = "/bridge4ER/Civil Engineering/Objective MCQs/PSC Civil Sub-Engineer"
         hidden_file = f"{hidden_folder}/Coming Soon Stay Tuned/Coming Soon.json"
 
         FolderMetadata.objects.create(
@@ -52,7 +52,7 @@ class FolderMetadataSyncTests(TestCase):
             dropbox_path=hidden_folder,
             content_type=content_type,
             branch=branch,
-            parent_path="/bridge4er/Civil Engineering/Objective MCQs",
+            parent_path="/bridge4ER/Civil Engineering/Objective MCQs",
             depth=1,
             sort_order=0,
             is_visible=False,
@@ -83,7 +83,7 @@ class FolderMetadataSyncTests(TestCase):
     def test_folder_sort_order_controls_listing_order(self):
         branch = "Civil Engineering"
         content_type = "objective_mcq"
-        root = "/bridge4er/Civil Engineering/Objective MCQs"
+        root = "/bridge4ER/Civil Engineering/Objective MCQs"
         first_path = f"{root}/Nepal Engineering Council (NEC)"
         second_path = f"{root}/Public Service Commission (PSC)"
 
@@ -119,7 +119,7 @@ class FolderMetadataSyncTests(TestCase):
     def test_metadata_listing_fallback_uses_saved_file_and_folder_rows(self):
         branch = "Civil Engineering"
         content_type = "subjective"
-        root = "/bridge4er/Civil Engineering/Subjective"
+        root = "/bridge4ER/Civil Engineering/Subjective"
         folder_path = f"{root}/Institute A"
         file_path = f"{folder_path}/Hydraulics.pdf"
 
@@ -155,7 +155,7 @@ class FolderMetadataSyncTests(TestCase):
     def test_prune_metadata_removes_deleted_bucket_entries(self):
         branch = "Civil Engineering"
         content_type = "objective_mcq"
-        root = "/bridge4er/Civil Engineering/Objective MCQs"
+        root = "/bridge4ER/Civil Engineering/Objective MCQs"
         current_folder = f"{root}/NEC"
         current_file = f"{current_folder}/Chapter 1.json"
         stale_file = f"{current_folder}/Deleted.json"
@@ -188,7 +188,7 @@ class SupabasePathNormalizationTests(TestCase):
     @override_settings(SUPABASE_STORAGE_ROOT_PREFIX="bridge4er")
     def test_candidate_keys_support_rooted_and_rootless_paths(self):
         keys = dropbox_service._supabase_candidate_keys_from_app_path(
-            "/bridge4er/Civil Engineering/Notice"
+            "/bridge4ER/Civil Engineering/Notice"
         )
         self.assertIn("bridge4er/Civil Engineering/Notice", keys)
         self.assertIn("Civil Engineering/Notice", keys)
@@ -198,8 +198,8 @@ class SupabasePathNormalizationTests(TestCase):
         rooted = dropbox_service._app_path_from_supabase_key("bridge4er/Civil Engineering/Notice/file.pdf")
         rootless = dropbox_service._app_path_from_supabase_key("Civil Engineering/Notice/file.pdf")
 
-        self.assertEqual(rooted, "/bridge4er/Civil Engineering/Notice/file.pdf")
-        self.assertEqual(rootless, "/bridge4er/Civil Engineering/Notice/file.pdf")
+        self.assertEqual(rooted, "/bridge4ER/Civil Engineering/Notice/file.pdf")
+        self.assertEqual(rootless, "/bridge4ER/Civil Engineering/Notice/file.pdf")
 
     @override_settings(
         STORAGE_PROVIDER="supabase",
@@ -246,15 +246,15 @@ class SupabasePathNormalizationTests(TestCase):
             return_value=FakeResponse({}, status_code=404),
         ), patch("storage.dropbox_service.requests.post", side_effect=fake_post):
             rows = dropbox_service.list_folder_with_metadata(
-                "/bridge4er/Civil Engineering/Objective MCQs",
+                "/bridge4ER/Civil Engineering/Objective MCQs",
                 include_dirs=True,
                 recursive=True,
             )
 
         paths = {row["path"] for row in rows}
-        self.assertIn("/bridge4er/Civil Engineering/Objective MCQs/Nepal Engineering Council (NEC)", paths)
+        self.assertIn("/bridge4ER/Civil Engineering/Objective MCQs/Nepal Engineering Council (NEC)", paths)
         self.assertIn(
-            "/bridge4er/Civil Engineering/Objective MCQs/Nepal Engineering Council (NEC)/Chapter 1.json",
+            "/bridge4ER/Civil Engineering/Objective MCQs/Nepal Engineering Council (NEC)/Chapter 1.json",
             paths,
         )
 
@@ -265,7 +265,7 @@ class StorageContentSyncTests(TestCase):
             "storage.views._sync_dropbox_content_type",
             return_value={
                 "content_type": "objective_mcq",
-                "path": "/bridge4er/Civil Engineering/Objective MCQs",
+                "path": "/bridge4ER/Civil Engineering/Objective MCQs",
                 "file_count": 1,
                 "folder_count": 1,
                 "files_deleted": 0,
@@ -288,5 +288,5 @@ class StorageContentSyncTests(TestCase):
         self.assertEqual(payload["question_sync"]["objective"]["imported_questions"], 3)
         sync_objective.assert_called_once_with(
             branch="Civil Engineering",
-            replace_existing=True,
+            replace_existing=False,
         )
